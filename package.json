@@ -1,0 +1,43 @@
+{
+  "name": "@andyfischer/candle",
+  "version": "0.7.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "candle": "dist/main-cli.js"
+  },
+  "scripts": {
+    "build": "pnpm run build:esbuild",
+    "build:esbuild": "node esbuild.config.js",
+    "dev": "node --watch src/main-cli.ts",
+    "dev:daemon": "node --watch src/main-daemon.ts",
+    "tsc": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "pnpm run build"
+  },
+  "files": [
+    "src",
+    "dist",
+    "tsconfig.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@andyfischer/sqlite-wrapper": "0.3.2",
+    "@andyfischer/streams": "0.3.1",
+    "@andyfischer/subprocess-wrapper": "^0.2.0",
+    "@modelcontextprotocol/sdk": "1.12.1",
+    "better-sqlite3": "11.8.1",
+    "tree-kill": "1.2.2",
+    "yargs": "17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/yargs": "17.0.33",
+    "esbuild": "0.25.9",
+    "tsc-watch": "^7.1.1",
+    "typescript": "^4.2.4",
+    "vitest": "^3.0.6"
+  }
+}

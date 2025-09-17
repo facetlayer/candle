@@ -1,0 +1,8 @@
+{
+    "services": [{
+        "name": "periodic",
+        "shell": "node periodicLogger.js",
+        "root": "test/sampleServers"
+    }]
+}
+

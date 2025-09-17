@@ -1,0 +1,30 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node simpleServer.js",
+      "default": true
+    },
+    {
+      "name": "api", 
+      "shell": "node simpleServer.js",
+      "root": "test"
+    },
+    {
+      "name": "echo",
+      "shell": "node echoServer.js"
+    },
+    {
+      "name": "echo-test",
+      "shell": "node echoServer.js"
+    },
+    {
+      "name": "test-format",
+      "shell": "node simpleServer.js"
+    },
+    {
+      "name": "delayed-logger",
+      "shell": "node delayedLogger.js"
+    }
+  ]
+}

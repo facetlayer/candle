@@ -1,0 +1,14 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node sampleServers/simpleServer.js",
+      "default": true
+    },
+    {
+      "name": "api", 
+      "shell": "node sampleServers/simpleServer.js",
+      "root": "test"
+    }
+  ]
+}
