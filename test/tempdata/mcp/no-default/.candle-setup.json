@@ -1,8 +1,0 @@
-{
-  "services": [
-    {
-      "name": "test-service",
-      "shell": "echo 'test'"
-    }
-  ]
-}
