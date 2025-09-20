@@ -1,64 +1,57 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs';
-import { spawn } from 'child_process';
-import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
+import { runShellCommand } from '@facetlayer/subprocess-wrapper';
+import { getCandleBinPath } from '../utils';
 
-const TEST_NAME = 'list-format';
-const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
+const TEST_STATE_DIR = path.join(__dirname, 'db');
 const CANDLE_BIN = getCandleBinPath();
 const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
-const TEST_PROJECT_DIR = path.join(__dirname, 'sampleServers');
+const TEST_PROJECT_DIR = __dirname;
 
-async function runCommand(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
-    return new Promise((resolve) => {
-        const env = {
-            ...process.env,
-            CANDLE_DATABASE_DIR: TEST_STATE_DIR
-        };
+async function runCandleCommand(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
+    const env = {
+        ...process.env,
+        CANDLE_DATABASE_DIR: TEST_STATE_DIR
+    };
 
-        const proc = spawn('node', [CLI_PATH, ...args], {
+    const result = await runShellCommand('node', [CLI_PATH, ...args], {
+        spawnOptions: {
             cwd: options.cwd ?? TEST_PROJECT_DIR,
             env
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        
-        proc.stdout.on('data', (data) => stdout += data);
-        proc.stderr.on('data', (data) => stderr += data);
-        
-        proc.on('close', (code) => {
-            resolve({ stdout, stderr, code: code || 0 });
-        });
+        }
     });
+
+    return {
+        stdout: result.stdoutAsString(),
+        stderr: Array.isArray(result.stderr) ? result.stderr.join('\n') : (result.stderr || ''),
+        code: result.exitCode || 0
+    };
 }
 
 describe('List Format', () => {
     beforeAll(() => {
-        clearTestData(TEST_NAME);
+        // Create and clear the db directory
+        const fs = require('fs');
+        if (fs.existsSync(TEST_STATE_DIR)) {
+            fs.rmSync(TEST_STATE_DIR, { recursive: true, force: true });
+        }
+        fs.mkdirSync(TEST_STATE_DIR, { recursive: true });
     });
     
     afterEach(async () => {
-        await runCommand(['kill-all']).catch(() => {});
+        await runCandleCommand(['kill-all']).catch(() => {});
     });
     
     it('should show correct column headers and format', async () => {
         // Start a process using the test-format service
-        const proc = spawn('node', [CLI_PATH, 'run', 'test-format'], {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
-        
-        // Wait for process to start
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
+        await runCandleCommand(['start', 'test-format']);
+
+        // Wait for the service to start up by waiting for the expected log message
+        await runCandleCommand(['wait-for-log', 'test-format', '--message', 'Test server started successfully']);
+
         // List processes
-        const listResult = await runCommand(['list']);
-        
+        const listResult = await runCandleCommand(['list']);
+
         expect(listResult.code).toBe(0);
         
         // Check that the correct headers are present in the correct order
@@ -95,11 +88,6 @@ describe('List Format', () => {
         // Should contain either PID numbers for running processes or dashes for stopped ones
         expect(listResult.stdout).toMatch(/\d+|-/); // Should contain PID numbers or dashes
         
-        // Kill the candle process
-        proc.kill('SIGTERM');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Clean up
-        await runCommand(['kill-all']);
+        // Clean up is handled by afterEach
     });
 });

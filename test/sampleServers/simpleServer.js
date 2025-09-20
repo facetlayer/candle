@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Simple HTTP server for testing
-const http = require('http');
+import http from 'http';
 
 const port = process.env.PORT || 3000;
 let requestCount = 0;

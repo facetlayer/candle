@@ -81,7 +81,7 @@ describe('Wait for Log Functionality', () => {
         ], { timeout: 15000 });
         
         expect(result.code).toBe(0);
-        expect(result.stdout).toContain('Found message "Server started" in logs.');
+        expect(result.stdout).toContain('Found message "Server started" in existing logs.');
     }, 20000);
     
     it('should timeout if message is not found within timeout period', async () => {

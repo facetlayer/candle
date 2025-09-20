@@ -1,0 +1,16 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node simpleServer.js"
+    },
+    {
+      "name": "echo",
+      "shell": "node echoServer.js"
+    },
+    {
+      "name": "delayed-logger",
+      "shell": "node delayedLogger.js"
+    }
+  ]
+}
