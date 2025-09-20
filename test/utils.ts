@@ -14,5 +14,5 @@ export function clearTestData(testName: string) {
 }
 
 export function getCandleBinPath() {
-    return path.join(__dirname, '..', 'bin', 'candle');
+    return path.join(__dirname, '..');
 }

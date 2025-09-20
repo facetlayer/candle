@@ -1,12 +1,13 @@
-import { startShellCommand, Subprocess } from "@andyfischer/subprocess-wrapper";
+import { startShellCommand, Subprocess } from "@facetlayer/subprocess-wrapper";
 import { ProjectRootDir } from "../dirs.ts";
 import * as Path from "node:path";
 
-export function launchWithLogCollector(commandName: string, projectDir: string) {
+export async function launchWithLogCollector(commandName: string, projectDir: string) {
 
-    const command = [process.argv[0], Path.join(ProjectRootDir, 'dist', 'main-log-collector.js')];
+    const command = process.argv[0];
+    const args = [Path.join(ProjectRootDir, 'dist', 'main-log-collector.js')];
 
-    const subprocess = startShellCommand(command, {
+    const subprocess = startShellCommand(command, args, {
         spawnOptions: {
             stdio: ['pipe', 'pipe', 'pipe'],
             detached: true,
@@ -18,6 +19,8 @@ export function launchWithLogCollector(commandName: string, projectDir: string) 
             //console.log('log-collector stderr: ', line);
         },
     });
+
+    await subprocess.waitForStart();
 
     subprocess.proc.stdin.write(JSON.stringify({
         commandName,

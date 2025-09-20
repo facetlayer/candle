@@ -8,15 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@andyfischer/sqlite-wrapper':
-        specifier: 0.3.2
-        version: 0.3.2
-      '@andyfischer/streams':
-        specifier: 0.3.1
-        version: 0.3.1
-      '@andyfischer/subprocess-wrapper':
-        specifier: ^0.2.0
-        version: 0.2.0
+      '@facetlayer/sqlite-wrapper':
+        specifier: ^0.9.0
+        version: 0.9.0
+      '@facetlayer/streams':
+        specifier: ^1.0.0
+        version: 1.0.0
+      '@facetlayer/subprocess-wrapper':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@modelcontextprotocol/sdk':
         specifier: 1.12.1
         version: 1.12.1
@@ -50,24 +50,6 @@ importers:
         version: 3.2.4(@types/node@20.19.0)
 
 packages:
-
-  '@andyfischer/generic-lexer@0.1.1':
-    resolution: {integrity: sha512-s1rRnLpPthqjvqzJoAM4KvscNSutNMpCAMT1i3EhZTdQ9nHCSWvrnHpthqOSXAqf0MNjAn6GBcXF6cP5S9iWsg==}
-
-  '@andyfischer/parse-stdout-lines@0.1.2':
-    resolution: {integrity: sha512-Q4ZbBTzScnOee1jGO/lxVC4B7J1NCcYVwyfRuQt3X4pqNztlq0IbHHr+RUlQINxdaRN8LZSdPQzZe+Td1wXKEA==}
-
-  '@andyfischer/sqlite-wrapper@0.3.2':
-    resolution: {integrity: sha512-F9sywVg+xKPolp3CUs1zGBcqy9G4Cn/XqzMmnHJ+QpdCnmv8cluxB7g7E8apGFyCVOU5O2Llt+VtXiyeKYMhyg==}
-
-  '@andyfischer/streams@0.3.1':
-    resolution: {integrity: sha512-CVn6zwWONx/GfolulZu2AZMwfzA5IqQY2irorD8wWdgaBInW/Y3MIWUw+4MahjNMHXwIDgW5LJx9pZmNGf/4og==}
-
-  '@andyfischer/streams@0.3.2':
-    resolution: {integrity: sha512-1I6X9IcqBL6MdpLU5IPqS7rVzoBh+dQJvjfb/YQvZKz3bmpf2C5v7bWL3hoJewWoOD3p4Np5bqat2h8AdOBKPg==}
-
-  '@andyfischer/subprocess-wrapper@0.2.0':
-    resolution: {integrity: sha512-vguzsF+GOR5lit65uJfpuBaEiCX9HrTh9W9daQfHd5fQVTIOFKFMV+344JzTqStGO85/+1R3g841V+iZ8IclsQ==}
 
   '@esbuild/aix-ppc64@0.25.9':
     resolution: {integrity: sha512-OaGtL73Jck6pBKjNIe24BnFE6agGl+6KxDtTfHhy1HmhthfKouEcOhqpSL64K4/0WCtbKFLOdzD/44cJ4k9opA==}
@@ -224,6 +206,21 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@facetlayer/generic-lexer@1.0.0':
+    resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
+
+  '@facetlayer/parse-stdout-lines@1.0.0':
+    resolution: {integrity: sha512-Ot877HS2DCTrrkj22+L+Er8tI4WYtCvKppqjBTvLCYfgCJmEKeR15ay6B1TugkHmy7MmSsXsuSGm0Q7TGy1deA==}
+
+  '@facetlayer/sqlite-wrapper@0.9.0':
+    resolution: {integrity: sha512-YA7d8KOIsdUmSyfG554q1ok1QN/1H8uTDhWb3ISrUzaENy1c+OnMcDs8mZKDHopwKJp93rTXceQu+N4XtKSUDQ==}
+
+  '@facetlayer/streams@1.0.0':
+    resolution: {integrity: sha512-ickAKFy1XDodcl1lNOjLiOTMYC+TyY1YDUfmgD/bz2DSPBsyxExTfq1/BOyHcZ2Yp5zOeLfFP2RLV74xOIFxqQ==}
+
+  '@facetlayer/subprocess-wrapper@1.0.0':
+    resolution: {integrity: sha512-g2FrxQAXJLl0I3H7T/ycQ9Qq0SDxjANXYn68CZXaTvNB4PSOfSRsd5MA2BqDnotzWKr2S0E25gcfarnrR1OAhQ==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -896,10 +893,6 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.8.3:
-    resolution: {integrity: sha512-ObmnIF4hXNg1BqhnHmgbDETF8dLPCggZWBjkQfhZpbszZnYur5DUljTcCHii5LC3J5E0yeO/1LIMyH+UvHQgyw==}
-    engines: {node: '>= 0.4'}
-
   side-channel-list@1.0.0:
     resolution: {integrity: sha512-FCLHtRD/gnpCiCHEiJLOwdmFP+wzCmDEkc9y7NsYxeF4u7Btsn1ZuwgwJGxImImHicJArLP4R0yX4c2KCrMrTA==}
     engines: {node: '>= 0.4'}
@@ -1159,26 +1152,6 @@ packages:
 
 snapshots:
 
-  '@andyfischer/generic-lexer@0.1.1': {}
-
-  '@andyfischer/parse-stdout-lines@0.1.2': {}
-
-  '@andyfischer/sqlite-wrapper@0.3.2':
-    dependencies:
-      '@andyfischer/generic-lexer': 0.1.1
-      '@andyfischer/streams': 0.3.1
-      better-sqlite3: 11.8.1
-
-  '@andyfischer/streams@0.3.1': {}
-
-  '@andyfischer/streams@0.3.2': {}
-
-  '@andyfischer/subprocess-wrapper@0.2.0':
-    dependencies:
-      '@andyfischer/parse-stdout-lines': 0.1.2
-      '@andyfischer/streams': 0.3.2
-      shell-quote: 1.8.3
-
   '@esbuild/aix-ppc64@0.25.9':
     optional: true
 
@@ -1256,6 +1229,23 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.9':
     optional: true
+
+  '@facetlayer/generic-lexer@1.0.0': {}
+
+  '@facetlayer/parse-stdout-lines@1.0.0': {}
+
+  '@facetlayer/sqlite-wrapper@0.9.0':
+    dependencies:
+      '@facetlayer/generic-lexer': 1.0.0
+      '@facetlayer/streams': 1.0.0
+      better-sqlite3: 11.8.1
+
+  '@facetlayer/streams@1.0.0': {}
+
+  '@facetlayer/subprocess-wrapper@1.0.0':
+    dependencies:
+      '@facetlayer/parse-stdout-lines': 1.0.0
+      '@facetlayer/streams': 1.0.0
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -1954,8 +1944,6 @@ snapshots:
       shebang-regex: 3.0.0
 
   shebang-regex@3.0.0: {}
-
-  shell-quote@1.8.3: {}
 
   side-channel-list@1.0.0:
     dependencies:

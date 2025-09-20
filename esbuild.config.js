@@ -8,8 +8,8 @@ const commonConfig = {
   outdir: 'dist',
   external: [
     'better-sqlite3',
-    '@andyfischer/sqlite-wrapper',
-    '@andyfischer/subprocess-wrapper',
+    '@facetlayer/sqlite-wrapper',
+    '@facetlayer/subprocess-wrapper',
     'tree-kill',
     'child_process',
     'fs',

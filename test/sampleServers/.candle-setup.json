@@ -2,8 +2,7 @@
   "services": [
     {
       "name": "web",
-      "shell": "node simpleServer.js",
-      "default": true
+      "shell": "node simpleServer.js"
     },
     {
       "name": "api", 

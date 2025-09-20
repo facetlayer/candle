@@ -8,7 +8,6 @@ export interface AddServerConfigArgs {
     shell: string;
     root?: string;
     env?: Record<string, string>;
-    default?: boolean;
 }
 
 export function addServerConfig(args: AddServerConfigArgs, startDir: string = process.cwd()): void {
@@ -28,8 +27,7 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
         name: args.name,
         shell: args.shell,
         ...(args.root && { root: args.root }),
-        ...(args.env && { env: args.env }),
-        ...(args.default && { default: args.default })
+        ...(args.env && { env: args.env })
     };
     
     // Add new service to config

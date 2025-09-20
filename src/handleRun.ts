@@ -69,7 +69,7 @@ export async function handleRun(req: RunOptions) {
         log_type: ProcessLogType.process_start_initiated
     });
 
-    launchWithLogCollector(serviceConfig.name, projectDir);
+    await launchWithLogCollector(serviceConfig.name, projectDir);
 
     await waitForProcessToStart(serviceConfig.name, projectDir);
 
@@ -115,6 +115,5 @@ export async function handleStart(req: StartOptions) {
             req.consoleOutputFormat
         });
     }
-    
 }
 

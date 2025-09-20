@@ -1,23 +1,23 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
 
 const TEST_NAME = 'mcp';
 const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
 const CANDLE_BIN = getCandleBinPath();
-const TEST_DIR = path.join(__dirname, 'sampleServers');
+const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
+const TEST_PROJECT_DIR = __dirname;
 
-async function runMcpCommand(input: any): Promise<{ stdout: string, stderr: string, code: number }> {
+async function runMcpCommand(input: any, options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
     return new Promise((resolve) => {
         const env = {
             ...process.env,
             CANDLE_DATABASE_DIR: TEST_STATE_DIR
         };
-        
-        const proc = spawn('node', [CANDLE_BIN, '--mcp'], {
-            cwd: TEST_DIR,
+
+        const proc = spawn('node', [CLI_PATH, '--mcp'], {
+            cwd: options.cwd ?? TEST_PROJECT_DIR,
             env
         });
         
@@ -56,8 +56,8 @@ describe('MCP StartService Tests', () => {
                 CANDLE_DATABASE_DIR: TEST_STATE_DIR
             };
             
-            const proc = spawn('node', [CANDLE_BIN, 'kill-all'], {
-                cwd: TEST_DIR,
+            const proc = spawn('node', [CLI_PATH, 'kill-all'], {
+                cwd: TEST_PROJECT_DIR,
                 env
             });
             
@@ -120,72 +120,4 @@ describe('MCP StartService Tests', () => {
         expect(result.stdout).toContain('nonexistent-service');
     });
     
-    it('should throw proper error message when no service name provided and no default service', async () => {
-        // Create a setup file with no default service
-        const noDefaultDir = path.join(TEST_STATE_DIR, 'no-default');
-        fs.mkdirSync(noDefaultDir, { recursive: true });
-        
-        const setupConfig = {
-            services: [
-                {
-                    name: "test-service",
-                    shell: "echo 'test'"
-                    // No default: true
-                }
-            ]
-        };
-        
-        fs.writeFileSync(
-            path.join(noDefaultDir, '.candle-setup.json'), 
-            JSON.stringify(setupConfig, null, 2)
-        );
-        
-        const callToolRequest = {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call", 
-            params: {
-                name: "StartService",
-                arguments: {}  // No name parameter - should use first service
-            }
-        };
-        
-        // Run MCP command in directory with no default service
-        const result = await new Promise<{ stdout: string, stderr: string, code: number }>((resolve) => {
-            const env = {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            };
-            
-            const proc = spawn('node', [CANDLE_BIN, '--mcp'], {
-                cwd: noDefaultDir,
-                env
-            });
-            
-            let stdout = '';
-            let stderr = '';
-            
-            proc.stdout.on('data', (data) => stdout += data);
-            proc.stderr.on('data', (data) => stderr += data);
-            
-            // Send MCP input
-            proc.stdin.write(JSON.stringify(callToolRequest) + '\n');
-            proc.stdin.end();
-            
-            proc.on('close', (code) => {
-                resolve({ stdout, stderr, code: code || 0 });
-            });
-            
-            // Timeout after 10 seconds
-            setTimeout(() => {
-                proc.kill('SIGTERM');
-                resolve({ stdout, stderr, code: 1 });
-            }, 10000);
-        });
-        
-        // Should return error when no service name and no default service
-        expect(result.code).toBe(0); // MCP handles gracefully
-        expect(result.stdout).toContain('error');
-        expect(result.stdout).toContain('No services configured and no service name provided');
-    });
 });

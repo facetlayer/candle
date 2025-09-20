@@ -6,6 +6,7 @@ import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
 const TEST_NAME = 'wait-for-log';
 const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
 const CANDLE_BIN = getCandleBinPath();
+const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
 const TEST_DIR = path.join(__dirname, 'sampleServers');
 
 async function runCommand(args: string[], options: { cwd?: string, timeout?: number } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
@@ -14,9 +15,9 @@ async function runCommand(args: string[], options: { cwd?: string, timeout?: num
             ...process.env,
             CANDLE_DATABASE_DIR: TEST_STATE_DIR
         };
-        
-        const proc = spawn('node', [CANDLE_BIN, ...args], {
-            cwd: options.cwd || TEST_DIR,
+
+        const proc = spawn('node', [CLI_PATH, ...args], {
+            cwd: options.cwd ?? TEST_DIR,
             env
         });
         
@@ -80,7 +81,7 @@ describe('Wait for Log Functionality', () => {
         ], { timeout: 15000 });
         
         expect(result.code).toBe(0);
-        expect(result.stdout).toContain('Found message "Server started"');
+        expect(result.stdout).toContain('Found message "Server started" in logs.');
     }, 20000);
     
     it('should timeout if message is not found within timeout period', async () => {
@@ -119,7 +120,7 @@ describe('Wait for Log Functionality', () => {
         ], { timeout: 10000 });
         
         expect(result.code).toBe(0);
-        expect(result.stdout).toContain('Found message "Server initializing" in existing logs');
+        expect(result.stdout).toContain('Found message "Server initializing" in existing logs.');
     }, 15000);
     
     it('should fail if no process is found', async () => {
@@ -134,7 +135,7 @@ describe('Wait for Log Functionality', () => {
         ], { timeout: 10000 });
         
         expect(result.code).toBe(1);
-        expect(result.stderr).toContain('No process_has_started event found');
+        expect(result.stderr).toContain("No service 'non-existent-service' configured for directory");
     }, 10000);
     
     it('should wait for message that appears later', async () => {
@@ -155,6 +156,6 @@ describe('Wait for Log Functionality', () => {
         ], { timeout: 15000 });
         
         expect(result.code).toBe(0);
-        expect(result.stdout).toContain('Found message "ready to accept connections"');
+        expect(result.stdout).toContain('Found message "ready to accept connections" in logs.');
     }, 20000);
 });

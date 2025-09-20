@@ -16,7 +16,7 @@ import { serveMCP } from './mcp.ts';
 import { findProjectDir } from './configFile.ts';
 import { addServerConfig } from './addServerConfig.ts';
 
-function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, default?: boolean, message?: string, timeout?: number } {
+function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, message?: string, timeout?: number } {
     const argv = yargs(hideBin(process.argv))
         .option('mcp', {
             type: 'boolean',
@@ -64,11 +64,6 @@ function parseArgs(): { command: string, commandName: string, commandNames: stri
                 .option('env', {
                     describe: 'Environment variables as JSON string',
                     type: 'string'
-                })
-                .option('default', {
-                    describe: 'Mark this service as default',
-                    type: 'boolean',
-                    default: false
                 });
         })
         .demandCommand(0, 'You need to specify a command')
@@ -83,11 +78,10 @@ function parseArgs(): { command: string, commandName: string, commandNames: stri
     const shell = argv.shell as string;
     const root = argv.root as string;
     const env = argv.env ? JSON.parse(argv.env as string) : undefined;
-    const defaultFlag = argv.default as boolean;
     const message = argv.message as string;
     const timeout = argv.timeout as number;
     
-    return { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag, message, timeout };
+    return { command, commandName, commandNames, mcp, shell, root, env, message, timeout };
 }
 
 export async function main(): Promise<void> {
@@ -98,7 +92,7 @@ export async function main(): Promise<void> {
         return;
     }
 
-    const { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag, message, timeout } = parseArgs();
+    const { command, commandName, commandNames, mcp, shell, root, env, message, timeout } = parseArgs();
 
     // Check if no arguments - print help
     if (process.argv.length === 2) {
@@ -189,8 +183,7 @@ export async function main(): Promise<void> {
                 name: commandName,
                 shell: shell,
                 root: root,
-                env: env,
-                default: defaultFlag
+                env: env
             });
             console.log(`Service '${commandName}' added successfully to .candle-setup.json`);
         } catch (error) {
@@ -216,6 +209,7 @@ export function printError(error: Error) {
 
 // Run main function when called as CLI script
 main().catch(error => {
+    console.error('Error in main: ', error);
     printError(error);
     process.exit(1);
 });

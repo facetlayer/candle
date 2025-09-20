@@ -3,4 +3,4 @@ candle.log
 target
 dist
 *.tsbuildinfo
-
+test/tempdata

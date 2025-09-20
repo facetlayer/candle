@@ -11,7 +11,7 @@ describe('Simple Candle Test', () => {
         const candlePath = getCandleBinPath();
         
         const result = await new Promise<{stdout: string, stderr: string, code: number}>((resolve) => {
-            const proc = spawn('node', [candlePath, '--help']);
+            const proc = spawn('node', ['.', '--help'], { cwd: candlePath });
             let stdout = '';
             let stderr = '';
             

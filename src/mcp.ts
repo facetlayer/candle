@@ -212,15 +212,11 @@ const toolDefinitions: ToolDefinition[] = [
           type: 'string',
           description: 'Root directory for the service (optional)',
         },
-        default: {
-          type: 'boolean',
-          description: 'Mark this service as default (optional)',
-        },
       },
       required: ['name', 'shell'],
     },
     handler: async (args) => {
-      const { name, shell, root, default: isDefault } = args;
+      const { name, shell, root } = args;
       
       if (!name || !shell) {
         throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
@@ -230,7 +226,6 @@ const toolDefinitions: ToolDefinition[] = [
           name,
           shell,
           root,
-          default: isDefault,
       });
         
       console.log(`Service '${name}' added successfully to .candle-setup.json`);

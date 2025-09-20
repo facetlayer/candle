@@ -7,8 +7,8 @@ import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
 const TEST_NAME = 'functional';
 const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
 const CANDLE_BIN = getCandleBinPath();
-const TEST_DIR = path.join(__dirname, 'sampleServers');
-const SIMPLE_SERVER = path.join(TEST_DIR, 'simpleServer.js');
+const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
+const TEST_PROJECT_DIR = __dirname;
 
 async function runCommand(args: string[], options: { cwd?: string, env?: any } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
     return new Promise((resolve) => {
@@ -17,9 +17,9 @@ async function runCommand(args: string[], options: { cwd?: string, env?: any } =
             CANDLE_DATABASE_DIR: TEST_STATE_DIR,
             ...(options.env || {})
         };
-        
-        const proc = spawn('node', [CANDLE_BIN, ...args], {
-            cwd: options.cwd || TEST_DIR,
+
+        const proc = spawn('node', [CLI_PATH, ...args], {
+            cwd: options.cwd ?? TEST_PROJECT_DIR,
             env
         });
         
@@ -40,9 +40,9 @@ async function startCandleProcess(args: string[], options: { cwd?: string } = {}
         ...process.env,
         CANDLE_DATABASE_DIR: TEST_STATE_DIR
     };
-    
-    const proc = spawn('node', [CANDLE_BIN, ...args], {
-        cwd: options.cwd || TEST_DIR,
+
+    const proc = spawn('node', [CLI_PATH, ...args], {
+        cwd: options.cwd ?? TEST_PROJECT_DIR,
         env
     });
     
@@ -75,7 +75,7 @@ describe('Candle Functional Tests', () => {
         const result = await runCommand(['run'], { cwd: '/tmp' });
         
         expect(result.code).not.toBe(0);
-        expect(result.stderr).toContain('No .candle-setup.json found');
+        expect(result.stderr).toContain('No .candle-setup.json file found');
     });
     
     it('should run default service from setup file', async () => {

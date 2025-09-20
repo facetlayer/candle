@@ -3,7 +3,7 @@ import type { LogCollectorLaunchInfo } from "./log-collector/LogCollectorLaunchI
 import { getServiceConfigByName } from "./configFile.ts";
 import * as Path from "node:path";  
 import { ProcessLogType, saveProcessLog } from "./logs/processLogs.ts";
-import { startShellCommand, Subprocess } from "@andyfischer/subprocess-wrapper";
+import { startShellCommand, Subprocess } from "@facetlayer/subprocess-wrapper";
 import { createProcessEntry, deleteProcessEntry } from "./database/processTable.ts";
 
 function startService(message: LogCollectorLaunchInfo): Subprocess {
@@ -16,8 +16,9 @@ function startService(message: LogCollectorLaunchInfo): Subprocess {
         launchDir = Path.join(projectDir, serviceConfig.serviceConfig.root);
     }
 
-    return startShellCommand(shell, {
+    return startShellCommand(shell, [], {
         spawnOptions: {
+            shell: true,
             cwd: launchDir,
         },
         onStdout: (line) => {

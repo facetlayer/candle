@@ -1,5 +1,5 @@
-import { DatabaseLoader, SqliteDatabase } from '@andyfischer/sqlite-wrapper';
-import { Stream } from '@andyfischer/streams'
+import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
+import { Stream } from '@facetlayer/streams'
 import * as Path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';

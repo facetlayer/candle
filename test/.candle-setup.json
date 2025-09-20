@@ -2,13 +2,16 @@
   "services": [
     {
       "name": "web",
-      "shell": "node sampleServers/simpleServer.js",
-      "default": true
+      "shell": "node sampleServers/simpleServer.js"
     },
     {
       "name": "api", 
       "shell": "node sampleServers/simpleServer.js",
       "root": "test"
+    },
+    {
+      "name": "echo",
+      "shell": "node sampleServers/echoServer.js"
     }
   ]
 }

@@ -2,14 +2,14 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
-import { DatabaseLoader } from '@andyfischer/sqlite-wrapper';
+import { DatabaseLoader } from '@facetlayer/sqlite-wrapper';
 import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
 
 const TEST_NAME = 'logs';
 const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
 const CANDLE_BIN = getCandleBinPath();
-const TEST_DIR = path.join(__dirname, 'sampleServers');
-const ECHO_SERVER = path.join(TEST_DIR, 'echoServer.js');
+const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
+const TEST_PROJECT_DIR = path.join(__dirname, 'sampleServers');
 
 async function runCommand(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
     return new Promise((resolve) => {
@@ -17,9 +17,9 @@ async function runCommand(args: string[], options: { cwd?: string } = {}): Promi
             ...process.env,
             CANDLE_DATABASE_DIR: TEST_STATE_DIR
         };
-        
-        const proc = spawn('node', [CANDLE_BIN, ...args], {
-            cwd: options.cwd || TEST_DIR,
+
+        const proc = spawn('node', [CLI_PATH, ...args], {
+            cwd: options.cwd ?? TEST_PROJECT_DIR,
             env
         });
         
@@ -46,8 +46,8 @@ describe('Logs Functionality', () => {
     
     it('should get logs by project directory and command name', async () => {
         // Start echo-test service which outputs logs
-        const proc = spawn('node', [CANDLE_BIN, 'run', 'echo-test'], {
-            cwd: TEST_DIR,
+        const proc = spawn('node', [CLI_PATH, 'run', 'echo-test'], {
+            cwd: TEST_PROJECT_DIR,
             env: {
                 ...process.env,
                 CANDLE_DATABASE_DIR: TEST_STATE_DIR
@@ -73,8 +73,8 @@ describe('Logs Functionality', () => {
     
     it('should get default logs by project directory only', async () => {
         // Start default service (web)
-        const proc = spawn('node', [CANDLE_BIN, 'run'], {
-            cwd: TEST_DIR,
+        const proc = spawn('node', [CLI_PATH, 'run'], {
+            cwd: TEST_PROJECT_DIR,
             env: {
                 ...process.env,
                 CANDLE_DATABASE_DIR: TEST_STATE_DIR
