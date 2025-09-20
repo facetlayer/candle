@@ -15,10 +15,8 @@ async function runCandleCommand(args: string[], options: { cwd?: string } = {}):
     };
 
     const result = await runShellCommand('node', [CLI_PATH, ...args], {
-        spawnOptions: {
-            cwd: options.cwd ?? TEST_PROJECT_DIR,
-            env
-        }
+        cwd: options.cwd ?? TEST_PROJECT_DIR,
+        env
     });
 
     return {

@@ -20,5 +20,5 @@
   "include": [
     "src/**/*.ts",
     "src/*.ts"
-, "src/main-wrappedSubprocess.ts.disabled", "src/startWrappedSubprocess.ts.disabled", "src/daemon/handleMessages.ts.disable", "src/daemon/messages.ts.disable"  ]
+  ]
 }

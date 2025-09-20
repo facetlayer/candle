@@ -17,10 +17,8 @@ function startService(message: LogCollectorLaunchInfo): Subprocess {
     }
 
     return startShellCommand(shell, [], {
-        spawnOptions: {
-            shell: true,
-            cwd: launchDir,
-        },
+        shell: true,
+        cwd: launchDir,
         onStdout: (line) => {
             saveProcessLog({
                 command_name: commandName,

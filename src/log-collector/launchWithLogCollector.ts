@@ -8,10 +8,8 @@ export async function launchWithLogCollector(commandName: string, projectDir: st
     const args = [Path.join(ProjectRootDir, 'dist', 'main-log-collector.js')];
 
     const subprocess = startShellCommand(command, args, {
-        spawnOptions: {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            detached: true,
-        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
         onStdout: (line) => {
             //console.log('log-collector stdout: ', line);
         },

@@ -1,0 +1,28 @@
+name: 'Setup Node and pnpm with caching'
+description: 'Setup Node.js, enable corepack, and restore pnpm/node_modules caches'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+
+    - name: Restore pnpm cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.local/share/pnpm/store
+          ~/.cache/pnpm
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -15,8 +15,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@facetlayer/subprocess-wrapper':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.1.0
+        version: 1.1.0
       '@modelcontextprotocol/sdk':
         specifier: 1.12.1
         version: 1.12.1
@@ -41,10 +41,10 @@ importers:
         version: 0.25.9
       tsc-watch:
         specifier: ^7.1.1
-        version: 7.1.1(typescript@4.9.5)
+        version: 7.1.1(typescript@5.9.2)
       typescript:
-        specifier: ^4.2.4
-        version: 4.9.5
+        specifier: ^5.9.2
+        version: 5.9.2
       vitest:
         specifier: ^3.0.6
         version: 3.2.4(@types/node@20.19.0)
@@ -219,8 +219,8 @@ packages:
   '@facetlayer/streams@1.0.0':
     resolution: {integrity: sha512-ickAKFy1XDodcl1lNOjLiOTMYC+TyY1YDUfmgD/bz2DSPBsyxExTfq1/BOyHcZ2Yp5zOeLfFP2RLV74xOIFxqQ==}
 
-  '@facetlayer/subprocess-wrapper@1.0.0':
-    resolution: {integrity: sha512-g2FrxQAXJLl0I3H7T/ycQ9Qq0SDxjANXYn68CZXaTvNB4PSOfSRsd5MA2BqDnotzWKr2S0E25gcfarnrR1OAhQ==}
+  '@facetlayer/subprocess-wrapper@1.1.0':
+    resolution: {integrity: sha512-WPqR7AwVluyvgFMPYKXjg5S7tORCDZGXWEivJIOoHBfSXJoBafC0rb8+YTboxSpNfvuCaGMEVaXv0rZHQFRRqg==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -1018,9 +1018,9 @@ packages:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
     engines: {node: '>= 0.6'}
 
-  typescript@4.9.5:
-    resolution: {integrity: sha512-1FXk9E2Hm+QzZQ7z+McJiHL4NW1F2EzMu9Nq9i3zAaGqibafqYwCVU6WyWAuyQRRzOlxou8xZSyXLEN8oKj24g==}
-    engines: {node: '>=4.2.0'}
+  typescript@5.9.2:
+    resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
+    engines: {node: '>=14.17'}
     hasBin: true
 
   undici-types@6.21.0:
@@ -1242,7 +1242,7 @@ snapshots:
 
   '@facetlayer/streams@1.0.0': {}
 
-  '@facetlayer/subprocess-wrapper@1.0.0':
+  '@facetlayer/subprocess-wrapper@1.1.0':
     dependencies:
       '@facetlayer/parse-stdout-lines': 1.0.0
       '@facetlayer/streams': 1.0.0
@@ -2059,13 +2059,13 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
-  tsc-watch@7.1.1(typescript@4.9.5):
+  tsc-watch@7.1.1(typescript@5.9.2):
     dependencies:
       cross-spawn: 7.0.6
       node-cleanup: 2.1.2
       ps-tree: 1.2.0
       string-argv: 0.3.2
-      typescript: 4.9.5
+      typescript: 5.9.2
 
   tunnel-agent@0.6.0:
     dependencies:
@@ -2077,7 +2077,7 @@ snapshots:
       media-typer: 1.1.0
       mime-types: 3.0.1
 
-  typescript@4.9.5: {}
+  typescript@5.9.2: {}
 
   undici-types@6.21.0: {}
 
