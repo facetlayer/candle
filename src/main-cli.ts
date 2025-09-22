@@ -15,6 +15,7 @@ import { handleWaitForLog } from './handleWaitForLog.ts';
 import { serveMCP } from './mcp.ts';
 import { findProjectDir } from './configFile.ts';
 import { addServerConfig } from './addServerConfig.ts';
+import { maybeRunCleanup } from './database/cleanup.ts';
 
 function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, message?: string, timeout?: number } {
     const argv = yargs(hideBin(process.argv))
@@ -105,6 +106,8 @@ export async function main(): Promise<void> {
         await serveMCP();
         return;
     }
+
+    maybeRunCleanup();
 
     switch (command) {
     case 'run': {

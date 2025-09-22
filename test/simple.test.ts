@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn } from 'child_process';
-import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
+import { clearTestData, getCandleBinPath } from './utils';
 
 describe('Simple Candle Test', () => {
     beforeAll(() => {

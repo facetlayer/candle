@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs';
 import { runShellCommand } from '@facetlayer/subprocess-wrapper';
 import { getCandleBinPath } from '../utils';
 
@@ -17,10 +16,8 @@ async function runCandleCommand(args: string[], options: { cwd?: string, env?: a
     };
 
     const result = await runShellCommand('node', [CLI_PATH, ...args], {
-        spawnOptions: {
-            cwd: options.cwd ?? TEST_PROJECT_DIR,
-            env
-        }
+        cwd: options.cwd ?? TEST_PROJECT_DIR,
+        env
     });
 
     return {

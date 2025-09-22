@@ -32,20 +32,11 @@ const schema = {
             log_type integer not null,
             timestamp integer not null default (strftime('%s', 'now'))
         )`,
-        /*
-        `create table messages(
-            id integer primary key autoincrement,
-            sent_to text not null,
-            message_json text not null,
-            received_by_pid integer,
-            received_at integer,
-            created_at integer not null
+        `create table process_last_cleanup(
+           timestamp integer not null
         )`,
-        */
         `create index idx_process_output_command_name on process_output(command_name)`,
         `create index idx_process_output_project_dir on process_output(project_dir)`,
-        //`create index idx_processes_is_running on processes(is_running)`,
-        //`create index idx_processes_pid on processes(pid)`
     ]
 };
 
@@ -86,45 +77,3 @@ export function getDatabase({overrideDirectory}: {overrideDirectory?: string} = 
 }
 
 
-export function databaseCleanup(): void {
-    const db = getDatabase();
-    const now = Math.floor(Date.now() / 1000);
-    
-    // Keep failed processes for 24 hours so users can view failure logs
-    const failedProcessCutoff = now - (24 * 60 * 60); // 24 hours
-    
-    // Keep completed processes for 4 hours
-    const completedProcessCutoff = now - (4 * 60 * 60); // 4 hours
-    
-    // Keep process output logs for 24 hours (for both failed and completed processes)
-    const logCutoff = now - (24 * 60 * 60); // 24 hours
-    
-    // Enforce max logs per process by keeping only the most recent logs
-    /* TODO revisit - right now this query gets too slow
-    db.run(`delete from process_output where id not in (
-        select id from process_output po1 
-        where (
-            select count(*) from process_output po2 
-            where po2.command_name = po1.command_name and po2.project_dir = po1.project_dir and po2.id >= po1.id
-        ) <= ?
-    )`, [MAX_LOGS_PER_PROCESS]);
-    */
-    
-    // Delete old process output logs
-    db.run('delete from process_output where timestamp < ?', [logCutoff]);
-    
-    // Delete old failed processes (after 24 hours)
-    // (fixme)
-    //db.run('delete from processes where is_running = ? and exit_code != 0 and created_at < ?', [RunningStatus.stopped, failedProcessCutoff]);
-    
-    // Delete old completed processes (after 4 hours)  
-    //db.run('delete from processes where is_running = ? and exit_code = 0 and created_at < ?', [RunningStatus.stopped, completedProcessCutoff]);
-    
-    // Note: Running processes are never deleted by cleanup
-    
-    // Clean up orphaned logs (logs without corresponding processes)
-    db.run(`delete from process_output 
-            where (command_name, project_dir) not in (select command_name, project_dir from processes)`);
-    
-    db.run('vacuum');
-}

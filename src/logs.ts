@@ -35,8 +35,6 @@ export function infoLog(...args: any[]): void {
     }
 }
 
-
-
 function consoleLogStdout(format: 'pretty' | 'json', msg: string) {
     if (format === 'json') {
         console.log(JSON.stringify({ stdout: msg }));

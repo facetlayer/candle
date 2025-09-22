@@ -1,15 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
-import { DatabaseLoader } from '@facetlayer/sqlite-wrapper';
-import { clearTestData, getTestDataDirectory, getCandleBinPath } from './utils';
+import { spawn } from 'child_process';
+import { getCandleBinPath } from '../utils';
 
-const TEST_NAME = 'logs';
-const TEST_STATE_DIR = getTestDataDirectory(TEST_NAME);
+const TEST_STATE_DIR = path.join(__dirname, 'db');
 const CANDLE_BIN = getCandleBinPath();
 const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
-const TEST_PROJECT_DIR = path.join(__dirname, 'sampleServers');
+const TEST_PROJECT_DIR = path.join(__dirname, '../sampleServers');
 
 async function runCommand(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {
     return new Promise((resolve) => {
@@ -37,7 +34,12 @@ async function runCommand(args: string[], options: { cwd?: string } = {}): Promi
 
 describe('Logs Functionality', () => {
     beforeAll(() => {
-        clearTestData(TEST_NAME);
+        // Create and clear the db directory
+        const fs = require('fs');
+        if (fs.existsSync(TEST_STATE_DIR)) {
+            fs.rmSync(TEST_STATE_DIR, { recursive: true, force: true });
+        }
+        fs.mkdirSync(TEST_STATE_DIR, { recursive: true });
     });
     
     afterEach(async () => {

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@facetlayer/sqlite-wrapper':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.9.1
+        version: 0.9.1
       '@facetlayer/streams':
         specifier: ^1.0.0
         version: 1.0.0
@@ -213,8 +213,8 @@ packages:
   '@facetlayer/parse-stdout-lines@1.0.0':
     resolution: {integrity: sha512-Ot877HS2DCTrrkj22+L+Er8tI4WYtCvKppqjBTvLCYfgCJmEKeR15ay6B1TugkHmy7MmSsXsuSGm0Q7TGy1deA==}
 
-  '@facetlayer/sqlite-wrapper@0.9.0':
-    resolution: {integrity: sha512-YA7d8KOIsdUmSyfG554q1ok1QN/1H8uTDhWb3ISrUzaENy1c+OnMcDs8mZKDHopwKJp93rTXceQu+N4XtKSUDQ==}
+  '@facetlayer/sqlite-wrapper@0.9.1':
+    resolution: {integrity: sha512-2qNERT+tuN8tr72N+iBGau9jGjntjQ40oPNdgfcDPaQYAr6ZSvKK8b7Ffl2vLp/7MBWiK++SraeMpl0KDoDaOQ==}
 
   '@facetlayer/streams@1.0.0':
     resolution: {integrity: sha512-ickAKFy1XDodcl1lNOjLiOTMYC+TyY1YDUfmgD/bz2DSPBsyxExTfq1/BOyHcZ2Yp5zOeLfFP2RLV74xOIFxqQ==}
@@ -1234,7 +1234,7 @@ snapshots:
 
   '@facetlayer/parse-stdout-lines@1.0.0': {}
 
-  '@facetlayer/sqlite-wrapper@0.9.0':
+  '@facetlayer/sqlite-wrapper@0.9.1':
     dependencies:
       '@facetlayer/generic-lexer': 1.0.0
       '@facetlayer/streams': 1.0.0

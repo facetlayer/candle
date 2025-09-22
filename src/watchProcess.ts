@@ -1,5 +1,3 @@
-import * as Db from './database/database.ts';
-import { RunningStatus } from './database/database.ts';
 import { consoleLogSystemMessage, consoleLogRow } from './logs.ts';
 import { LogIterator } from './logs/LogIterator.ts';
 import type { ProcessLog } from './logs/processLogs.ts';

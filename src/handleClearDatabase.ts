@@ -39,9 +39,3 @@ export async function handleClearDatabaseCommand(): Promise<void> {
         process.exit(1);
     }
 }
-
-export async function handleCleanupCommand(): Promise<void> {
-    console.log('Cleaning up old processes and logs...');
-    
-    Db.databaseCleanup();
-}

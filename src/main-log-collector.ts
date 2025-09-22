@@ -5,6 +5,7 @@ import * as Path from "node:path";
 import { ProcessLogType, saveProcessLog } from "./logs/processLogs.ts";
 import { startShellCommand, Subprocess } from "@facetlayer/subprocess-wrapper";
 import { createProcessEntry, deleteProcessEntry } from "./database/processTable.ts";
+import { maybeRunCleanup } from "./database/cleanup.ts";
 
 function startService(message: LogCollectorLaunchInfo): Subprocess {
 
@@ -40,6 +41,9 @@ function startService(message: LogCollectorLaunchInfo): Subprocess {
 
 async function main() {
     const launchInfo: LogCollectorLaunchInfo = await readStdinAsJson();
+
+    // Check for cleanup on an interval.
+    setInterval(maybeRunCleanup, 60 * 1000);
 
     console.log('Got launchInfo: ', launchInfo);
 

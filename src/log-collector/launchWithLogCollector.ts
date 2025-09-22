@@ -1,6 +1,7 @@
 import { startShellCommand, Subprocess } from "@facetlayer/subprocess-wrapper";
 import { ProjectRootDir } from "../dirs.ts";
 import * as Path from "node:path";
+import { maybeRunCleanup } from "../database/cleanup.ts";
 
 export async function launchWithLogCollector(commandName: string, projectDir: string) {
 

@@ -1,7 +1,4 @@
 
-# 1.0.0
-  - Initial 1.x release, moved to new repo.
-
 # 0.7.0
 
   - Code rewrite.
@@ -10,6 +7,7 @@
   - Remove code for port assignment.
   - Build tools: switch to ESbuild and PNPM.
   - Various fixes for more sensible default behavior.
+  - Cleanup old logs on a regular interval.
  
 # 0.6.1
 
