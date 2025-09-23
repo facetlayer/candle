@@ -212,7 +212,6 @@ export function printError(error: Error) {
 
 // Run main function when called as CLI script
 main().catch(error => {
-    console.error('Error in main: ', error);
     printError(error);
     process.exit(1);
 });

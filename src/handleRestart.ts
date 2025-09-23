@@ -15,10 +15,10 @@ export async function handleRestart(options: RestartOptions) {
 
     try {
         // First kill the existing process
-        const killResult = await handleKill({ commandName });
+        await handleKill({ commandName });
         
         // Then start it again
-        const runOutput = await handleRun({ 
+        await handleRun({ 
             commandName, 
             consoleOutputFormat,
             watchLogs,

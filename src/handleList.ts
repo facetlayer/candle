@@ -1,6 +1,4 @@
-import * as Db from './database/database.ts';
-import { findConfigFile, getAllServiceNames, getServiceCwd } from './configFile.ts';
-import * as path from 'path';
+import { findConfigFile } from './configFile.ts';
 import { findAllProcesses, findProcessesByProjectDir } from './database/processTable.ts';
 
 export interface ListOutput {

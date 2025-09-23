@@ -27,6 +27,7 @@ export function findProjectDir(cwd: string = process.cwd()): string {
 }
 
 export function findConfigFile(currentDir: string): { config: CandleSetupConfig, projectDir: string } | null {
+    const startingDir = currentDir;
     currentDir = currentDir ? path.resolve(currentDir) : process.cwd();
     
     while (true) {
@@ -51,7 +52,7 @@ export function findConfigFile(currentDir: string): { config: CandleSetupConfig,
         currentDir = parentDir;
     }
     
-    return null;
+    throw new MissingSetupFileError(startingDir);
 }
 
 export function validateConfig(config: CandleSetupConfig): void {
@@ -171,9 +172,6 @@ function findLooseCommandName(commandName: string, config: CandleSetupConfig, pr
 
 export function getServiceConfigByName(commandName?: string, currentDir?: string): FoundServiceConfig | null {
     const foundConfig = findConfigFile(currentDir);
-    if (!foundConfig) {
-        throw new MissingSetupFileError(currentDir);
-    }
 
     const { config, projectDir } = foundConfig;
 
