@@ -256,7 +256,7 @@ export async function serveMCP() {
   );
 
   // Register tool list handler
-  server.setRequestHandler(ListToolsRequestSchema, async request => {
+  server.setRequestHandler(ListToolsRequestSchema, async (request: any) => {
     infoLog('MCP: Received ListTools request:', request);
     const response = {
       tools: toolDefinitions.map(tool => ({
@@ -271,7 +271,7 @@ export async function serveMCP() {
   });
 
   // Register tool call handler
-  server.setRequestHandler(CallToolRequestSchema, async request => {
+  server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     const { name, arguments: args } = request.params;
     infoLog('MCP: Received CallTool request:', request);
 

@@ -7,7 +7,6 @@ export interface AddServerConfigArgs {
   name: string;
   shell: string;
   root?: string;
-  env?: Record<string, string>;
 }
 
 export function addServerConfig(args: AddServerConfigArgs, startDir: string = process.cwd()): void {
@@ -15,7 +14,7 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
 
   // Read existing config
   const content = fs.readFileSync(configPath, 'utf8');
-  const config = JSON.parse(content) as CandleSetupConfig;
+  const config = validateConfig(JSON.parse(content) as CandleSetupConfig);
 
   // Check if service name already exists
   if (config.services.some(service => service.name === args.name)) {
@@ -27,7 +26,6 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
     name: args.name,
     shell: args.shell,
     ...(args.root && { root: args.root }),
-    ...(args.env && { env: args.env }),
   };
 
   // Add new service to config

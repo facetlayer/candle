@@ -24,7 +24,6 @@ function parseArgs(): {
   mcp: boolean;
   shell?: string;
   root?: string;
-  env?: Record<string, string>;
   message?: string;
   timeout?: number;
 } {
@@ -82,10 +81,6 @@ function parseArgs(): {
           .option('root', {
             describe: 'Root directory for the service',
             type: 'string',
-          })
-          .option('env', {
-            describe: 'Environment variables as JSON string',
-            type: 'string',
           });
       }
     )
@@ -104,11 +99,10 @@ function parseArgs(): {
   const mcp = argv.mcp as boolean;
   const shell = argv.shell as string;
   const root = argv.root as string;
-  const env = argv.env ? JSON.parse(argv.env as string) : undefined;
   const message = argv.message as string;
   const timeout = argv.timeout as number;
 
-  return { command, commandName, commandNames, mcp, shell, root, env, message, timeout };
+  return { command, commandName, commandNames, mcp, shell, root, message, timeout };
 }
 
 export async function main(): Promise<void> {
@@ -119,7 +113,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandName, commandNames, mcp, shell, root, env, message, timeout } =
+  const { command, commandName, commandNames, mcp, shell, root, message, timeout } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -213,7 +207,6 @@ export async function main(): Promise<void> {
           name: commandName,
           shell: shell,
           root: root,
-          env: env,
         });
         console.log(`Service '${commandName}' added successfully to .candle-setup.json`);
       } catch (error) {

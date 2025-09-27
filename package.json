@@ -12,7 +12,6 @@
     "build": "pnpm run build:esbuild",
     "build:esbuild": "node esbuild.config.js",
     "dev": "node --watch src/main-cli.ts",
-    "dev:daemon": "node --watch src/main-daemon.ts",
     "tsc": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
