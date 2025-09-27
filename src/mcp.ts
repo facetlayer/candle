@@ -1,4 +1,3 @@
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -7,13 +6,13 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { infoLog } from './logs.ts';
-import { handleRun } from './handleRun.ts';
-import { handleKill } from './handleKill.ts';
-import { handleRestart } from './handleRestart.ts';
-import { handleList } from './handleList.ts';
 import { addServerConfig } from './addServerConfig.ts';
+import { handleKill } from './handleKill.ts';
+import { handleList } from './handleList.ts';
 import { handleLogs } from './handleLogs.ts';
+import { handleRestart } from './handleRestart.ts';
+import { handleRun } from './handleRun.ts';
+import { infoLog } from './logs.ts';
 
 // Console.log wrapper for collecting logs
 class ConsoleLogWrapper {
@@ -23,11 +22,11 @@ class ConsoleLogWrapper {
 
   wrap() {
     if (this.isWrapped) return;
-    
+
     console.log = (...args: any[]) => {
-      const logMessage = args.map(arg => 
-        typeof arg === 'string' ? arg : JSON.stringify(arg)
-      ).join(' ');
+      const logMessage = args
+        .map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+        .join(' ');
       this.collectedLogs.push(logMessage);
       this.originalConsoleLog(...args);
     };
@@ -56,7 +55,6 @@ async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
   try {
     result = await handler(args);
   } catch (e) {
-    console.error('Uncaught error: ', e);
     error = e;
   } finally {
     logWrapper.reset();
@@ -103,7 +101,7 @@ const toolDefinitions: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args) => {
+    handler: async args => {
       const showAll = args?.showAll as boolean | undefined;
       const listOutput = await handleList({ showAll });
       return listOutput;
@@ -126,7 +124,7 @@ const toolDefinitions: ToolDefinition[] = [
       },
       required: ['name'],
     },
-    handler: async (args) => {
+    handler: async args => {
       const result = await handleLogs({
         commandName: args?.name as string,
         limit: args?.limit ?? DEFAULT_LOGS_LIMIT,
@@ -142,11 +140,12 @@ const toolDefinitions: ToolDefinition[] = [
       properties: {
         name: {
           type: 'string',
-          description: 'Name of the service to start (optional - uses default service if not provided)',
+          description:
+            'Name of the service to start (optional - uses default service if not provided)',
         },
       },
     },
-    handler: async (args) => {
+    handler: async args => {
       const result = await handleRun({
         commandName: args?.name as string,
         watchLogs: false,
@@ -163,11 +162,12 @@ const toolDefinitions: ToolDefinition[] = [
       properties: {
         name: {
           type: 'string',
-          description: 'Name of the service to kill (optional - uses default service if not provided)',
+          description:
+            'Name of the service to kill (optional - uses default service if not provided)',
         },
       },
     },
-    handler: async (args) => {
+    handler: async args => {
       await handleKill({
         commandName: args?.name as string,
       });
@@ -181,11 +181,12 @@ const toolDefinitions: ToolDefinition[] = [
       properties: {
         name: {
           type: 'string',
-          description: 'Name of the service to restart (optional - uses default service if not provided)',
+          description:
+            'Name of the service to restart (optional - uses default service if not provided)',
         },
       },
     },
-    handler: async (args) => {
+    handler: async args => {
       const result = await handleRestart({
         commandName: args?.name as string,
         consoleOutputFormat: 'pretty',
@@ -215,19 +216,19 @@ const toolDefinitions: ToolDefinition[] = [
       },
       required: ['name', 'shell'],
     },
-    handler: async (args) => {
+    handler: async args => {
       const { name, shell, root } = args;
-      
+
       if (!name || !shell) {
         throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
       }
-      
+
       addServerConfig({
-          name,
-          shell,
-          root,
+        name,
+        shell,
+        root,
       });
-        
+
       console.log(`Service '${name}' added successfully to .candle-setup.json`);
     },
   },
@@ -237,7 +238,7 @@ export async function serveMCP() {
   infoLog('MCP: Starting MCP server');
 
   const packageInfo = await import('../package.json');
-  
+
   // Create server with proper initialization
   const server = new Server(
     {
@@ -248,13 +249,14 @@ export async function serveMCP() {
       capabilities: {
         tools: {},
       },
-      instructions: 'Tool for running and managing local dev servers. Use this when launching any local servers, including '
-      + 'web servers, APIs, and other services.',
+      instructions:
+        'Tool for running and managing local dev servers. Use this when launching any local servers, including ' +
+        'web servers, APIs, and other services.',
     }
   );
 
   // Register tool list handler
-  server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+  server.setRequestHandler(ListToolsRequestSchema, async request => {
     infoLog('MCP: Received ListTools request:', request);
     const response = {
       tools: toolDefinitions.map(tool => ({
@@ -269,7 +271,7 @@ export async function serveMCP() {
   });
 
   // Register tool call handler
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async request => {
     const { name, arguments: args } = request.params;
     infoLog('MCP: Received CallTool request:', request);
 
@@ -280,7 +282,6 @@ export async function serveMCP() {
     }
 
     const callResult = await callWrapped(tool.handler, args);
-    console.error(`MCP: Responding to ${name}:`, callResult);
     return callResult;
   });
 
@@ -291,5 +292,5 @@ export async function serveMCP() {
 }
 
 export async function main(): Promise<void> {
-    await serveMCP();
+  await serveMCP();
 }

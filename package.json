@@ -1,6 +1,6 @@
 {
   "name": "@facetlayer/candle",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "type": "module",
   "main": "dist/main-cli.js",
@@ -16,7 +16,8 @@
     "tsc": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepare": "pnpm run build"
+    "prepare": "pnpm run build",
+    "format": "prettier --write 'src/**/*.{ts,js,json}'"
   },
   "files": [
     "src",
@@ -37,6 +38,8 @@
     "@types/node": "^20.19.0",
     "@types/yargs": "17.0.33",
     "esbuild": "0.25.9",
+    "prettier": "3.6.2",
+    "prettier-plugin-organize-imports": "4.3.0",
     "tsc-watch": "^7.1.1",
     "typescript": "^5.9.2",
     "vitest": "^3.0.6"

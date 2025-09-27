@@ -1,4 +1,4 @@
 export interface LogCollectorLaunchInfo {
-    commandName: string;
-    projectDir: string;
+  commandName: string;
+  projectDir: string;
 }

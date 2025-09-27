@@ -1,41 +1,46 @@
 import { getDatabase } from './database/database.ts';
 
 interface ClearLogsCommandOptions {
-    projectDir: string;
-    commandName: string;
+  projectDir: string;
+  commandName: string;
 }
 
 export async function handleClearLogsCommand(options: ClearLogsCommandOptions): Promise<void> {
-    const { projectDir, commandName } = options;
-    const db = getDatabase();
-    
-    console.log(`Clearing logs for project: ${projectDir}`);
-    if (commandName !== 'default') {
-        console.log(`Command: ${commandName}`);
-    }
-    
-    try {
-        // Clear logs for this specific project directory and command
-        const result = db.run(`
+  const { projectDir, commandName } = options;
+  const db = getDatabase();
+
+  console.log(`Clearing logs for project: ${projectDir}`);
+  if (commandName !== 'default') {
+    console.log(`Command: ${commandName}`);
+  }
+
+  try {
+    // Clear logs for this specific project directory and command
+    const result = db.run(
+      `
             DELETE FROM process_output 
             WHERE command_name = ? AND project_dir = ?
-        `, [commandName, projectDir]);
-        
-        const clearedCount = result.changes || 0;
-        
-        if (clearedCount > 0) {
-            console.log(`✓ Cleared ${clearedCount} log entries`);
-        } else {
-            console.log('- No logs found to clear');
-        }
-        
-        // Clean up orphaned logs and optimize database
-        db.run(`DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)`);
-        db.run('VACUUM');
-        
-        console.log('\nLogs cleared successfully!');
-    } catch (error) {
-        console.error('Error clearing logs:', error);
-        process.exit(1);
+        `,
+      [commandName, projectDir]
+    );
+
+    const clearedCount = result.changes || 0;
+
+    if (clearedCount > 0) {
+      console.log(`✓ Cleared ${clearedCount} log entries`);
+    } else {
+      console.log('- No logs found to clear');
     }
+
+    // Clean up orphaned logs and optimize database
+    db.run(
+      `DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)`
+    );
+    db.run('VACUUM');
+
+    console.log('\nLogs cleared successfully!');
+  } catch (error) {
+    console.error('Error clearing logs:', error);
+    process.exit(1);
+  }
 }
