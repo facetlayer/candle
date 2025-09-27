@@ -1,8 +1,8 @@
 import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
 import { Stream } from '@facetlayer/streams';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as Path from 'path';
+import { getStateDirectory } from '../dirs';
 
 export const RunningStatus = {
   running: 1,
@@ -42,23 +42,12 @@ const schema = {
 
 let _db: SqliteDatabase;
 
-function getStateDirectory(): string {
-  // Check for environment variable first
-  if (process.env.CANDLE_DATABASE_DIR) {
-    return process.env.CANDLE_DATABASE_DIR;
-  }
-
-  // Default to ~/.candle/
-  return Path.join(os.homedir(), '.candle');
-}
-
 export function getDatabase({
   overrideDirectory,
 }: { overrideDirectory?: string } = {}): SqliteDatabase {
   if (!_db) {
     const stateDir = overrideDirectory ?? getStateDirectory();
 
-    // Ensure the directory exists
     if (!fs.existsSync(stateDir)) {
       fs.mkdirSync(stateDir, { recursive: true });
     }

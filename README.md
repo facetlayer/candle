@@ -251,7 +251,7 @@ everything on the system.
 
 ### `candle clear-database`
 
-Delete the database stored in `~/.candle`.
+Delete the database stored in `~/.local/state/candle`.
 
 This command can help if the database is corrupted or it needs a full SQL schema rebuild.
 
@@ -261,7 +261,7 @@ those processes yourself.
 
 # Technical Details
 
-When running, Candle will create an SQLite database located at `~/.candle/candle.db`. This database
+When running, Candle will create an SQLite database located at `~/.local/state/candle/candle.db`. This database
 stores a table of actively running processes, and another table of all the observed log events (from
 stdout / stderr and subprocess related events).
 
@@ -269,4 +269,3 @@ stdout / stderr and subprocess related events).
 
 Setting the `CANDLE_ENABLE_LOGS` environment variable to `1` will enable writing to a local `candle.log` file,
 this will show logs for all MCP requests and responses.
-

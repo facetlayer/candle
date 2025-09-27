@@ -64,7 +64,7 @@ function parseArgs(): {
         });
     })
     .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})
-    .command('erase-database', 'Erase the database stored at ~/.candle', () => {})
+    .command('erase-database', 'Erase the database stored at ~/.local/state/candle', () => {})
     .command(
       'add-service <name> <shell>',
       'Add a new service to .candle-setup.json',
