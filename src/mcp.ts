@@ -15,27 +15,27 @@ import { handleRun } from './handleRun.ts';
 import { infoLog } from './logs.ts';
 
 // Console.log wrapper for collecting logs
-class ConsoleLogWrapper {
+class ConsoleLogInterceptor {
   private collectedLogs: string[] = [];
   private originalConsoleLog = console.log;
-  private isWrapped = false;
+  private isInstalled = false;
 
-  wrap() {
-    if (this.isWrapped) return;
+  install() {
+    if (this.isInstalled) return;
 
     console.log = (...args: any[]) => {
       const logMessage = args
         .map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
         .join(' ');
       this.collectedLogs.push(logMessage);
-      this.originalConsoleLog(...args);
     };
-    this.isWrapped = true;
+
+    this.isInstalled = true;
   }
 
-  reset() {
+  remove() {
     console.log = this.originalConsoleLog;
-    this.isWrapped = false;
+    this.isInstalled = false;
   }
 
   takeLogs(): string[] {
@@ -46,8 +46,8 @@ class ConsoleLogWrapper {
 }
 
 async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
-  const logWrapper = new ConsoleLogWrapper();
-  logWrapper.wrap();
+  const logWrapper = new ConsoleLogInterceptor();
+  logWrapper.install();
 
   let result: any = undefined;
   let error: any = undefined;
@@ -57,7 +57,7 @@ async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
   } catch (e) {
     error = e;
   } finally {
-    logWrapper.reset();
+    logWrapper.remove();
   }
 
   if (error) {
@@ -287,6 +287,15 @@ export async function serveMCP() {
 
   // Create transport and connect
   const transport = new StdioServerTransport();
+
+  // Shut down the process when stdin is closed.
+  // The transport doesn't seem to automatically listen to 'stdin' close events..
+  process.stdin.on('close', async () => {
+    infoLog('MCP: stdin closed');
+    await transport.close();
+    process.exit(0);
+  });
+
   await server.connect(transport);
   infoLog('MCP: Server launched and connected');
 }

@@ -39,6 +39,9 @@ importers:
       esbuild:
         specifier: 0.25.9
         version: 0.25.9
+      expect-mcp:
+        specifier: 0.7.0
+        version: 0.7.0(vitest@3.2.4(@types/node@20.19.0))
       prettier:
         specifier: 3.6.2
         version: 3.6.2
@@ -579,6 +582,12 @@ packages:
   expand-template@2.0.3:
     resolution: {integrity: sha512-XYfuKMvj4O35f/pOXLObndIRvyQ+/+6AhODh+OKWj9S9498pHHn/IMszH+gt0fBCRWMNfk1ZSp5x3AifmnI2vg==}
     engines: {node: '>=6'}
+
+  expect-mcp@0.7.0:
+    resolution: {integrity: sha512-YNwalH8A6w1RCm43sR+WlXPUWgcP6pWUh5cr2vpCT8dZiOL3KOlxxWqF4srO/JAJC2XNCbbpnBgknAPin1AriQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      vitest: ^1.5.0
 
   expect-type@1.2.2:
     resolution: {integrity: sha512-JhFGDVJ7tmDJItKhYgJCGLOWjuK9vPxiXoUFLwLDc99NlmklilbiQJwoctZtt13+xMw91MCk/REan6MWHqDjyA==}
@@ -1171,6 +1180,9 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.1.11:
+    resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.25.9':
@@ -1621,6 +1633,12 @@ snapshots:
       eventsource-parser: 3.0.5
 
   expand-template@2.0.3: {}
+
+  expect-mcp@0.7.0(vitest@3.2.4(@types/node@20.19.0)):
+    dependencies:
+      '@facetlayer/parse-stdout-lines': 1.0.0
+      vitest: 3.2.4(@types/node@20.19.0)
+      zod: 4.1.11
 
   expect-type@1.2.2: {}
 
@@ -2229,3 +2247,5 @@ snapshots:
       zod: 3.25.76
 
   zod@3.25.76: {}
+
+  zod@4.1.11: {}
