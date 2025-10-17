@@ -282,7 +282,41 @@ export async function serveMCP() {
     }
 
     const callResult = await callWrapped(tool.handler, args);
-    return callResult;
+
+    // Convert the wrapped result to MCP tool response format
+    const content: any[] = [];
+
+    // Add logs as text content if present
+    if (callResult.logs && callResult.logs.length > 0) {
+      content.push({
+        type: 'text',
+        text: callResult.logs.join('\n')
+      });
+    }
+
+    // Add result or error
+    if (callResult.error) {
+      content.push({
+        type: 'text',
+        text: `Error: ${callResult.error.message}`
+      });
+      return {
+        content,
+        isError: true
+      };
+    } else {
+      // Add result as structured content
+      if (callResult.result !== undefined) {
+        content.push({
+          type: 'text',
+          text: JSON.stringify(callResult.result, null, 2)
+        });
+      }
+      return {
+        content,
+        isError: false
+      };
+    }
   });
 
   // Create transport and connect

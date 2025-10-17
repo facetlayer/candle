@@ -7,5 +7,6 @@ export default defineConfig({
         environment: 'node',
         testTimeout: 30000, // 30 seconds for subprocess tests
         hookTimeout: 10000,
+        setupFiles: ['test/setup.ts'],
     },
 });

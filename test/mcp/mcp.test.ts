@@ -1,4 +1,3 @@
-import 'expect-mcp/vitest-setup';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -29,7 +28,7 @@ async function runCandleCommand(args: string[], options: { cwd?: string } = {}):
     };
 }
 
-describe('MCP StartService Tests', () => {
+describe('MCP Integration Tests', () => {
     let app: MCPStdinSubprocess;
 
     beforeAll(() => {
@@ -43,6 +42,10 @@ describe('MCP StartService Tests', () => {
     afterEach(async () => {
         // Kill all services first before closing the MCP server
         await runCandleCommand(['kill-all']).catch(() => {});
+        // Close the MCP app if it's still open
+        if (app) {
+            await app.close();
+        }
     });
 
     it('can start and use a service (default service)', async () => {
@@ -62,21 +65,30 @@ describe('MCP StartService Tests', () => {
         // Call StartService
         const result = await app.callTool('StartService', {});
 
-        expect(result.logs).toBeDefined();
-        expect(result.logs[0]).toContain('Started');
-        expect(result.logs[0]).toContain('node simpleServer.js');
+        // Check that the call was successful
+        await expect(result).toBeSuccessful();
+
+        // Get the text content from the result
+        const resultText = result.getTextContent();
+        expect(resultText).toContain('Started');
+        expect(resultText).toContain('node simpleServer.js');
 
         // Check ListServices
-        const listServices = await app.callTool('ListServices');
-        expect(listServices.result.processes.length).toEqual(1);
-        expect(listServices.result.processes[0].serviceName).toEqual('web');
+        const listServices = await app.callTool('ListServices', {});
+        await expect(listServices).toBeSuccessful();
+        const listResult = JSON.parse(listServices.getTextContent());
+        expect(listResult.processes.length).toEqual(1);
+        expect(listResult.processes[0].serviceName).toEqual('web');
 
         // Check logs
-        const getLogs = await app.callTool('GetLogs', { serviceName: 'web' });
-        expect(getLogs.logs.length).toBeGreaterThan(0);
+        const getLogs = await app.callTool('GetLogs', { name: 'web' });
+        await expect(getLogs).toBeSuccessful();
+        const logsText = getLogs.getTextContent();
+        expect(logsText).toBeTruthy();
 
-        const killService = await app.callTool('KillService', { serviceName: 'web' });
-        expect(killService.logs.length).toBeGreaterThan(0);
+        // Kill the service
+        const killService = await app.callTool('KillService', { name: 'web' });
+        await expect(killService).toBeSuccessful();
 
         await app.close();
     });
@@ -99,8 +111,103 @@ describe('MCP StartService Tests', () => {
         });
 
         // Should return error in response
-        expect(result.error).toBeDefined();
-        expect(result.error.message).toContain('nonexistent-service');
+        expect(result.isError).toBe(true);
+        const errorText = result.getTextContent();
+        expect(errorText).toContain('nonexistent-service');
+
+        await app.close();
+    });
+
+    it('should list all available tools', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Verify all expected tools are available
+        await expect(app).toHaveTools([
+            'ListServices',
+            'GetLogs',
+            'StartService',
+            'KillService',
+            'RestartService',
+            'AddServerConfig'
+        ]);
+
+        await app.close();
+    });
+
+    it('should restart a running service', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Start a service first
+        const startResult = await app.callTool('StartService', { name: 'web' });
+        await expect(startResult).toBeSuccessful();
+
+        // Wait a bit for the service to be running
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Restart the service
+        const restartResult = await app.callTool('RestartService', { name: 'web' });
+        await expect(restartResult).toBeSuccessful();
+
+        // The restart operation itself succeeding is the main test
+        // The service may or may not still be running depending on timing
+        await expect(restartResult).toMatchTextContent(/Started|Restarted/);
+
+        await app.close();
+    });
+
+    it('should support ListServices with showAll parameter', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Start a service
+        await app.callTool('StartService', {});
+
+        // List with showAll: true
+        const listResult = await app.callTool('ListServices', { showAll: true });
+        await expect(listResult).toBeSuccessful();
+
+        // List with showAll: false
+        const listResult2 = await app.callTool('ListServices', { showAll: false });
+        await expect(listResult2).toBeSuccessful();
+
+        await app.close();
+    });
+
+    it('should get logs with custom limit', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Start a service
+        await app.callTool('StartService', {});
+
+        // Wait for some logs to be generated
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Get logs with a limit
+        const logsResult = await app.callTool('GetLogs', { name: 'web', limit: 10 });
+        await expect(logsResult).toBeSuccessful();
 
         await app.close();
     });

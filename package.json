@@ -36,7 +36,7 @@
     "@types/node": "^20.19.0",
     "@types/yargs": "17.0.33",
     "esbuild": "0.25.9",
-    "expect-mcp": "0.7.0",
+    "expect-mcp": "0.8.0",
     "prettier": "3.6.2",
     "prettier-plugin-organize-imports": "4.3.0",
     "tsc-watch": "^7.1.1",
