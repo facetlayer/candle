@@ -167,7 +167,6 @@ export async function main(): Promise<void> {
         consoleOutputFormat: 'pretty',
         watchLogs: true,
       });
-      process.exit(0);
       break;
     }
     case 'logs': {

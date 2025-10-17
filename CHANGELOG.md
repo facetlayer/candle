@@ -1,6 +1,8 @@
 
 # 0.8.0
   - Changed the storage directory to ~/.local/state/candle
+  - Fixed issues with MCP output format
+  - Add expect-mcp tests
 
 # 0.7.1
   - When parsing the config file, allow 'services' to be an object instead of an array.

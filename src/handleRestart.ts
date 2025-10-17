@@ -10,7 +10,6 @@ interface RestartOptions {
 
 export async function handleRestart(options: RestartOptions) {
   const { commandName, consoleOutputFormat, watchLogs } = options;
-  const { projectDir } = getServiceConfigByName(commandName);
 
   try {
     // First kill the existing process
@@ -23,7 +22,6 @@ export async function handleRestart(options: RestartOptions) {
       watchLogs,
     });
 
-    console.log(`Service '${commandName}' restarted successfully`);
   } catch (error) {
     console.error(`Failed to restart: ${error.message}`);
   }
