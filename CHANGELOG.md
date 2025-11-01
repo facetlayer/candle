@@ -1,4 +1,7 @@
 
+# Unreleased
+ - Bug fixes for loading the config file and 'kill' with no args.
+ 
 # 0.8.0
   - Changed the storage directory to ~/.local/state/candle
   - Fixed issues with MCP output format

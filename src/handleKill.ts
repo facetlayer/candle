@@ -1,4 +1,4 @@
-import { getServiceConfigByName } from './configFile.ts';
+import { findProjectDir, getServiceConfigByName } from './configFile.ts';
 import {
   deleteProcessEntry,
   findAllProcesses,
@@ -15,21 +15,34 @@ interface KillCommandOptions {
 }
 
 export async function handleKill(options: KillCommandOptions) {
-  const { projectDir, serviceConfig } = getServiceConfigByName(options.commandName);
   const allLocalServices = !options.commandName;
 
   // Find running processes using projectDir and commandName
+  let projectDir: string;
+  let serviceName: string | undefined;
+
+  if (options.allGlobalServices) {
+    // When killing all global services, we don't need projectDir or service config
+  } else if (allLocalServices) {
+    // When killing all local services, we only need the projectDir
+    projectDir = findProjectDir();
+  } else {
+    // When killing a specific service, get the service config
+    const foundConfig = getServiceConfigByName(options.commandName);
+    projectDir = foundConfig.projectDir;
+    serviceName = foundConfig.serviceConfig.name;
+  }
 
   const runningProcesses = options.allGlobalServices
     ? findAllProcesses()
     : allLocalServices
       ? findProcessesByProjectDir(projectDir)
-      : findProcessesByCommandNameAndProjectDir(serviceConfig.name, projectDir);
+      : findProcessesByCommandNameAndProjectDir(serviceName!, projectDir);
 
   let killedProcessCount = 0;
 
   for (const process of runningProcesses) {
-    if (!allLocalServices && process.command_name !== serviceConfig.name) {
+    if (!allLocalServices && process.command_name !== serviceName) {
       continue;
     }
 
@@ -81,7 +94,7 @@ export async function handleKill(options: KillCommandOptions) {
       console.log(`No running processes found in project '${projectDir}'`);
     } else {
       console.log(
-        `No running processes found for service '${serviceConfig.name}' in project '${projectDir}'`
+        `No running processes found for service '${serviceName}' in project '${projectDir}'`
       );
     }
   }

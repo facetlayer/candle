@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Candle Process Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Candle Process Manager</h1>
+      <div class="controls">
+        <label>
+          <input type="checkbox" id="showAll"> Show all processes
+        </label>
+        <button id="refresh">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="processes-section">
+        <h2>Running Processes</h2>
+        <div id="processes-list" class="processes-list"></div>
+      </div>
+
+      <div class="logs-section">
+        <h2>Logs</h2>
+        <div class="logs-header">
+          <span id="logs-service-name">Select a process to view logs</span>
+          <button id="clear-logs">Clear Display</button>
+        </div>
+        <div id="logs-content" class="logs-content"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -20,6 +20,7 @@ const commonConfig = {
 };
 
 const entryPoints = [
+  'src/index.ts',
   'src/main-cli.ts',
   'src/main-log-collector.ts',
 ];

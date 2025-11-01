@@ -20,7 +20,7 @@ export interface CandleSetupConfig {
 export function findProjectDir(cwd: string = process.cwd()): string {
   const setupResult = findConfigFile(cwd);
   if (setupResult) {
-    return path.dirname(setupResult.projectDir);
+    return setupResult.projectDir;
   }
 
   throw new MissingSetupFileError(cwd);

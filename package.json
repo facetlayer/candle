@@ -3,13 +3,21 @@
   "version": "0.8.0",
   "license": "MIT",
   "type": "module",
-  "main": "dist/main-cli.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "candle": "dist/main-cli.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": "./dist/main-cli.js"
+  },
   "scripts": {
     "typecheck": "tsc -p .",
-    "build": "node esbuild.config.js",
+    "build": "node esbuild.config.js && dts-bundle-generator -o dist/index.d.ts src/index.ts --no-check",
     "dev": "node --watch src/main-cli.ts",
     "tsc": "tsc",
     "test": "vitest run",
@@ -35,6 +43,7 @@
   "devDependencies": {
     "@types/node": "^20.19.0",
     "@types/yargs": "17.0.33",
+    "dts-bundle-generator": "9.5.1",
     "esbuild": "0.25.9",
     "expect-mcp": "0.8.0",
     "prettier": "3.6.2",

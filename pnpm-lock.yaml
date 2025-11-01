@@ -36,12 +36,15 @@ importers:
       '@types/yargs':
         specifier: 17.0.33
         version: 17.0.33
+      dts-bundle-generator:
+        specifier: 9.5.1
+        version: 9.5.1
       esbuild:
         specifier: 0.25.9
         version: 0.25.9
       expect-mcp:
-        specifier: 0.7.0
-        version: 0.7.0(vitest@3.2.4(@types/node@20.19.0))
+        specifier: 0.8.0
+        version: 0.8.0(vitest@3.2.4(@types/node@20.19.0))
       prettier:
         specifier: 3.6.2
         version: 3.6.2
@@ -221,6 +224,9 @@ packages:
 
   '@facetlayer/parse-stdout-lines@1.0.0':
     resolution: {integrity: sha512-Ot877HS2DCTrrkj22+L+Er8tI4WYtCvKppqjBTvLCYfgCJmEKeR15ay6B1TugkHmy7MmSsXsuSGm0Q7TGy1deA==}
+
+  '@facetlayer/parse-stdout-lines@1.1.0':
+    resolution: {integrity: sha512-FjoSb3VDDoWAymXtfrRAGKaHMVHTx+4f8Jf58NUEFItmZ3qpOvrMl4MQM7cz9gyoI579iaKKRRQjfnsmzdXRbg==}
 
   '@facetlayer/sqlite-wrapper@0.9.1':
     resolution: {integrity: sha512-2qNERT+tuN8tr72N+iBGau9jGjntjQ40oPNdgfcDPaQYAr6ZSvKK8b7Ffl2vLp/7MBWiK++SraeMpl0KDoDaOQ==}
@@ -514,6 +520,11 @@ packages:
     resolution: {integrity: sha512-3UDv+G9CsCKO1WKMGw9fwq/SWJYbI0c5Y7LU1AXYoDdbhE2AHQ6N6Nb34sG8Fj7T5APy8qXDCKuuIHd1BR0tVA==}
     engines: {node: '>=8'}
 
+  dts-bundle-generator@9.5.1:
+    resolution: {integrity: sha512-DxpJOb2FNnEyOzMkG11sxO2dmxPjthoVWxfKqWYJ/bI/rT1rvTMktF5EKjAYrRZu6Z6t3NhOUZ0sZ5ZXevOfbA==}
+    engines: {node: '>=14.0.0'}
+    hasBin: true
+
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -583,11 +594,18 @@ packages:
     resolution: {integrity: sha512-XYfuKMvj4O35f/pOXLObndIRvyQ+/+6AhODh+OKWj9S9498pHHn/IMszH+gt0fBCRWMNfk1ZSp5x3AifmnI2vg==}
     engines: {node: '>=6'}
 
-  expect-mcp@0.7.0:
-    resolution: {integrity: sha512-YNwalH8A6w1RCm43sR+WlXPUWgcP6pWUh5cr2vpCT8dZiOL3KOlxxWqF4srO/JAJC2XNCbbpnBgknAPin1AriQ==}
+  expect-mcp@0.8.0:
+    resolution: {integrity: sha512-d4C8F4bfRuhqQws/F/bKKVZ6UdtyzhuN0RwXltrQeFh82yJQZpVtgCwIfZu8dgrqOAtsM6CbrbeMNRSNtn3GfA==}
     engines: {node: '>=18'}
+    hasBin: true
     peerDependencies:
+      jest: '*'
       vitest: ^1.5.0
+    peerDependenciesMeta:
+      jest:
+        optional: true
+      vitest:
+        optional: true
 
   expect-type@1.2.2:
     resolution: {integrity: sha512-JhFGDVJ7tmDJItKhYgJCGLOWjuK9vPxiXoUFLwLDc99NlmklilbiQJwoctZtt13+xMw91MCk/REan6MWHqDjyA==}
@@ -1267,6 +1285,8 @@ snapshots:
 
   '@facetlayer/parse-stdout-lines@1.0.0': {}
 
+  '@facetlayer/parse-stdout-lines@1.1.0': {}
+
   '@facetlayer/sqlite-wrapper@0.9.1':
     dependencies:
       '@facetlayer/generic-lexer': 1.0.0
@@ -1549,6 +1569,11 @@ snapshots:
 
   detect-libc@2.0.4: {}
 
+  dts-bundle-generator@9.5.1:
+    dependencies:
+      typescript: 5.9.2
+      yargs: 17.7.2
+
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -1634,11 +1659,12 @@ snapshots:
 
   expand-template@2.0.3: {}
 
-  expect-mcp@0.7.0(vitest@3.2.4(@types/node@20.19.0)):
+  expect-mcp@0.8.0(vitest@3.2.4(@types/node@20.19.0)):
     dependencies:
-      '@facetlayer/parse-stdout-lines': 1.0.0
-      vitest: 3.2.4(@types/node@20.19.0)
+      '@facetlayer/parse-stdout-lines': 1.1.0
       zod: 4.1.11
+    optionalDependencies:
+      vitest: 3.2.4(@types/node@20.19.0)
 
   expect-type@1.2.2: {}
 
