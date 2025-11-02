@@ -76,7 +76,7 @@ describe('MCP Integration Tests', () => {
         // Check ListServices
         const listServices = await app.callTool('ListServices', {});
         await expect(listServices).toBeSuccessful();
-        const listResult = JSON.parse(listServices.getTextContent());
+        const listResult = JSON.parse(listServices.getTextContent() ?? '[]');
         expect(listResult.processes.length).toEqual(1);
         expect(listResult.processes[0].serviceName).toEqual('web');
 

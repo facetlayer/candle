@@ -11,7 +11,7 @@ describe('Simple Candle Test', () => {
         const candlePath = getCandleBinPath();
         
         const result = await new Promise<{stdout: string, stderr: string, code: number}>((resolve) => {
-            const proc = spawn('node', ['.', '--help'], { cwd: candlePath });
+            const proc = spawn('node', ['dist/main-cli.js', '--help'], { cwd: candlePath });
             let stdout = '';
             let stderr = '';
             
@@ -22,7 +22,7 @@ describe('Simple Candle Test', () => {
                 resolve({ stdout, stderr, code: code || 0 });
             });
         });
-        
+
         expect(result.stdout).toContain('Commands:');
         expect(result.stdout).toContain('run');
         expect(result.stdout).toContain('kill');
