@@ -1,7 +1,7 @@
 import * as Path from 'node:path';
 import { getServiceConfigByName } from './configFile.ts';
 import * as Db from './database/database.ts';
-import { handleKill } from './handleKill.ts';
+import { handleKill } from './kill-command.ts';
 import { launchWithLogCollector } from './log-collector/launchWithLogCollector.ts';
 import { LogIterator } from './logs/LogIterator.ts';
 import { ProcessLogType, saveProcessLog } from './logs/processLogs.ts';
@@ -26,7 +26,7 @@ async function killExistingProcess(projectDir: string, commandName: string) {
   );
 
   for (const process of foundProcesses) {
-    await handleKill({ commandName: process.command_name });
+    await handleKill({ commandName: process.command_name, quiet: true });
   }
 }
 

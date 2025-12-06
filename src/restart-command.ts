@@ -1,6 +1,6 @@
 import { getServiceConfigByName } from './configFile.ts';
-import { handleKill } from './handleKill.ts';
-import { handleRun } from './handleRun.ts';
+import { handleKill } from './kill-command.ts';
+import { handleRun } from './run-command.ts';
 
 interface RestartOptions {
   commandName: string;

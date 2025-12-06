@@ -1,4 +1,4 @@
-import { getDatabase } from './database';
+import { getDatabase } from './database.ts';
 
 const MAX_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 const CLEANUP_INTERVAL_SECONDS = 10 * 60;

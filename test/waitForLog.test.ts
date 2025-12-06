@@ -87,19 +87,24 @@ describe('Wait for Log Functionality', () => {
     it('should timeout if message is not found within timeout period', async () => {
         // Start the delayed logger service
         await startService('delayed-logger');
-        
+
         // Wait for a message that will never appear, with a short timeout
         const result = await runCommand([
-            'wait-for-log', 
-            'delayed-logger', 
-            '--message', 
+            'wait-for-log',
+            'delayed-logger',
+            '--message',
             'This message will never appear',
             '--timeout',
             '3'
         ], { timeout: 10000 });
-        
+
         expect(result.code).toBe(1);
-        expect(result.stderr).toContain('Timeout: Message "This message will never appear" not found within 3000ms');
+        expect(result.stdout).toContain('wait-for-log failed: Timed out after 3000ms and message "This message will never appear" not found.');
+
+        // Verify that recent logs are printed on timeout to help debug
+        expect(result.stdout).toContain("Recent logs for 'delayed-logger':");
+        // The delayed logger should have printed at least the initialization message
+        expect(result.stdout).toContain('Server initializing');
     }, 15000);
     
     it('should detect message that already exists in logs', async () => {

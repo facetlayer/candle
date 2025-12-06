@@ -6,15 +6,15 @@ import { hideBin } from 'yargs/helpers';
 import { addServerConfig } from './addServerConfig.ts';
 import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
-import { handleClearDatabaseCommand } from './handleClearDatabase.ts';
-import { handleClearLogsCommand } from './handleClearLogs.ts';
-import { handleKill } from './handleKill.ts';
-import { handleList, printListOutput } from './handleList.ts';
-import { handleLogs } from './handleLogs.ts';
-import { handleRestart } from './handleRestart.ts';
-import { handleRun, handleStart } from './handleRun.ts';
-import { handleWaitForLog } from './handleWaitForLog.ts';
-import { handleWatch } from './handleWatch.ts';
+import { handleClearDatabaseCommand } from './clear-database-command.ts';
+import { handleClearLogsCommand } from './clear-logs-command.ts';
+import { handleKill } from './kill-command.ts';
+import { handleList, printListOutput } from './list-command.ts';
+import { handleLogs } from './logs-command.ts';
+import { handleRestart } from './restart-command.ts';
+import { handleRun, handleStart } from './run-command.ts';
+import { handleWaitForLog } from './wait-for-log-command.ts';
+import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp.ts';
 
 function parseArgs(): {
@@ -122,8 +122,8 @@ export async function main(): Promise<void> {
     return;
   }
 
-  // Check if --mcp flag is set - enter MCP mode
   if (mcp) {
+    // Enter MCP server mode
     await serveMCP();
     return;
   }
@@ -136,11 +136,13 @@ export async function main(): Promise<void> {
       process.exit(0);
       break;
     }
+
     case 'start': {
       await handleStart({ commandNames, consoleOutputFormat: 'pretty' });
       process.exit(0);
       break;
     }
+
     case 'list':
     case 'ls': {
       const output = await handleList({});
@@ -165,41 +167,45 @@ export async function main(): Promise<void> {
       await handleRestart({
         commandName,
         consoleOutputFormat: 'pretty',
-        watchLogs: true,
+        watchLogs: false,
       });
       break;
     }
+
     case 'logs': {
       await handleLogs({ commandName });
       break;
     }
+
     case 'watch': {
       await handleWatch({ commandName });
       break;
     }
+
     case 'wait-for-log': {
       const result = await handleWaitForLog({
         commandName: commandName || 'default',
         message,
         timeoutMs: timeout * 1000,
       });
-      if (result.success) {
-        console.log(result.message);
-        process.exit(0);
-      } else {
-        console.error(result.message);
+
+      if (!result.success) {
         process.exit(1);
       }
+
       break;
     }
+
     case 'clear-logs': {
       const projectDir = findProjectDir();
       await handleClearLogsCommand({ projectDir, commandName });
       break;
     }
+
     case 'clear-database':
       await handleClearDatabaseCommand();
       break;
+
     case 'add-service': {
       try {
         addServerConfig({
@@ -214,6 +220,7 @@ export async function main(): Promise<void> {
       }
       break;
     }
+
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(

@@ -42,7 +42,7 @@ function findOrCreateSetupFile(startDir: string): string {
   const setupResult = findConfigFile(startDir);
 
   if (setupResult) {
-    return setupResult.projectDir;
+    return path.join(setupResult.projectDir, '.candle-setup.json');
   }
 
   // Create new .candle-setup.json file in the current directory

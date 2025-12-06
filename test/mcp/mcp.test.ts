@@ -80,10 +80,17 @@ describe('MCP Integration Tests', () => {
         expect(listResult.processes.length).toEqual(1);
         expect(listResult.processes[0].serviceName).toEqual('web');
 
-        // Check logs
-        const getLogs = await app.callTool('GetLogs', { name: 'web' });
-        await expect(getLogs).toBeSuccessful();
-        const logsText = getLogs.getTextContent();
+        // Check logs - Use a retry loop in case the logs are not available yet.
+        let logsText: string | undefined;
+        for (let i = 0; i < 10; i++) {
+            const getLogs = await app.callTool('GetLogs', { name: 'web' });
+            await expect(getLogs).toBeSuccessful();
+            logsText = getLogs.getTextContent();
+            if (logsText) {
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         expect(logsText).toBeTruthy();
 
         // Kill the service
@@ -209,6 +216,44 @@ describe('MCP Integration Tests', () => {
         const logsResult = await app.callTool('GetLogs', { name: 'web', limit: 10 });
         await expect(logsResult).toBeSuccessful();
 
+        await app.close();
+    });
+
+    it('should get logs for services from different directories using projectDir', async () => {
+        // Start a service in sampleServers directory (different from MCP server cwd)
+        const sampleServersDir = path.join(__dirname, '..', 'sampleServers');
+        await runCandleCommand(['start', 'echo'], { cwd: sampleServersDir });
+        await runCandleCommand(['wait-for-log', 'echo', '--message', 'Echo server started'], {
+            cwd: sampleServersDir
+        });
+
+        // Start MCP server from TEST_PROJECT_DIR (test/mcp directory)
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR, // MCP running from mcp test dir
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // ListServices with showAll should find the echo service from sampleServers
+        const listResult = await app.callTool('ListServices', { showAll: true });
+        await expect(listResult).toBeSuccessful();
+        const listData = JSON.parse(listResult.getTextContent() ?? '{}');
+        const echoProcess = listData.processes?.find((p: any) => p.serviceName === 'echo');
+        expect(echoProcess).toBeDefined();
+
+        // GetLogs with projectDir should work for the cross-directory service
+        const logsResult = await app.callTool('GetLogs', {
+            name: 'echo',
+            projectDir: sampleServersDir
+        });
+        await expect(logsResult).toBeSuccessful();
+        const logsText = logsResult.getTextContent();
+        expect(logsText).toContain('Echo server started');
+
+        // Clean up
+        await runCandleCommand(['kill', 'echo'], { cwd: sampleServersDir });
         await app.close();
     });
 

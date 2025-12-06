@@ -1,7 +1,9 @@
 
-# 0.8.1
+# 0.9.0
+ - Update build to use build-config-nodejs
  - Show observed logs when wait-for-log fails.
- - Bug fixes for loading the config file and 'kill' with no args.
+ - 'restart' no longer enters log-watching mode.
+ - Various bug fixes
  
 # 0.8.0
   - Changed the storage directory to ~/.local/state/candle

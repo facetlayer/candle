@@ -2,7 +2,7 @@ import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
 import { Stream } from '@facetlayer/streams';
 import * as fs from 'fs';
 import * as Path from 'path';
-import { getStateDirectory } from '../dirs';
+import { getStateDirectory } from '../dirs.ts';
 
 export const RunningStatus = {
   running: 1,

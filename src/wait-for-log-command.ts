@@ -9,7 +9,7 @@ const LOG_COUNT_SEARCH_LIMIT = 1000;
 interface WaitForLogOptions {
   commandName: string;
   message: string;
-  timeoutMs?: number; // Default to 30000ms (30 seconds)
+  timeoutMs?: number;
 }
 
 export async function handleWaitForLog(options: WaitForLogOptions) {
@@ -37,19 +37,20 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   const hasProcessStarted = initialLogs.some(
     log => log.log_type === ProcessLogType.process_start_initiated
   );
+
   if (!hasProcessStarted) {
+    console.error(`Process has not started yet`);
     return {
       success: false,
-      message: 'Process has not started yet',
     };
   }
 
   // Look for the message in existing logs
   for (const logEvent of initialLogs) {
     if (logEvent.content?.includes(message)) {
+      console.log(`Found message "${message}" in existing logs.`);
       return {
         success: true,
-        message: `Found message "${message}" in existing logs.`,
       };
     }
   }
@@ -57,8 +58,38 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   // Poll for logs until we find the message or timeout
   let timeStarted = Date.now();
   while (true) {
+
     if (Date.now() - timeStarted > timeoutMs) {
-      // Print recent logs to help debug the timeout
+      // Timed out
+      console.log(`wait-for-log failed: Timed out after ${timeoutMs}ms and message "${message}" not found.`);
+      console.log(`Recent logs for '${serviceConfig.name}':`);
+      const recentLogs = getProcessLogs({
+        commandName: serviceConfig.name,
+        limit: 100,
+        limitToLatestProcessLogs: true,
+        projectDir,
+      });
+      for (const log of recentLogs) {
+        consoleLogRow('pretty', log);
+      }
+
+      return {
+        success: false,
+      };
+    }
+
+    const logs = logIterator.getNextLogs();
+    for (const log of logs) {
+      if (log.content?.includes(message)) {
+        console.log(`Found message "${message}" in logs.`);
+        return {
+          success: true,
+        };
+      }
+
+      if (log.log_type === ProcessLogType.process_exited) {
+        console.log(`wait-for-log failed: Process exited before finding message "${message}"`);
+      console.log(`Recent logs for '${serviceConfig.name}':`);
       const recentLogs = getProcessLogs({
         commandName: serviceConfig.name,
         limit: 100,
@@ -66,30 +97,11 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
         projectDir,
       });
 
-      console.error(`\nRecent logs for '${serviceConfig.name}':`);
       for (const log of recentLogs) {
         consoleLogRow('pretty', log);
       }
-
-      return {
-        success: false,
-        message: `Timeout: Message "${message}" not found within ${timeoutMs}ms`,
-      };
-    }
-
-    const logs = logIterator.getNextLogs();
-    for (const log of logs) {
-      if (log.content?.includes(message)) {
-        return {
-          success: true,
-          message: `Found message "${message}" in logs.`,
-        };
-      }
-
-      if (log.log_type === ProcessLogType.process_exited) {
         return {
           success: false,
-          message: `Process exited before finding message "${message}"`,
         };
       }
     }

@@ -7,11 +7,11 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { addServerConfig } from './addServerConfig.ts';
-import { handleKill } from './handleKill.ts';
-import { handleList } from './handleList.ts';
-import { handleLogs } from './handleLogs.ts';
-import { handleRestart } from './handleRestart.ts';
-import { handleRun } from './handleRun.ts';
+import { handleKill } from './kill-command.ts';
+import { handleList } from './list-command.ts';
+import { handleLogs } from './logs-command.ts';
+import { handleRestart } from './restart-command.ts';
+import { handleRun } from './run-command.ts';
 import { infoLog } from './logs.ts';
 
 // Console.log wrapper for collecting logs
@@ -121,6 +121,11 @@ const toolDefinitions: ToolDefinition[] = [
           type: 'number',
           description: 'Maximum number of log lines to return (optional)',
         },
+        projectDir: {
+          type: 'string',
+          description:
+            'Project directory where the service is defined (optional - for cross-directory access)',
+        },
       },
       required: ['name'],
     },
@@ -128,6 +133,7 @@ const toolDefinitions: ToolDefinition[] = [
       const result = await handleLogs({
         commandName: args?.name as string,
         limit: args?.limit ?? DEFAULT_LOGS_LIMIT,
+        projectDir: args?.projectDir as string | undefined,
       });
       return result;
     },
