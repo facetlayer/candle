@@ -58,9 +58,9 @@ function parseArgs(): {
           demandOption: true,
         })
         .option('timeout', {
-          describe: 'Timeout in seconds (default: 60)',
+          describe: 'Timeout in seconds (default: 30)',
           type: 'number',
-          default: 60,
+          default: 30,
         });
     })
     .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})

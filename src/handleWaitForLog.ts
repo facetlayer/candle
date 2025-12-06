@@ -1,6 +1,7 @@
 import { getServiceConfigByName } from './configFile.ts';
+import { consoleLogRow } from './logs.ts';
 import { LogIterator } from './logs/LogIterator.ts';
-import { ProcessLogType } from './logs/processLogs.ts';
+import { getProcessLogs, ProcessLogType } from './logs/processLogs.ts';
 
 const POLL_INTERVAL = 200;
 const LOG_COUNT_SEARCH_LIMIT = 1000;
@@ -8,11 +9,11 @@ const LOG_COUNT_SEARCH_LIMIT = 1000;
 interface WaitForLogOptions {
   commandName: string;
   message: string;
-  timeoutMs?: number; // Default to 60000ms (1 minute)
+  timeoutMs?: number; // Default to 30000ms (30 seconds)
 }
 
 export async function handleWaitForLog(options: WaitForLogOptions) {
-  const { message, timeoutMs = 60000 } = options;
+  const { message, timeoutMs = 30000 } = options;
   const { projectDir, serviceConfig } = getServiceConfigByName(options.commandName);
 
   // Get recent logs
@@ -57,6 +58,19 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   let timeStarted = Date.now();
   while (true) {
     if (Date.now() - timeStarted > timeoutMs) {
+      // Print recent logs to help debug the timeout
+      const recentLogs = getProcessLogs({
+        commandName: serviceConfig.name,
+        limit: 100,
+        limitToLatestProcessLogs: true,
+        projectDir,
+      });
+
+      console.error(`\nRecent logs for '${serviceConfig.name}':`);
+      for (const log of recentLogs) {
+        consoleLogRow('pretty', log);
+      }
+
       return {
         success: false,
         message: `Timeout: Message "${message}" not found within ${timeoutMs}ms`,

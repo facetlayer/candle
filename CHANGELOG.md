@@ -1,5 +1,6 @@
 
-# Unreleased
+# 0.8.1
+ - Show observed logs when wait-for-log fails.
  - Bug fixes for loading the config file and 'kill' with no args.
  
 # 0.8.0

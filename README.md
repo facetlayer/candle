@@ -47,15 +47,14 @@ Installing globally with `npm`:
 
 ## Installing as an MCP integration ##
 
-Installing the MCP mode will allow coding agents to use the tool.
 
-We've tested the tool primarily using Claude Code.
+### Example: Installing with Claude Code ###
 
-Adding the MCP to Claude using `npx`:
+Using `npx`:
 
     $ claude mcp add candle -s user npx -- @facetlayer/candle --mcp
 
-Installing globally and adding the command to Claude:
+Or installing the tool first:
 
     $ npm i -g @facetlayer/candle
     $ claude mcp add candle -s user candle -- --mcp
