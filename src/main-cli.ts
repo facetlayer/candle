@@ -17,17 +17,8 @@ import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp.ts';
 
-function parseArgs(): {
-  command: string;
-  commandName: string;
-  commandNames: string[];
-  mcp: boolean;
-  shell?: string;
-  root?: string;
-  message?: string;
-  timeout?: number;
-} {
-  const argv = yargs(hideBin(process.argv))
+function configureYargs() {
+  return yargs(hideBin(process.argv))
     .option('mcp', {
       type: 'boolean',
       describe: 'Enter MCP server mode',
@@ -86,8 +77,20 @@ function parseArgs(): {
     )
     .demandCommand(0, 'You need to specify a command')
     .help()
-    .version()
-    .parseSync();
+    .version();
+}
+
+function parseArgs(): {
+  command: string;
+  commandName: string;
+  commandNames: string[];
+  mcp: boolean;
+  shell?: string;
+  root?: string;
+  message?: string;
+  timeout?: number;
+} {
+  const argv = configureYargs().parseSync();
 
   const command = argv._[0] as string;
   const commandName = argv.name as string;
@@ -118,7 +121,7 @@ export async function main(): Promise<void> {
 
   // Check if no arguments - print help
   if (process.argv.length === 2) {
-    yargs(hideBin(process.argv)).showHelp();
+    configureYargs().showHelp();
     return;
   }
 
@@ -202,7 +205,7 @@ export async function main(): Promise<void> {
       break;
     }
 
-    case 'clear-database':
+    case 'erase-database':
       await handleClearDatabaseCommand();
       break;
 
@@ -224,7 +227,7 @@ export async function main(): Promise<void> {
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, clear-database, add-service'
+        'Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service'
       );
       process.exit(1);
   }

@@ -72,6 +72,39 @@ describe('Bug Fixes', () => {
       expect(updatedConfig.services[0].name).toBe('test-service');
       expect(updatedConfig.services[0].shell).toBe('echo hello');
     });
+
+    it('should create .candle-setup.json when it does not exist', async () => {
+      // Create a temporary directory without a config file
+      const tempDir = path.join(__dirname, '..', 'temp', 'add-service-no-config-test');
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      const configPath = path.join(tempDir, '.candle-setup.json');
+
+      // Verify config file does not exist
+      expect(fs.existsSync(configPath)).toBe(false);
+
+      // Try to add a service
+      const result = await runCandleCommand(['add-service', 'my-service', 'npm run dev'], {
+        cwd: tempDir,
+      });
+
+      // Should succeed (exit code 0)
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("Service 'my-service' added successfully");
+
+      // Verify the config file was created
+      expect(fs.existsSync(configPath)).toBe(true);
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      expect(config.services).toHaveLength(1);
+      expect(config.services[0].name).toBe('my-service');
+      expect(config.services[0].shell).toBe('npm run dev');
+
+      // Cleanup
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
   });
 
   describe('Bug #2: erase-database vs clear-database command mismatch', () => {

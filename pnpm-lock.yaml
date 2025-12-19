@@ -31,8 +31,8 @@ importers:
         version: 17.7.2
     devDependencies:
       '@facetlayer/build-config-nodejs':
-        specifier: ^0.3.0
-        version: 0.3.0(typescript@5.9.2)
+        specifier: ^0.3.1
+        version: 0.3.1(typescript@5.9.2)
       '@types/node':
         specifier: ^20.19.0
         version: 20.19.0
@@ -410,8 +410,8 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@facetlayer/build-config-nodejs@0.3.0':
-    resolution: {integrity: sha512-CMm3ojqMWI1hcXytnUu4VFE0zDY3Ba9kAgb602h+w335fo6xYzFkpBvgwbOjAtxeoPROGtvpbvxboXrKQHKEmA==}
+  '@facetlayer/build-config-nodejs@0.3.1':
+    resolution: {integrity: sha512-Cph1fKx6Xw3NGDmN3m2/gP7xzHdhrWrDHb9prYzsUWd9H8uzmUSAwdMfaoNWVumXNASzVFN1MLl1xC6672VXiw==}
 
   '@facetlayer/generic-lexer@1.0.0':
     resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
@@ -1955,7 +1955,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@facetlayer/build-config-nodejs@0.3.0(typescript@5.9.2)':
+  '@facetlayer/build-config-nodejs@0.3.1(typescript@5.9.2)':
     dependencies:
       '@typescript-eslint/parser': 8.48.1(eslint@9.39.1)(typescript@5.9.2)
       '@typescript-eslint/utils': 8.48.1(eslint@9.39.1)(typescript@5.9.2)

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { CandleSetupConfig, ServiceConfig } from './configFile.ts';
 import { findConfigFile, validateConfig } from './configFile.ts';
+import { MissingSetupFileError } from './errors.ts';
 
 export interface AddServerConfigArgs {
   name: string;
@@ -39,10 +40,13 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
 }
 
 function findOrCreateSetupFile(startDir: string): string {
-  const setupResult = findConfigFile(startDir);
-
-  if (setupResult) {
+  try {
+    const setupResult = findConfigFile(startDir);
     return path.join(setupResult.projectDir, '.candle-setup.json');
+  } catch (error) {
+    if (!(error instanceof MissingSetupFileError)) {
+      throw error;
+    }
   }
 
   // Create new .candle-setup.json file in the current directory

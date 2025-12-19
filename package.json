@@ -23,7 +23,6 @@
     "tsc": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepare": "pnpm run build",
     "format": "prettier --write 'src/**/*.{ts,js,json}'"
   },
   "files": [
@@ -42,7 +41,7 @@
     "yargs": "17.7.2"
   },
   "devDependencies": {
-    "@facetlayer/build-config-nodejs": "^0.3.0",
+    "@facetlayer/build-config-nodejs": "^0.3.1",
     "@types/node": "^20.19.0",
     "@types/yargs": "17.0.33",
     "expect-mcp": "0.8.0",
