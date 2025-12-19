@@ -25,7 +25,7 @@ export class MissingSetupFileError extends Error {
   isUsageError = true;
 
   constructor(cwd: string) {
-    super(`No .candle-setup.json file found in (or above) current directory: ${cwd}`);
+    super(`No .candle.json or .candle-setup.json file found in (or above) current directory: ${cwd}`);
     this.name = 'MissingSetupFile';
     this.cwd = cwd;
   }

@@ -1,16 +1,27 @@
 # Config File Behavior
 
-This document describes how Candle finds and loads the `.candle-setup.json` configuration file.
+This document describes how Candle finds and loads configuration files.
+
+## Config Filenames
+
+Candle supports two config filenames:
+- `.candle.json` (preferred, checked first)
+- `.candle-setup.json` (deprecated, checked second for backwards compatibility)
+
+When creating a new config file (e.g., via `add-service`), Candle uses `.candle.json` by default.
+
+Note: `.candle-setup.json` is deprecated. New projects should use `.candle.json`. Existing projects using `.candle-setup.json` will continue to work, but consider renaming to `.candle.json`.
 
 ## Finding the Config File
 
 Candle uses the `findConfigFile` function (in `src/configFile.ts`) to locate the configuration file. The search behavior is:
 
 1. Start from the current working directory (or a specified directory)
-2. Look for a `.candle-setup.json` file in that directory
-3. If not found, move to the parent directory and repeat
-4. Continue until either:
-   - A `.candle-setup.json` file is found, OR
+2. Look for `.candle.json` in that directory
+3. If not found, look for `.candle-setup.json` in that directory
+4. If neither is found, move to the parent directory and repeat
+5. Continue until either:
+   - A config file is found, OR
    - The filesystem root is reached
 
 ## When Errors Are Thrown
@@ -19,7 +30,7 @@ Candle uses the `findConfigFile` function (in `src/configFile.ts`) to locate the
 
 The `MissingSetupFileError` is thrown when:
 
-- No `.candle-setup.json` file exists in the current directory or any parent directory
+- No config file (`.candle.json` or `.candle-setup.json`) exists in the current directory or any parent directory
 - The command being run requires a config file (e.g., `run`, `start`, `list`, `kill`, etc.)
 
 This error is thrown by `findConfigFile` and `findProjectDir` functions.
@@ -41,9 +52,11 @@ The `ConfigFileError` is thrown when:
 The `add-service` command has special handling. When no config file exists:
 
 1. The `findOrCreateSetupFile` function (in `src/addServerConfig.ts`) catches the `MissingSetupFileError`
-2. Instead of failing, it creates a new `.candle-setup.json` file in the current directory
+2. Instead of failing, it creates a new `.candle.json` file in the current directory
 3. The new config file is initialized with an empty services array: `{ "services": [] }`
 4. The requested service is then added to this new config file
+
+When a config file already exists (either `.candle.json` or `.candle-setup.json`), the service is added to the existing file.
 
 This allows users to quickly set up a new project without manually creating the config file first.
 

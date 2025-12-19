@@ -235,7 +235,7 @@ const toolDefinitions: ToolDefinition[] = [
         root,
       });
 
-      console.log(`Service '${name}' added successfully to .candle-setup.json`);
+      console.log(`Service '${name}' added successfully to .candle.json`);
     },
   },
 ];

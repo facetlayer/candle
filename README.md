@@ -64,12 +64,13 @@ depending on whether you've installed the tool using `npm -g`.
 
 # Setting Up #
 
-The main setup file is stored in `.candle-setup.json`. This file should be in the root directory of your project.
+The main setup file is stored in `.candle.json`. This file should be in the root directory of your project.
 
-When you trigger `candle`, it will find the nearest `.candle-setup.json`, which can either be in the current
-directory or a parent directory. Triggering `candle` inside a subdirectory in your project will work fine.
+Note: The filename `.candle-setup.json` is deprecated but still supported for backwards compatibility. New projects should use `.candle.json`.
 
-Example .candle-setup.json file:
+When you trigger `candle`, it will find the nearest config file (checking `.candle.json` first, then `.candle-setup.json`), which can either be in the current directory or a parent directory. Triggering `candle` inside a subdirectory in your project will work fine.
+
+Example .candle.json file:
 
 ```
 {
@@ -89,7 +90,7 @@ Details for one 'services' entry:
 | `shell`   | The shell command to run when launching the service. |
 | `root`    | (Optional) The current working directory to use when launching the service. |
 
-Tip: The MCP integration provides a command `AddServerConfig` which will update or create the .candle-setup.json file.
+Tip: The MCP integration provides a command `AddServerConfig` which will update or create the config file.
 So, you can tell your coding agent (such as Claude Code) to set up this configuration file.
 
 # MCP Usage #
@@ -106,7 +107,7 @@ Here are the MCP tools available:
 
 | name | description |
 | -------------- | ------------------------------------------------- |
-| AddServerConfig     | Saves a new server configuration to .candle-setup.json |
+| AddServerConfig     | Saves a new server configuration to .candle.json |
 | StartService   | Start the service for the current directory. |
 | GetLogs        | List the recent stdout & stderr logs for the locally running service |
 | KillService    | Kill the running service process.    |
@@ -125,7 +126,7 @@ List all CLI commands.
 
 Launch the process and start watching logs.
 
-If `[name]` is not provided: Run the first command listed in .candle-setup.json
+If `[name]` is not provided: Run the first command listed in the config file
 
 Candle does not run the same service more than once. If this command is already running,
 then `run` will first perform `restart` to kill the current process and restart it.
@@ -147,7 +148,7 @@ List the active processes for this project directory.
 Enter watch mode for the given running service. This will interactively print any log messages from the service
 as they happen.
 
-If `[name]` is not provided: Watch the first command listed in .candle-setup.json
+If `[name]` is not provided: Watch the first command listed in the config file
 
 If the service is not currently running then `watch` will show an error.
 
@@ -159,7 +160,7 @@ logs and then exit. (unlike `watch` which will continue to print new logs).
 This command works even if the service is not running, it will show the logs that occurred
 before the exit.
 
-If `[name]` is not provided: Show logs for the first command listed in .candle-setup.json
+If `[name]` is not provided: Show logs for the first command listed in the config file
 
 ### `candle kill [name]`
 
@@ -171,7 +172,7 @@ If `[name]` is not provided: Kill all the processes for this project directory.
 
 Restart the process for this current directory.
 
-If `[name]` is not provided: Restart the first command listed in .candle-setup.json
+If `[name]` is not provided: Restart the first command listed in the config file
 
 ### `candle wait-for-log [name] --message [message]
 

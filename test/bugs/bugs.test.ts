@@ -73,7 +73,7 @@ describe('Bug Fixes', () => {
       expect(updatedConfig.services[0].shell).toBe('echo hello');
     });
 
-    it('should create .candle-setup.json when it does not exist', async () => {
+    it('should create .candle.json when no config file exists', async () => {
       // Create a temporary directory without a config file
       const tempDir = path.join(__dirname, '..', 'temp', 'add-service-no-config-test');
       if (fs.existsSync(tempDir)) {
@@ -81,7 +81,7 @@ describe('Bug Fixes', () => {
       }
       fs.mkdirSync(tempDir, { recursive: true });
 
-      const configPath = path.join(tempDir, '.candle-setup.json');
+      const configPath = path.join(tempDir, '.candle.json');
 
       // Verify config file does not exist
       expect(fs.existsSync(configPath)).toBe(false);
@@ -95,7 +95,7 @@ describe('Bug Fixes', () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("Service 'my-service' added successfully");
 
-      // Verify the config file was created
+      // Verify the config file was created with the new default filename
       expect(fs.existsSync(configPath)).toBe(true);
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       expect(config.services).toHaveLength(1);

@@ -216,7 +216,7 @@ export async function main(): Promise<void> {
           shell: shell,
           root: root,
         });
-        console.log(`Service '${commandName}' added successfully to .candle-setup.json`);
+        console.log(`Service '${commandName}' added successfully to .candle.json`);
       } catch (error) {
         console.error(`Error adding service: ${error.message}`);
         process.exit(1);

@@ -12,10 +12,15 @@ export interface CandleSetupConfig {
   services?: ServiceConfig[];
 }
 
+// Config filenames in priority order (first match wins)
+// .candle-setup.json is deprecated but still supported for backwards compatibility
+export const CONFIG_FILENAMES = ['.candle.json', '.candle-setup.json'] as const;
+export const DEFAULT_CONFIG_FILENAME = '.candle.json';
+
 /*
   findProjectDir
 
-  Finds the location of the nearest .candle-setup.json file.
+  Finds the location of the nearest config file (.candle.json or .candle-setup.json).
 */
 export function findProjectDir(cwd: string = process.cwd()): string {
   const setupResult = findConfigFile(cwd);
@@ -28,21 +33,24 @@ export function findProjectDir(cwd: string = process.cwd()): string {
 
 export function findConfigFile(
   currentDir: string
-): { config: CandleSetupConfig; projectDir: string } | null {
+): { config: CandleSetupConfig; projectDir: string; configFilename: string } | null {
   const startingDir = currentDir;
   currentDir = currentDir ? path.resolve(currentDir) : process.cwd();
 
   while (true) {
-    const configFilePath = path.join(currentDir, '.candle-setup.json');
+    // Check each config filename in priority order
+    for (const filename of CONFIG_FILENAMES) {
+      const configFilePath = path.join(currentDir, filename);
 
-    if (fs.existsSync(configFilePath)) {
-      try {
-        const content = fs.readFileSync(configFilePath, 'utf8');
-        let config = JSON.parse(content) as CandleSetupConfig;
-        config = validateConfig(config);
-        return { config, projectDir: currentDir };
-      } catch (error) {
-        throw new Error(`Invalid .candle-setup.json at ${configFilePath}: ${error.message}`);
+      if (fs.existsSync(configFilePath)) {
+        try {
+          const content = fs.readFileSync(configFilePath, 'utf8');
+          let config = JSON.parse(content) as CandleSetupConfig;
+          config = validateConfig(config);
+          return { config, projectDir: currentDir, configFilename: filename };
+        } catch (error) {
+          throw new Error(`Invalid ${filename} at ${configFilePath}: ${error.message}`);
+        }
       }
     }
 

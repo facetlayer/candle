@@ -49,11 +49,11 @@ describe('Candle Functional Tests', () => {
     });
     
     it('should show error when no setup file is found', async () => {
-        // Test in a directory without .candle-setup.json
+        // Test in a directory without a config file
         const result = await runCandleCommand(['run'], { cwd: '/tmp' });
 
         expect(result.code).not.toBe(0);
-        expect(result.stderr).toContain('No .candle-setup.json file found');
+        expect(result.stderr).toContain('No .candle.json or .candle-setup.json file found');
     });
     
     it('should run default service from setup file', async () => {
