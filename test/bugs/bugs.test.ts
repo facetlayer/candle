@@ -189,4 +189,29 @@ describe('Bug Fixes', () => {
     });
   });
 
+  describe('Bug #6: restart command should exit after completion', () => {
+    it('should exit after restart and not stay in watch mode', async () => {
+      // Start a service first
+      await runCandleCommand(['start', 'echo']);
+      await runCandleCommand(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+      // Run restart with a short timeout - if it hangs in watch mode, this will fail
+      const startTime = Date.now();
+      const result = await runCandleCommand(['restart', 'echo']);
+      const elapsed = Date.now() - startTime;
+
+      // The restart command should complete quickly (within 10 seconds)
+      // If it stays in watch mode, it would hang indefinitely
+      expect(elapsed).toBeLessThan(10000);
+
+      // Should exit with code 0
+      expect(result.code).toBe(0);
+
+      // Verify the service is running after restart
+      const listResult = await runCandleCommand(['list']);
+      expect(listResult.stdout).toContain('echo');
+      expect(listResult.stdout).toContain('RUNNING');
+    });
+  });
+
 });

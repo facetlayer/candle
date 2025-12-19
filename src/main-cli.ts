@@ -172,6 +172,7 @@ export async function main(): Promise<void> {
         consoleOutputFormat: 'pretty',
         watchLogs: false,
       });
+      process.exit(0);
       break;
     }
 
