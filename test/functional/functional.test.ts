@@ -53,7 +53,7 @@ describe('Candle Functional Tests', () => {
         const result = await runCandleCommand(['run'], { cwd: '/tmp' });
 
         expect(result.code).not.toBe(0);
-        expect(result.stderr).toContain('No .candle.json or .candle-setup.json file found');
+        expect(result.stderr).toContain('No .candle.json file found');
     });
     
     it('should run default service from setup file', async () => {
