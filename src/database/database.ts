@@ -37,6 +37,7 @@ const schema = {
         )`,
     `create index idx_process_output_command_name on process_output(command_name)`,
     `create index idx_process_output_project_dir on process_output(project_dir)`,
+    `create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`,
   ],
 };
 

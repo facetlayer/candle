@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@facetlayer/doc-files-helper':
+        specifier: ^0.1.1
+        version: 0.1.1
       '@facetlayer/sqlite-wrapper':
         specifier: ^0.9.1
         version: 0.9.1
@@ -412,6 +415,10 @@ packages:
 
   '@facetlayer/build-config-nodejs@0.3.1':
     resolution: {integrity: sha512-Cph1fKx6Xw3NGDmN3m2/gP7xzHdhrWrDHb9prYzsUWd9H8uzmUSAwdMfaoNWVumXNASzVFN1MLl1xC6672VXiw==}
+
+  '@facetlayer/doc-files-helper@0.1.1':
+    resolution: {integrity: sha512-T7MXxXxYYDhhNfGt0NGws/7/Y4IgG5dwT0eQHh5S7KHzORaY2v00kCKPSjEV4ab8GdC5VnXIGqQKXyPuSGXWlw==}
+    hasBin: true
 
   '@facetlayer/generic-lexer@1.0.0':
     resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
@@ -1967,6 +1974,10 @@ snapshots:
       - jiti
       - supports-color
       - typescript
+
+  '@facetlayer/doc-files-helper@0.1.1':
+    dependencies:
+      yargs: 18.0.0
 
   '@facetlayer/generic-lexer@1.0.0': {}
 

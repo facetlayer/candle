@@ -3,6 +3,9 @@
 import type { Argv } from 'yargs';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { DocFilesHelper } from '@facetlayer/doc-files-helper';
 import { addServerConfig } from './addServerConfig.ts';
 import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
@@ -16,6 +19,15 @@ import { handleRun, handleStart } from './run-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp.ts';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const __packageRoot = join(__dirname, '..');
+
+const docFiles = new DocFilesHelper({
+  dirs: [join(__packageRoot, 'docs')],
+  files: [join(__packageRoot, 'README.md')],
+});
 
 function configureYargs() {
   return yargs(hideBin(process.argv))
@@ -56,6 +68,8 @@ function configureYargs() {
     })
     .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})
     .command('erase-database', 'Erase the database stored at ~/.local/state/candle', () => {})
+    .command('list-docs', 'List available documentation files', () => {})
+    .command('get-doc <name>', 'Display the contents of a documentation file', () => {})
     .command(
       'add-service <name> <shell>',
       'Add a new service to .candle-setup.json',
@@ -225,10 +239,18 @@ export async function main(): Promise<void> {
       break;
     }
 
+    case 'list-docs':
+      docFiles.printDocFileList();
+      break;
+
+    case 'get-doc':
+      docFiles.printDocFileContents(commandName);
+      break;
+
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service'
+        'Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
       );
       process.exit(1);
   }
