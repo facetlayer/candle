@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "web",
-      "shell": "node simpleServer.js"
+      "shell": "node ../sampleServers/testProcess.js"
     }
   ]
 }

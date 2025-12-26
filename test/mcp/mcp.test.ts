@@ -71,7 +71,7 @@ describe('MCP Integration Tests', () => {
         // Get the text content from the result
         const resultText = result.getTextContent();
         expect(resultText).toContain('Started');
-        expect(resultText).toContain('node simpleServer.js');
+        expect(resultText).toContain('node ../sampleServers/testProcess.js');
 
         // Check ListServices
         const listServices = await app.callTool('ListServices', {});
