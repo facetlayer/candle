@@ -140,7 +140,7 @@ const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'StartService',
-    description: 'Start a specific service',
+    description: 'Start a config-defined service (use StartTransientService for transient processes)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,10 +152,50 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
+      // StartService only starts config-defined services (no shell/root params)
       const result = await handleRun({
         commandName: args?.name as string,
         watchLogs: false,
         consoleOutputFormat: 'pretty',
+      });
+      return result;
+    },
+  },
+  {
+    name: 'StartTransientService',
+    description:
+      'Start a transient process with a custom shell command (not defined in config file)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Name for the transient process',
+        },
+        shell: {
+          type: 'string',
+          description: 'Shell command to run the service',
+        },
+        root: {
+          type: 'string',
+          description: 'Root directory for the service (optional, relative to project)',
+        },
+      },
+      required: ['name', 'shell'],
+    },
+    handler: async args => {
+      const { name, shell, root } = args;
+
+      if (!name || !shell) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
+      }
+
+      const result = await handleRun({
+        commandName: name as string,
+        watchLogs: false,
+        consoleOutputFormat: 'pretty',
+        shell: shell as string,
+        root: root as string | undefined,
       });
       return result;
     },

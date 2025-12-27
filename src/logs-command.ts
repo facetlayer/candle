@@ -1,4 +1,4 @@
-import { getServiceConfigByName } from './configFile.ts';
+import { getServiceInfoByName } from './configFile.ts';
 import { consoleLogRow } from './logs.ts';
 import { getProcessLogs } from './logs/processLogs.ts';
 
@@ -19,12 +19,10 @@ export async function handleLogs(options: LogsCommandOptions): Promise<void> {
     projectDir = options.projectDir;
     commandName = options.commandName;
   } else {
-    // Look up service config from current working directory
-    const { serviceConfig, projectDir: foundProjectDir } = getServiceConfigByName(
-      options.commandName
-    );
-    projectDir = foundProjectDir;
-    commandName = serviceConfig.name;
+    // Get service info - works for both config-defined and transient processes
+    const info = getServiceInfoByName(options.commandName);
+    projectDir = info.projectDir;
+    commandName = info.commandName;
   }
 
   // Get logs using the command name and project directory

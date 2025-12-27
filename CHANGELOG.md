@@ -1,6 +1,8 @@
 
+# Unreleased
+ - Add support for transient services
+
 # 0.9.0
- - Update build to use build-config-nodejs
  - Show observed logs when wait-for-log fails.
  - 'restart' no longer enters log-watching mode.
  - Various bug fixes

@@ -22,7 +22,9 @@ const schema = {
             log_collector_pid integer,
             start_time integer not null,
             created_at integer not null default (strftime('%s', 'now')),
-            killed_at integer
+            killed_at integer,
+            shell text,
+            root text
         )`,
     `create table process_output(
             id integer primary key autoincrement,

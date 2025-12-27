@@ -139,10 +139,88 @@ describe('MCP Integration Tests', () => {
             'ListServices',
             'GetLogs',
             'StartService',
+            'StartTransientService',
             'KillService',
             'RestartService',
             'AddServerConfig'
         ]);
+
+        await app.close();
+    });
+
+    it('should start a transient service with StartTransientService', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Start a transient service
+        const result = await app.callTool('StartTransientService', {
+            name: 'mcp-transient',
+            shell: 'node ../sampleServers/testProcess.js'
+        });
+
+        await expect(result).toBeSuccessful();
+        const resultText = result.getTextContent();
+        expect(resultText).toContain('Started');
+        expect(resultText).toContain('mcp-transient');
+
+        // Verify it appears in ListServices
+        const listResult = await app.callTool('ListServices', {});
+        await expect(listResult).toBeSuccessful();
+        const listData = JSON.parse(listResult.getTextContent() ?? '{}');
+        const transientProcess = listData.processes?.find((p: any) => p.serviceName === 'mcp-transient');
+        expect(transientProcess).toBeDefined();
+        expect(transientProcess.status).toBe('RUNNING');
+
+        await app.close();
+    });
+
+    it('should require shell parameter for StartTransientService', async () => {
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: TEST_PROJECT_DIR,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Try to start without shell
+        const result = await app.callTool('StartTransientService', {
+            name: 'no-shell-transient'
+        });
+
+        expect(result.isError).toBe(true);
+        const errorText = result.getTextContent();
+        expect(errorText).toContain('shell');
+
+        await app.close();
+    });
+
+    it('should start transient service with root parameter', async () => {
+        // Run from sampleServers directory which has a 'test' subdirectory
+        const sampleServersDir = path.join(__dirname, '..', 'sampleServers');
+        app = mcpShell(`node ${CLI_PATH} --mcp`, {
+            cwd: sampleServersDir,
+            env: {
+                ...process.env,
+                CANDLE_DATABASE_DIR: TEST_STATE_DIR
+            }
+        });
+
+        // Start with root parameter pointing to a subdirectory
+        const result = await app.callTool('StartTransientService', {
+            name: 'rooted-mcp-transient',
+            shell: 'node ../testProcess.js',
+            root: 'test'
+        });
+
+        await expect(result).toBeSuccessful();
+        const resultText = result.getTextContent();
+        expect(resultText).toContain('Started');
 
         await app.close();
     });

@@ -1,5 +1,9 @@
-import { findConfigFile } from './configFile.ts';
-import { findAllProcesses, findProcessesByProjectDir } from './database/processTable.ts';
+import { findConfigFile, type ServiceConfig } from './configFile.ts';
+import {
+  findAllProcesses,
+  findProcessesByProjectDir,
+  type ProcessEntry,
+} from './database/processTable.ts';
 
 export interface ListOutput {
   processes: {
@@ -9,18 +13,49 @@ export interface ListOutput {
     pid: number;
     status: string;
     serviceName: string;
+    configChanged?: boolean;
   }[];
   showAll?: boolean;
   message?: string;
 }
 
+function hasConfigDrift(
+  processEntry: ProcessEntry,
+  configService: ServiceConfig | undefined
+): boolean {
+  if (!configService) {
+    // No config entry - this is a pure transient process, no drift to detect
+    return false;
+  }
+
+  // Compare shell
+  if (processEntry.shell !== configService.shell) {
+    return true;
+  }
+
+  // Compare root (normalize undefined/null/"" to be equivalent)
+  const dbRoot = processEntry.root || undefined;
+  const configRoot = configService.root || undefined;
+  if (dbRoot !== configRoot) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function handleList(options?: { showAll?: boolean }): Promise<ListOutput> {
   const { config, projectDir } = findConfigFile(process.cwd());
+
+  // Build a map of service names to config entries for drift detection
+  const configByName = new Map(
+    (config.services || []).map(s => [s.name, s] as [string, ServiceConfig])
+  );
 
   if (options?.showAll) {
     const processEntries = findAllProcesses();
 
     const processes = processEntries.map(processEntry => {
+      const configService = configByName.get(processEntry.command_name);
       return {
         serviceName: processEntry.command_name,
         command: processEntry.command_name,
@@ -28,6 +63,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
         uptime: formatUptime(Date.now() - processEntry.start_time * 1000),
         pid: processEntry.pid,
         status: 'RUNNING',
+        configChanged: hasConfigDrift(processEntry, configService),
       };
     });
     return { processes };
@@ -51,6 +87,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
           uptime: formatUptime(Date.now() - runningProcess.start_time * 1000),
           pid: runningProcess.pid,
           status: 'RUNNING',
+          configChanged: hasConfigDrift(runningProcess, service),
         });
       } else {
         processes.push({
@@ -64,9 +101,10 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
       }
     }
 
-    // Add any running processes from DB that aren't in the config (edge case)
+    // Add any running processes from DB that aren't in the config (transient or orphaned)
     for (const processEntry of processEntries) {
       if (!seenNames.has(processEntry.command_name)) {
+        const configService = configByName.get(processEntry.command_name);
         processes.push({
           serviceName: processEntry.command_name,
           command: processEntry.command_name,
@@ -74,6 +112,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
           uptime: formatUptime(Date.now() - processEntry.start_time * 1000),
           pid: processEntry.pid,
           status: 'RUNNING',
+          configChanged: hasConfigDrift(processEntry, configService),
         });
       }
     }
@@ -110,14 +149,22 @@ export function printListOutput(output: ListOutput): void {
   }
 
   const headers = ['NAME', 'STATUS', 'PID', 'UPTIME', 'COMMAND', 'DIRECTORY'];
-  const rows = output.processes.map(process => [
-    process.serviceName,
-    process.status,
-    process.pid > 0 ? process.pid.toString() : '-',
-    process.uptime,
-    process.command,
-    process.workingDir,
-  ]);
+  const rows = output.processes.map(process => {
+    // Add config changed indicator to status if applicable
+    let status = process.status;
+    if (process.configChanged) {
+      status = `${status} [config changed]`;
+    }
+
+    return [
+      process.serviceName,
+      status,
+      process.pid > 0 ? process.pid.toString() : '-',
+      process.uptime,
+      process.command,
+      process.workingDir,
+    ];
+  });
 
   const columnWidths = headers.map((header, i) =>
     Math.max(header.length, ...rows.map(row => row[i].length))

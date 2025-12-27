@@ -1,4 +1,4 @@
-import { findProjectDir, getServiceConfigByName } from './configFile.ts';
+import { findProjectDir, getServiceInfoByName } from './configFile.ts';
 import {
   deleteProcessEntry,
   findAllProcesses,
@@ -28,10 +28,10 @@ export async function handleKill(options: KillCommandOptions) {
     // When killing all local services, we only need the projectDir
     projectDir = findProjectDir();
   } else {
-    // When killing a specific service, get the service config
-    const foundConfig = getServiceConfigByName(options.commandName);
-    projectDir = foundConfig.projectDir;
-    serviceName = foundConfig.serviceConfig.name;
+    // Get service info - works for both config-defined and transient processes
+    const info = getServiceInfoByName(options.commandName);
+    projectDir = info.projectDir;
+    serviceName = info.commandName;
   }
 
   const runningProcesses = options.allGlobalServices

@@ -37,7 +37,17 @@ function configureYargs() {
       default: false,
     })
     .command('run [name]', 'Launch process', (yargs: Argv) => {})
-    .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {})
+    .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
+      yargs
+        .option('shell', {
+          describe: 'Shell command for transient process',
+          type: 'string',
+        })
+        .option('root', {
+          describe: 'Root directory for transient process',
+          type: 'string',
+        });
+    })
     .command('restart [name]', 'Restart a process service', () => {})
     .command(
       ['kill [name]', 'stop [name]'],
@@ -155,7 +165,7 @@ export async function main(): Promise<void> {
     }
 
     case 'start': {
-      await handleStart({ commandNames, consoleOutputFormat: 'pretty' });
+      await handleStart({ commandNames, consoleOutputFormat: 'pretty', shell, root });
       process.exit(0);
       break;
     }

@@ -1,4 +1,4 @@
-import { getServiceConfigByName } from './configFile.ts';
+import { getServiceInfoByName } from './configFile.ts';
 import { consoleLogRow } from './logs.ts';
 import { LogIterator } from './logs/LogIterator.ts';
 import { getProcessLogs, ProcessLogType } from './logs/processLogs.ts';
@@ -12,14 +12,29 @@ interface WaitForLogOptions {
   timeoutMs?: number;
 }
 
+function printRecentLogs(commandName: string, projectDir: string) {
+  console.log(`Recent logs for '${commandName}':`);
+  const recentLogs = getProcessLogs({
+    commandName,
+    limit: 100,
+    limitToLatestProcessLogs: true,
+    projectDir,
+  });
+  for (const log of recentLogs) {
+    consoleLogRow('pretty', log);
+  }
+}
+
 export async function handleWaitForLog(options: WaitForLogOptions) {
   const { message, timeoutMs = 30000 } = options;
-  const { projectDir, serviceConfig } = getServiceConfigByName(options.commandName);
+
+  // Get service info - works for both config-defined and transient processes
+  const { commandName, projectDir } = getServiceInfoByName(options.commandName);
 
   // Get recent logs
   const logIterator = new LogIterator({
     projectDir,
-    commandName: serviceConfig.name,
+    commandName,
     limit: LOG_COUNT_SEARCH_LIMIT,
     limitToLatestProcessLogs: true,
   });
@@ -58,21 +73,9 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   // Poll for logs until we find the message or timeout
   let timeStarted = Date.now();
   while (true) {
-
     if (Date.now() - timeStarted > timeoutMs) {
-      // Timed out
       console.log(`wait-for-log failed: Timed out after ${timeoutMs}ms and message "${message}" not found.`);
-      console.log(`Recent logs for '${serviceConfig.name}':`);
-      const recentLogs = getProcessLogs({
-        commandName: serviceConfig.name,
-        limit: 100,
-        limitToLatestProcessLogs: true,
-        projectDir,
-      });
-      for (const log of recentLogs) {
-        consoleLogRow('pretty', log);
-      }
-
+      printRecentLogs(commandName, projectDir);
       return {
         success: false,
       };
@@ -89,17 +92,7 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
 
       if (log.log_type === ProcessLogType.process_exited) {
         console.log(`wait-for-log failed: Process exited before finding message "${message}"`);
-      console.log(`Recent logs for '${serviceConfig.name}':`);
-      const recentLogs = getProcessLogs({
-        commandName: serviceConfig.name,
-        limit: 100,
-        limitToLatestProcessLogs: true,
-        projectDir,
-      });
-
-      for (const log of recentLogs) {
-        consoleLogRow('pretty', log);
-      }
+        printRecentLogs(commandName, projectDir);
         return {
           success: false,
         };

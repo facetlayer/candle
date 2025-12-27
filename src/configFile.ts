@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  findProcessesByCommandNameAndProjectDir,
+  type ProcessEntry,
+} from './database/processTable.ts';
 import { ConfigFileError, MissingServiceWithNameError, MissingSetupFileError } from './errors.ts';
 
 export interface ServiceConfig {
@@ -117,7 +121,7 @@ export function validateConfig(config: CandleSetupConfig) {
   };
 }
 
-function isValidRelativePath(p: string): boolean {
+export function isValidRelativePath(p: string): boolean {
   // Don't allow absolute paths or paths that escape the config directory
   if (path.isAbsolute(p)) {
     return false;
@@ -241,5 +245,63 @@ export function getServiceConfigByName(
   return {
     serviceConfig,
     projectDir,
+  };
+}
+
+/**
+ * Result from getServiceInfoByName - provides info about a service whether
+ * it's running (from DB) or just configured (from config file).
+ */
+export interface ServiceInfo {
+  commandName: string;
+  projectDir: string;
+  /** The running process entry if the service is currently running */
+  runningProcess?: ProcessEntry;
+  /** The service config if defined in config file */
+  serviceConfig?: ServiceConfig;
+}
+
+/**
+ * Finds service info by name, checking both running processes (DB) and config file.
+ *
+ * Priority:
+ * 1. If a process with this name is running in the current project, return DB info
+ * 2. Otherwise, look up the service in the config file
+ *
+ * This supports both config-defined services and transient processes.
+ */
+export function getServiceInfoByName(commandName: string): ServiceInfo {
+  const projectDir = findProjectDir();
+
+  // First check if there's a running process with this name
+  const runningProcesses = findProcessesByCommandNameAndProjectDir(commandName, projectDir);
+  if (runningProcesses.length > 0) {
+    // Process is running - return DB info
+    const runningProcess = runningProcesses[0];
+
+    // Also try to get config info if available
+    let serviceConfig: ServiceConfig | undefined;
+    try {
+      const configResult = getServiceConfigByName(commandName);
+      serviceConfig = configResult?.serviceConfig;
+    } catch {
+      // Service not in config, that's fine for transient processes
+    }
+
+    return {
+      commandName: runningProcess.command_name,
+      projectDir: runningProcess.project_dir,
+      runningProcess,
+      serviceConfig,
+    };
+  }
+
+  // No running process - try to find in config
+  const configResult = getServiceConfigByName(commandName);
+
+  return {
+    commandName: configResult.serviceConfig.name,
+    projectDir: configResult.projectDir,
+    serviceConfig: configResult.serviceConfig,
   };
 }

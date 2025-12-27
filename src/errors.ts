@@ -1,5 +1,14 @@
 // Error subclasses for specific error types
 
+export class UsageError extends Error {
+  isUsageError = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageError';
+  }
+}
+
 export class ConfigFileError extends Error {
   constructor(message: string) {
     super(message);

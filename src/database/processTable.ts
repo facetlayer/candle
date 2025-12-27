@@ -9,6 +9,8 @@ export interface ProcessEntry {
   start_time: number;
   created_at: number;
   killed_at?: number;
+  shell: string;
+  root?: string;
 }
 
 interface CreateProcessEntry {
@@ -16,6 +18,8 @@ interface CreateProcessEntry {
   projectDir: string;
   pid: number;
   logCollectorPid: number;
+  shell: string;
+  root?: string;
 }
 
 interface UpdateProcessKilledAt {
@@ -40,6 +44,8 @@ export function createProcessEntry(entry: CreateProcessEntry): number {
     pid: entry.pid,
     start_time: Math.floor(Date.now() / 1000),
     log_collector_pid: entry.logCollectorPid,
+    shell: entry.shell,
+    root: entry.root ?? null,
   });
 
   return result.lastInsertRowid as number;

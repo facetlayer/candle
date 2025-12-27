@@ -1,6 +1,5 @@
 import { startShellCommand, Subprocess } from '@facetlayer/subprocess-wrapper';
 import * as Path from 'node:path';
-import { getServiceConfigByName } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { createProcessEntry, deleteProcessEntry } from './database/processTable.ts';
 import type { LogCollectorLaunchInfo } from './log-collector/LogCollectorLaunchInfo.ts';
@@ -8,12 +7,11 @@ import { readStdinAsJson } from './log-collector/readStdinJson.ts';
 import { ProcessLogType, saveProcessLog } from './logs/processLogs.ts';
 
 function startService(message: LogCollectorLaunchInfo): Subprocess {
-  const { commandName, projectDir } = message;
-  const serviceConfig = getServiceConfigByName(commandName, projectDir);
-  const shell = serviceConfig.serviceConfig.shell;
+  const { commandName, projectDir, shell, root } = message;
+
   let launchDir = projectDir;
-  if (serviceConfig.serviceConfig.root) {
-    launchDir = Path.join(projectDir, serviceConfig.serviceConfig.root);
+  if (root) {
+    launchDir = Path.join(projectDir, root);
   }
 
   return startShellCommand(shell, [], {
@@ -55,6 +53,8 @@ async function main() {
     projectDir: launchInfo.projectDir,
     pid: subprocess.proc.pid,
     logCollectorPid: process.pid,
+    shell: launchInfo.shell,
+    root: launchInfo.root,
   });
 
   try {
