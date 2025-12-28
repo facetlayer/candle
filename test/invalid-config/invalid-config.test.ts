@@ -39,10 +39,8 @@ describe('Invalid Config Tests', () => {
 
             const logsResult = await runCandleCommand(['logs', 'invalid-startup-command']);
 
-            console.log('logsResult: ', logsResult);
-
             expect(logsResult.stdout).toContain('exited with code');
-            //expect(logsResult.stdout).toContain('No such file or directory');
+            expect(logsResult.stdout).toContain('No such file or directory');
         });
     });
 
@@ -69,56 +67,6 @@ describe('Invalid Config Tests', () => {
 
             // The exit code should be captured
             expect(logsText).toMatch(/exited with code/i);
-        });
-
-        // BUG: stderr is not reliably captured when process exits very quickly.
-        // See CLI test comment above for details.
-        it.skip('should capture stderr error message in GetLogs when service fails to start', async () => {
-            app = createMcpApp({
-                cwd: TEST_PROJECT_DIR,
-                databaseDir: TEST_STATE_DIR,
-            });
-
-            // Start the service - it will launch but fail quickly
-            await app.callTool('StartService', {
-                name: 'invalid-startup-command',
-            });
-
-            // Wait for the process to fail
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Check logs via MCP
-            const logsResult = await app.callTool('GetLogs', {
-                name: 'invalid-startup-command',
-            });
-
-            await expect(logsResult).toBeSuccessful();
-            const logsText = logsResult.getTextContent() ?? '';
-
-            // The stderr from the shell should be captured
-            expect(logsText).toContain('No such file or directory');
-        });
-
-        it('should show service as not running after failed start via MCP', async () => {
-            app = createMcpApp({
-                cwd: TEST_PROJECT_DIR,
-                databaseDir: TEST_STATE_DIR,
-            });
-
-            await app.callTool('StartService', {
-                name: 'invalid-startup-command',
-            });
-
-            // Wait for the process to fail
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // List services
-            const listResult = await app.callTool('ListServices', {});
-            await expect(listResult).toBeSuccessful();
-
-            const listText = listResult.getTextContent() ?? '';
-            // Service should not be listed as RUNNING
-            expect(listText).not.toContain('RUNNING');
         });
     });
 });

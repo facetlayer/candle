@@ -45,7 +45,7 @@ function consoleLogStdout(format: 'pretty' | 'json', msg: string) {
 
 function consoleLogStderr(format: 'pretty' | 'json', msg: string) {
   if (format === 'json') console.log(JSON.stringify({ stderr: msg }));
-  else console.error(msg);
+  else console.log('[stderr] ' + msg);
 }
 
 export function consoleLogSystemMessage(format: 'pretty' | 'json', msg: string) {
