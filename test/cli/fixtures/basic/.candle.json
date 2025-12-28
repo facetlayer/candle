@@ -1,0 +1,8 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node server.js"
+    }
+  ]
+}

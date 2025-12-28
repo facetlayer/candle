@@ -36,7 +36,17 @@ function configureYargs() {
       describe: 'Enter MCP server mode',
       default: false,
     })
-    .command('run [name]', 'Launch process', (yargs: Argv) => {})
+    .command('run [name]', 'Launch process', (yargs: Argv) => {
+      yargs
+        .option('shell', {
+          describe: 'Shell command for transient process',
+          type: 'string',
+        })
+        .option('root', {
+          describe: 'Root directory for transient process',
+          type: 'string',
+        });
+    })
     .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
       yargs
         .option('shell', {
@@ -159,7 +169,7 @@ export async function main(): Promise<void> {
 
   switch (command) {
     case 'run': {
-      await handleRun({ commandName, watchLogs: true, consoleOutputFormat: 'pretty' });
+      await handleRun({ commandName, watchLogs: true, consoleOutputFormat: 'pretty', shell, root });
       process.exit(0);
       break;
     }

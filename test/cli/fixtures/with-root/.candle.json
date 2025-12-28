@@ -1,0 +1,14 @@
+{
+  "services": [
+    {
+      "name": "backend",
+      "shell": "node server.js",
+      "root": "backend"
+    },
+    {
+      "name": "frontend",
+      "shell": "node server.js",
+      "root": "frontend"
+    }
+  ]
+}

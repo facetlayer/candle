@@ -1,0 +1,16 @@
+{
+  "services": [
+    {
+      "name": "api",
+      "shell": "node api.js"
+    },
+    {
+      "name": "worker",
+      "shell": "node worker.js"
+    },
+    {
+      "name": "scheduler",
+      "shell": "node scheduler.js"
+    }
+  ]
+}
