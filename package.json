@@ -35,6 +35,7 @@
   ],
   "dependencies": {
     "@facetlayer/doc-files-helper": "^0.1.2",
+    "@facetlayer/parse-stdout-lines": "^1.1.0",
     "@facetlayer/sqlite-wrapper": "^0.9.1",
     "@facetlayer/streams": "^1.0.0",
     "@facetlayer/subprocess-wrapper": "^1.1.0",

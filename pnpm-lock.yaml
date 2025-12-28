@@ -11,6 +11,9 @@ importers:
       '@facetlayer/doc-files-helper':
         specifier: ^0.1.2
         version: 0.1.2
+      '@facetlayer/parse-stdout-lines':
+        specifier: ^1.1.0
+        version: 1.1.0
       '@facetlayer/sqlite-wrapper':
         specifier: ^0.9.1
         version: 0.9.1
@@ -422,9 +425,6 @@ packages:
 
   '@facetlayer/generic-lexer@1.0.0':
     resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
-
-  '@facetlayer/parse-stdout-lines@1.0.0':
-    resolution: {integrity: sha512-Ot877HS2DCTrrkj22+L+Er8tI4WYtCvKppqjBTvLCYfgCJmEKeR15ay6B1TugkHmy7MmSsXsuSGm0Q7TGy1deA==}
 
   '@facetlayer/parse-stdout-lines@1.1.0':
     resolution: {integrity: sha512-FjoSb3VDDoWAymXtfrRAGKaHMVHTx+4f8Jf58NUEFItmZ3qpOvrMl4MQM7cz9gyoI579iaKKRRQjfnsmzdXRbg==}
@@ -1981,8 +1981,6 @@ snapshots:
 
   '@facetlayer/generic-lexer@1.0.0': {}
 
-  '@facetlayer/parse-stdout-lines@1.0.0': {}
-
   '@facetlayer/parse-stdout-lines@1.1.0': {}
 
   '@facetlayer/sqlite-wrapper@0.9.1':
@@ -1995,7 +1993,7 @@ snapshots:
 
   '@facetlayer/subprocess-wrapper@1.1.0':
     dependencies:
-      '@facetlayer/parse-stdout-lines': 1.0.0
+      '@facetlayer/parse-stdout-lines': 1.1.0
       '@facetlayer/streams': 1.0.0
 
   '@humanfs/core@0.19.1': {}

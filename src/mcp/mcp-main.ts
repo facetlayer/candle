@@ -6,44 +6,14 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { addServerConfig } from './addServerConfig.ts';
-import { handleKill } from './kill-command.ts';
-import { handleList } from './list-command.ts';
-import { handleLogs } from './logs-command.ts';
-import { handleRestart } from './restart-command.ts';
-import { handleRun } from './run-command.ts';
-import { infoLog } from './logs.ts';
-
-// Console.log wrapper for collecting logs
-class ConsoleLogInterceptor {
-  private collectedLogs: string[] = [];
-  private originalConsoleLog = console.log;
-  private isInstalled = false;
-
-  install() {
-    if (this.isInstalled) return;
-
-    console.log = (...args: any[]) => {
-      const logMessage = args
-        .map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
-        .join(' ');
-      this.collectedLogs.push(logMessage);
-    };
-
-    this.isInstalled = true;
-  }
-
-  remove() {
-    console.log = this.originalConsoleLog;
-    this.isInstalled = false;
-  }
-
-  takeLogs(): string[] {
-    const logs = [...this.collectedLogs];
-    this.collectedLogs = [];
-    return logs;
-  }
-}
+import { addServerConfig } from '../addServerConfig.ts';
+import { handleKill } from '../kill-command.ts';
+import { handleList } from '../list-command.ts';
+import { handleLogs } from '../logs-command.ts';
+import { handleRestart } from '../restart-command.ts';
+import { handleRun } from '../run-command.ts';
+import { infoLog } from '../logs.ts';
+import { ConsoleLogInterceptor } from './ConsoleLogInterceptor.ts';
 
 async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
   const logWrapper = new ConsoleLogInterceptor();
@@ -152,7 +122,6 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
-      // StartService only starts config-defined services (no shell/root params)
       const result = await handleRun({
         commandName: args?.name as string,
         watchLogs: false,
@@ -283,7 +252,7 @@ const toolDefinitions: ToolDefinition[] = [
 export async function serveMCP() {
   infoLog('MCP: Starting MCP server');
 
-  const packageInfo = await import('../package.json');
+  const packageInfo = await import('../../package.json');
 
   // Create server with proper initialization
   const server = new Server(

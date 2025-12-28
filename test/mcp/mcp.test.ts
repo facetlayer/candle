@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
-import { mcpShell, MCPStdinSubprocess } from 'expect-mcp';
+import { MCPStdinSubprocess } from 'expect-mcp';
 import { runShellCommand } from '@facetlayer/subprocess-wrapper';
 import { getCandleBinPath } from '../utils';
+import { createMcpApp } from './utils';
 
 const TEST_STATE_DIR = path.join(__dirname, 'db');
 const CANDLE_BIN = getCandleBinPath();
@@ -50,14 +51,7 @@ describe('MCP Integration Tests', () => {
 
     it('can start and use a service (default service)', async () => {
         // Set up MCP subprocess
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            allowDebugLogging: true,
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp({ allowDebugLogging: true });
 
         // Verify the StartService tool exists
         await expect(app).toHaveTool('StartService');
@@ -102,13 +96,7 @@ describe('MCP Integration Tests', () => {
 
     it('should handle StartService with invalid service name', async () => {
         // Set up MCP subprocess
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         await app.initialize();
 
@@ -126,13 +114,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should list all available tools', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Verify all expected tools are available
         await expect(app).toHaveTools([
@@ -149,13 +131,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should start a transient service with StartTransientService', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Start a transient service
         const result = await app.callTool('StartTransientService', {
@@ -180,13 +156,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should require shell parameter for StartTransientService', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Try to start without shell
         const result = await app.callTool('StartTransientService', {
@@ -203,13 +173,7 @@ describe('MCP Integration Tests', () => {
     it('should start transient service with root parameter', async () => {
         // Run from sampleServers directory which has a 'test' subdirectory
         const sampleServersDir = path.join(__dirname, '..', 'sampleServers');
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: sampleServersDir,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp({ cwd: sampleServersDir });
 
         // Start with root parameter pointing to a subdirectory
         const result = await app.callTool('StartTransientService', {
@@ -226,13 +190,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should restart a running service', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Start a service first
         const startResult = await app.callTool('StartService', { name: 'web' });
@@ -253,13 +211,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should support ListServices with showAll parameter', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Start a service
         await app.callTool('StartService', {});
@@ -276,13 +228,7 @@ describe('MCP Integration Tests', () => {
     });
 
     it('should get logs with custom limit', async () => {
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR,
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // Start a service
         await app.callTool('StartService', {});
@@ -306,13 +252,7 @@ describe('MCP Integration Tests', () => {
         });
 
         // Start MCP server from TEST_PROJECT_DIR (test/mcp directory)
-        app = mcpShell(`node ${CLI_PATH} --mcp`, {
-            cwd: TEST_PROJECT_DIR, // MCP running from mcp test dir
-            env: {
-                ...process.env,
-                CANDLE_DATABASE_DIR: TEST_STATE_DIR
-            }
-        });
+        app = createMcpApp();
 
         // ListServices with showAll should find the echo service from sampleServers
         const listResult = await app.callTool('ListServices', { showAll: true });

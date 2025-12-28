@@ -1,6 +1,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { runShellCommand } from '@facetlayer/subprocess-wrapper';
+import {
+    CommandResult,
+    createRunCandleCommand,
+    getSampleServersDirectory,
+} from '../utils';
 
 /**
  * CLI Test Utilities
@@ -9,13 +13,10 @@ import { runShellCommand } from '@facetlayer/subprocess-wrapper';
  * the candle CLI as a subprocess and capture/assert on its output.
  */
 
-const CLI_PATH = path.join(__dirname, '..', '..', 'dist', 'main-cli.js');
-
-export interface CommandResult {
-    stdout: string;
-    stderr: string;
-    code: number;
-}
+// Re-export shared utilities with CLI-friendly names
+export { CommandResult };
+export const getSampleServersDir = getSampleServersDirectory;
+export const createCli = createRunCandleCommand;
 
 /**
  * Get path to CLI test fixtures directory
@@ -39,13 +40,6 @@ export function getTestDbDir(testName: string): string {
 }
 
 /**
- * Get path to the sample servers directory
- */
-export function getSampleServersDir(): string {
-    return path.join(__dirname, '..', 'sampleServers');
-}
-
-/**
  * Ensure a clean database directory exists for a test
  */
 export function ensureCleanDbDir(testName: string): string {
@@ -55,40 +49,6 @@ export function ensureCleanDbDir(testName: string): string {
     }
     fs.mkdirSync(dbDir, { recursive: true });
     return dbDir;
-}
-
-/**
- * Create a function to run candle commands in a specific test context
- */
-export function createCli(
-    dbDir: string,
-    defaultCwd?: string
-): (args: string[], options?: { cwd?: string; env?: Record<string, string> }) => Promise<CommandResult> {
-    const cwd = defaultCwd ?? getSampleServersDir();
-
-    return async function runCandle(
-        args: string[],
-        options: { cwd?: string; env?: Record<string, string> } = {}
-    ): Promise<CommandResult> {
-        const env = {
-            ...process.env,
-            CANDLE_DATABASE_DIR: dbDir,
-            // Ensure consistent output width for snapshot testing
-            FORCE_COLOR: '0',
-            ...(options.env || {}),
-        };
-
-        const result = await runShellCommand('node', [CLI_PATH, ...args], {
-            cwd: options.cwd ?? cwd,
-            env,
-        });
-
-        return {
-            stdout: result.stdoutAsString(),
-            stderr: Array.isArray(result.stderr) ? result.stderr.join('\n') : result.stderr || '',
-            code: result.exitCode || 0,
-        };
-    };
 }
 
 /**

@@ -1,0 +1,8 @@
+{
+    "services": [
+        {
+            "name": "invalid-startup-command",
+            "shell": "cd xxxxnonexistant && node ."
+        }
+    ]
+}

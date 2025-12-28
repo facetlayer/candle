@@ -18,7 +18,7 @@ import { handleRestart } from './restart-command.ts';
 import { handleRun, handleStart } from './run-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
-import { serveMCP } from './mcp.ts';
+import { serveMCP } from './mcp/mcp-main.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -251,7 +251,7 @@ export async function main(): Promise<void> {
           shell: shell,
           root: root,
         });
-        console.log(`Service '${commandName}' added successfully to .candle.json`);
+
       } catch (error) {
         console.error(`Error adding service: ${error.message}`);
         process.exit(1);

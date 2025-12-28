@@ -2,6 +2,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { runShellCommand } from '@facetlayer/subprocess-wrapper';
 
+export interface CommandResult {
+    stdout: string;
+    stderr: string;
+    code: number;
+}
+
 export function getTestDataDirectory(testName: string) {
     return path.join(__dirname, 'tempdata', testName);
 }
@@ -18,6 +24,10 @@ export function getCliPath() {
     return path.join(__dirname, '..', 'dist', 'main-cli.js');
 }
 
+export function getCandleBinPath() {
+    return path.join(__dirname, '..');
+}
+
 export function createRunCandleCommand(testStateDir: string, defaultCwd?: string) {
     const cliPath = getCliPath();
     const cwd = defaultCwd ?? getSampleServersDirectory();
@@ -25,10 +35,12 @@ export function createRunCandleCommand(testStateDir: string, defaultCwd?: string
     return async function runCandleCommand(
         args: string[],
         options: { cwd?: string; env?: Record<string, string> } = {}
-    ): Promise<{ stdout: string; stderr: string; code: number }> {
+    ): Promise<CommandResult> {
         const env = {
             ...process.env,
             CANDLE_DATABASE_DIR: testStateDir,
+            // Ensure consistent output width for snapshot testing
+            FORCE_COLOR: '0',
             ...(options.env || {}),
         };
 
@@ -45,14 +57,11 @@ export function createRunCandleCommand(testStateDir: string, defaultCwd?: string
     };
 }
 
-export function clearTestData(testName: string) {
+export function clearTestData(testName: string): string {
     const dir = getTestDataDirectory(testName);
     if (fs.existsSync(dir)) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
     fs.mkdirSync(dir, { recursive: true });
-}
-
-export function getCandleBinPath() {
-    return path.join(__dirname, '..');
+    return dir;
 }

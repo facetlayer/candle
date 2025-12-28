@@ -137,4 +137,18 @@ describe('CLI Restart Command', () => {
             expect(result.stderr).toContain('No service');
         });
     });
+
+    describe('start over existing process', () => {
+        it('should not print duplicate kill message when starting over existing process', async () => {
+            await cli(['start', 'echo']);
+            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            const startResult = await cli(['start', 'echo']);
+
+            const startOutput = startResult.stdout + startResult.stderr;
+            const killedCount = (startOutput.match(/Killed/g) || []).length;
+
+            expect(killedCount).toBeLessThanOrEqual(1);
+        });
+    });
 });

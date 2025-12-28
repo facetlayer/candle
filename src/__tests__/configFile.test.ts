@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig } from '../src/configFile';
-import { ConfigFileError } from '../src/errors';
+import { validateConfig } from '../configFile';
+import { ConfigFileError } from '../errors';
 
 describe('Config File Validation', () => {
     it('should validate normal array-style services configuration', () => {

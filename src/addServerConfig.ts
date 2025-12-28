@@ -37,6 +37,8 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
 
   // Write back to file
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+  console.log(`Service '${args.name}' added successfully to .candle.json`);
 }
 
 function findOrCreateSetupFile(startDir: string): string {
