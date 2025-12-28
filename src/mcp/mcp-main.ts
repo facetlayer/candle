@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -11,7 +14,7 @@ import { handleKill } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
 import { handleLogs } from '../logs-command.ts';
 import { handleRestart } from '../restart-command.ts';
-import { handleRun } from '../run-command.ts';
+import { startOneService } from '../run-command.ts';
 import { infoLog } from '../logs.ts';
 import { ConsoleLogInterceptor } from './ConsoleLogInterceptor.ts';
 
@@ -122,7 +125,7 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
-      const result = await handleRun({
+      const result = await startOneService({
         commandName: args?.name as string,
         watchLogs: false,
         consoleOutputFormat: 'pretty',
@@ -159,7 +162,7 @@ const toolDefinitions: ToolDefinition[] = [
         throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
       }
 
-      const result = await handleRun({
+      const result = await startOneService({
         commandName: name as string,
         watchLogs: false,
         consoleOutputFormat: 'pretty',
@@ -183,8 +186,9 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
+      const name = args?.name as string | undefined;
       await handleKill({
-        commandName: args?.name as string,
+        commandNames: name ? [name] : [],
       });
     },
   },
@@ -252,7 +256,8 @@ const toolDefinitions: ToolDefinition[] = [
 export async function serveMCP() {
   infoLog('MCP: Starting MCP server');
 
-  const packageInfo = await import('../../package.json');
+  const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+  const packageInfo = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 
   // Create server with proper initialization
   const server = new Server(

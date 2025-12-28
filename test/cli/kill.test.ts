@@ -145,4 +145,81 @@ describe('CLI Kill Command', () => {
             expect(result.stderr).toBe('');
         });
     });
+
+    describe('killing multiple services', () => {
+        it('should kill multiple services at once', async () => {
+            // Start two services
+            await cli(['start', 'echo', 'echo2']);
+            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await cli(['wait-for-log', 'echo2', '--message', 'Echo server started']);
+
+            // Verify both are running
+            const beforeKill = await cli(['list']);
+            expect(beforeKill.stdout).toContain('echo');
+            expect(beforeKill.stdout).toContain('echo2');
+
+            // Kill both at once
+            const result = await cli(['kill', 'echo', 'echo2']);
+
+            expect(result.code).toBe(0);
+            expect(result.stdout).toContain('Killed');
+            expect(result.stdout).toContain('echo');
+            expect(result.stdout).toContain('echo2');
+
+            // Verify both are gone
+            const afterKill = await cli(['list']);
+            expect(afterKill.stdout).not.toContain('RUNNING');
+        });
+
+        it('should handle mix of running and non-running services', async () => {
+            // Start only one service
+            await cli(['start', 'echo']);
+            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            // Kill both (echo2 is not running)
+            const result = await cli(['kill', 'echo', 'echo2']);
+
+            expect(result.code).toBe(0);
+            // echo should be killed
+            expect(result.stdout).toContain('Killed');
+            expect(result.stdout).toContain('echo');
+            // echo2 should report no running processes
+            expect(result.stdout).toContain('No running processes');
+        });
+
+        it('should error when any service is unknown', async () => {
+            await cli(['start', 'echo']);
+            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            const result = await cli(['kill', 'echo', 'nonexistent-service']);
+
+            // CLI exits 1 for unknown service
+            expect(result.code).toBe(1);
+            expect(result.stderr).toContain('nonexistent-service');
+        });
+
+        it('should work with stop alias for multiple services', async () => {
+            await cli(['start', 'echo', 'echo2']);
+            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await cli(['wait-for-log', 'echo2', '--message', 'Echo server started']);
+
+            const result = await cli(['stop', 'echo', 'echo2']);
+
+            expect(result.code).toBe(0);
+            expect(result.stdout).toContain('Killed');
+        });
+
+        it('should kill multiple transient processes', async () => {
+            await cli(['start', 'transient1', '--shell', 'node testProcess.js']);
+            await cli(['start', 'transient2', '--shell', 'node testProcess.js']);
+            await cli(['wait-for-log', 'transient1', '--message', 'Test server started']);
+            await cli(['wait-for-log', 'transient2', '--message', 'Test server started']);
+
+            const result = await cli(['kill', 'transient1', 'transient2']);
+
+            expect(result.code).toBe(0);
+            expect(result.stdout).toContain('transient1');
+            expect(result.stdout).toContain('transient2');
+        });
+    });
 });

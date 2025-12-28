@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn } from 'child_process';
-import { clearTestData, getCandleBinPath } from './utils';
+import { clearTestData, getCliPath } from './utils';
 
 describe('Simple Candle Test', () => {
     beforeAll(() => {
@@ -8,10 +8,10 @@ describe('Simple Candle Test', () => {
     });
 
     it('should show help when candle is run', async () => {
-        const candlePath = getCandleBinPath();
-        
+        const cliPath = getCliPath();
+
         const result = await new Promise<{stdout: string, stderr: string, code: number}>((resolve) => {
-            const proc = spawn('node', ['dist/main-cli.js', '--help'], { cwd: candlePath });
+            const proc = spawn('node', [cliPath, '--help']);
             let stdout = '';
             let stderr = '';
             

@@ -5,6 +5,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import { DocFilesHelper } from '@facetlayer/doc-files-helper';
 import { addServerConfig } from './addServerConfig.ts';
 import { findProjectDir } from './configFile.ts';
@@ -15,7 +16,7 @@ import { handleKill } from './kill-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
 import { handleLogs } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
-import { handleRun, handleStart } from './run-command.ts';
+import { startOneService, handleStartCommand } from './run-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
@@ -60,7 +61,7 @@ function configureYargs() {
     })
     .command('restart [name]', 'Restart a process service', () => {})
     .command(
-      ['kill [name]', 'stop [name]'],
+      ['kill [name...]', 'stop [name...]'],
       'Kill processes started in the current working directory',
       (yargs: Argv) => {}
     )
@@ -145,7 +146,8 @@ function parseArgs(): {
 export async function main(): Promise<void> {
   // Handle version flag early
   if (process.argv.includes('-v') || process.argv.includes('--version')) {
-    const packageJson = await import('../package.json');
+    const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     console.log(packageJson.version);
     return;
   }
@@ -169,13 +171,13 @@ export async function main(): Promise<void> {
 
   switch (command) {
     case 'run': {
-      await handleRun({ commandName, watchLogs: true, consoleOutputFormat: 'pretty', shell, root });
+      await startOneService({ commandName, watchLogs: true, consoleOutputFormat: 'pretty', shell, root });
       process.exit(0);
       break;
     }
 
     case 'start': {
-      await handleStart({ commandNames, consoleOutputFormat: 'pretty', shell, root });
+      await handleStartCommand({ commandNames, consoleOutputFormat: 'pretty', shell, root });
       process.exit(0);
       break;
     }
@@ -193,7 +195,7 @@ export async function main(): Promise<void> {
     }
     case 'kill':
     case 'stop': {
-      await handleKill({ commandName });
+      await handleKill({ commandNames });
       break;
     }
     case 'kill-all': {

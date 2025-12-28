@@ -21,7 +21,7 @@ export function getSampleServersDirectory() {
 }
 
 export function getCliPath() {
-    return path.join(__dirname, '..', 'dist', 'main-cli.js');
+    return path.join(__dirname, '..', 'src', 'main-cli.ts');
 }
 
 export function getCandleBinPath() {

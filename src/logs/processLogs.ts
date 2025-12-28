@@ -1,21 +1,8 @@
 import { getDatabase } from '../database/database.ts';
+import { ProcessLogType } from './ProcessLogType.ts';
+import { buildLogSearchQuery } from './buildLogSearchQuery.ts';
 
-export const ProcessLogType = {
-  stdout: 1,
-  stderr: 2,
-
-  // process_start_initiated - Saved immediately when we being launching a subprocess
-  process_start_initiated: 3,
-
-  // process_start_failed - Saved when the subprocess fails to start.
-  process_start_failed: 4,
-
-  // process_started - Saved when the subprocess has successfully started.
-  process_started: 5,
-
-  // process_exited - Saved when the subprocess exits.
-  process_exited: 6,
-} as const;
+export { ProcessLogType };
 
 export interface NewProcessLog {
   command_name: string;
@@ -36,7 +23,7 @@ export interface ProcessLog {
 export interface LogSearchOptions {
   // Primary search parameters
   projectDir: string;
-  commandName: string;
+  commandNames: string[];
 
   // Filtering parameters
   limit?: number;
@@ -53,60 +40,12 @@ export function saveProcessLog(processLog: NewProcessLog) {
   );
 }
 
+
 export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
   const db = getDatabase();
+  const builder = buildLogSearchQuery(options);
 
-  const { projectDir, commandName, limit, sinceTimestamp, afterLogId } = options;
-
-  //console.log('getProcessLogs options: ', options);
-
-  // Build SQL query dynamically
-  let sql: string;
-  let params: any[] = [];
-
-  // Prioritize projectDir + commandName approach
-  if (projectDir !== undefined && commandName !== undefined) {
-    // Primary approach: lookup by project directory and command name
-    sql = `select po.* from process_output po 
-               where po.project_dir = ? and po.command_name = ?`;
-    params = [projectDir, commandName];
-  } else if (projectDir !== undefined) {
-    // Fallback: lookup by project directory only (use default command)
-    sql = `select po.* from process_output po 
-               where po.project_dir = ? and po.command_name = 'default'`;
-    params = [projectDir];
-  } else if (commandName !== undefined) {
-    // Lookup by command name only (any project directory)
-    sql = `select po.* from process_output po 
-               where po.command_name = ?`;
-    params = [commandName];
-  } else {
-    throw new Error('Must provide projectDir and commandName');
-  }
-
-  // Add timestamp filtering
-  if (sinceTimestamp !== undefined) {
-    sql += ' and po.timestamp > ?';
-    params.push(sinceTimestamp);
-  }
-
-  if (afterLogId !== undefined) {
-    sql += ' and po.id > ?';
-    params.push(afterLogId);
-  }
-
-  // Order by 'desc' so that we get the most recent logs first.
-  sql += ' order by po.timestamp desc, po.id desc';
-
-  if (limit !== undefined) {
-    sql += ' limit ?';
-    params.push(limit);
-  }
-
-  //console.log('getProcessLogs sql: ', sql);
-  //console.log('getProcessLogs params: ', params);
-
-  let logItems = db.list(sql, params);
+  let logItems = db.list(builder.getSql(), builder.getParams());
 
   if (options.limitToLatestProcessLogs) {
     // For 'limitToLatestProcessLogs' - Stop if we find process_start_initiated

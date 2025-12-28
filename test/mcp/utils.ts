@@ -1,9 +1,8 @@
 import * as path from 'path';
 import { mcpShell, MCPStdinSubprocess } from 'expect-mcp';
-import { getCandleBinPath } from '../utils';
+import { getCliPath } from '../utils';
 
-const CANDLE_BIN = getCandleBinPath();
-const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
+const CLI_PATH = getCliPath();
 const DEFAULT_TEST_STATE_DIR = path.join(__dirname, 'db');
 
 export interface CreateMcpAppOptions {

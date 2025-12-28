@@ -3,12 +3,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { MCPStdinSubprocess } from 'expect-mcp';
 import { runShellCommand } from '@facetlayer/subprocess-wrapper';
-import { getCandleBinPath } from '../utils';
+import { getCliPath } from '../utils';
 import { createMcpApp } from './utils';
 
 const TEST_STATE_DIR = path.join(__dirname, 'db');
-const CANDLE_BIN = getCandleBinPath();
-const CLI_PATH = path.join(CANDLE_BIN, 'dist', 'main-cli.js');
+const CLI_PATH = getCliPath();
 const TEST_PROJECT_DIR = __dirname;
 
 async function runCandleCommand(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string, stderr: string, code: number }> {

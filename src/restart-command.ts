@@ -1,7 +1,7 @@
 import { findProjectDir } from './configFile.ts';
 import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
 import { handleKill } from './kill-command.ts';
-import { handleRun } from './run-command.ts';
+import { startOneService } from './run-command.ts';
 
 interface RestartOptions {
   commandName: string;
@@ -25,10 +25,10 @@ export async function handleRestart(options: RestartOptions) {
     const root = runningProcess?.root;
 
     // First kill the existing process
-    await handleKill({ commandName });
+    await handleKill({ commandNames: [commandName] });
 
     // Then start it again using stored shell/root if available
-    await handleRun({
+    await startOneService({
       commandName,
       consoleOutputFormat,
       watchLogs,

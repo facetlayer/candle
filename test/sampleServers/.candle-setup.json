@@ -5,12 +5,16 @@
       "shell": "node simpleServer.js"
     },
     {
-      "name": "api", 
+      "name": "api",
       "shell": "node simpleServer.js",
       "root": "test"
     },
     {
       "name": "echo",
+      "shell": "node echoServer.js"
+    },
+    {
+      "name": "echo2",
       "shell": "node echoServer.js"
     },
     {
