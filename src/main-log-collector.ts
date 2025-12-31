@@ -5,6 +5,9 @@ import { createProcessEntry, deleteProcessEntry } from './database/processTable.
 import type { LogCollectorLaunchInfo } from './log-collector/LogCollectorLaunchInfo.ts';
 import { readStdinAsJson } from './log-collector/readStdinJson.ts';
 import { ProcessLogType, saveProcessLog } from './logs/processLogs.ts';
+import { debugLog } from './debug.ts';
+
+const DEFAULT_SUCCESSFUL_START_WAIT_MS = 500;
 
 function startService(message: LogCollectorLaunchInfo): Subprocess {
   const { commandName, projectDir, shell, root } = message;
@@ -42,11 +45,11 @@ async function main() {
   // Check for cleanup on an interval.
   setInterval(maybeRunCleanup, 60 * 1000);
 
-  console.log('Got launchInfo: ', launchInfo);
+  debugLog('[main-log-collector] Got launchInfo: ' + JSON.stringify(launchInfo));
 
   const subprocess = startService(launchInfo);
 
-  console.log('Launched service: ', subprocess.proc.pid);
+  debugLog('[main-log-collector] Launched subprocess, pid=' + subprocess.proc.pid);
 
   createProcessEntry({
     commandName: launchInfo.commandName,
@@ -60,7 +63,7 @@ async function main() {
   try {
     await subprocess.waitForStart();
   } catch (error) {
-    console.error('Process failed to start: ', error);
+    debugLog('[main-log-collector] Process failed to start, pid=' + subprocess.proc.pid + ', error=' + error.message);
     saveProcessLog({
       command_name: launchInfo.commandName,
       project_dir: launchInfo.projectDir,
@@ -69,6 +72,27 @@ async function main() {
     });
     process.exit(1);
   }
+  
+  // Wait for a short period to ensure the process has started.
+  await new Promise(resolve => setTimeout(resolve, DEFAULT_SUCCESSFUL_START_WAIT_MS));
+
+  if (subprocess.proc.exitCode !== 0) {
+    debugLog('[main-log-collector] Process failed during grace period, pid=' + subprocess.proc.pid + ', code=' + subprocess.proc.exitCode);
+    saveProcessLog({
+      command_name: launchInfo.commandName,
+      project_dir: launchInfo.projectDir,
+      log_type: ProcessLogType.process_start_failed,
+      content: 'Process failed to start: ' + subprocess.proc.exitCode,
+    });
+    deleteProcessEntry({
+      commandName: launchInfo.commandName,
+      projectDir: launchInfo.projectDir,
+      pid: subprocess.proc.pid,
+    });
+    return;
+  }
+
+  debugLog('[main-log-collector] Process started, pid=' + subprocess.proc.pid);
 
   saveProcessLog({
     command_name: launchInfo.commandName,
@@ -78,7 +102,7 @@ async function main() {
 
   await subprocess.waitForExit();
 
-  console.log('process exited, cleaning up');
+  debugLog('[main-log-collector] Process exited, pid=' + subprocess.proc.pid + ', code=' + subprocess.proc.exitCode);
 
   saveProcessLog({
     command_name: launchInfo.commandName,

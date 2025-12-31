@@ -1,0 +1,16 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node ../sampleServers/testProcess.js"
+    },
+    {
+      "name": "echo",
+      "shell": "node ../sampleServers/echoServer.js"
+    },
+    {
+      "name": "echo-test",
+      "shell": "node ../sampleServers/echoServer.js"
+    }
+  ]
+}

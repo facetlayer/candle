@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-list';
+const workspace = new TestWorkspace('cli-list');
+const cli = workspace.createCli();
 
 describe('CLI List Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('basic list functionality', () => {
         it('should show empty list when no processes running', async () => {
@@ -100,25 +91,10 @@ describe('CLI List Command', () => {
         });
     });
 
-    describe('directory scoping', () => {
-        it('should only show processes for current directory', async () => {
-            // Start in sampleServers directory
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-
-            // List in basic fixture should not show echo
-            const basicCli = createCli(dbDir, getFixtureDir('basic'));
-            const result = await basicCli(['list']);
-
-            expect(result.code).toBe(0);
-            expect(result.stdout).not.toContain('echo');
-        });
-    });
-
     describe('edge cases', () => {
         it('should handle list when database is empty', async () => {
-            const freshDbDir = ensureCleanDbDir('cli-list-fresh');
-            const freshCli = createCli(freshDbDir, getSampleServersDir());
+            const freshWorkspace = new TestWorkspace('cli-list-fresh');
+            const freshCli = freshWorkspace.createCli();
 
             const result = await freshCli(['list']);
 

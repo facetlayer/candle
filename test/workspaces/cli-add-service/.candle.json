@@ -1,0 +1,8 @@
+{
+  "services": [
+    {
+      "name": "new-service",
+      "shell": "node app.js"
+    }
+  ]
+}

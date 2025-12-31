@@ -1,24 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs';
-import { createCli, ensureCleanDbDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-erase-database';
+const workspace = new TestWorkspace('cli-erase-database');
+const cli = workspace.createCli();
 
 describe('CLI Erase-Database Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeEach(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME + '-' + Date.now());
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-        if (fs.existsSync(dbDir)) {
-            fs.rmSync(dbDir, { recursive: true, force: true });
-        }
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('basic erase-database functionality', () => {
         it('should erase the database', async () => {

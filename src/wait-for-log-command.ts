@@ -15,7 +15,7 @@ interface WaitForLogOptions {
 function printRecentLogs(commandName: string, projectDir: string) {
   console.log(`Recent logs for '${commandName}':`);
   const recentLogs = getProcessLogs({
-    commandName,
+    commandNames: [commandName],
     limit: 100,
     limitToLatestProcessLogs: true,
     projectDir,
@@ -34,7 +34,7 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   // Get recent logs
   const logIterator = new LogIterator({
     projectDir,
-    commandName,
+    commandNames: [commandName],
     limit: LOG_COUNT_SEARCH_LIMIT,
     limitToLatestProcessLogs: true,
   });

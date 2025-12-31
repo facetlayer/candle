@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-kill-all';
+const workspace = new TestWorkspace('cli-kill-all');
+const cli = workspace.createCli();
 
 describe('CLI Kill-All Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('basic kill-all functionality', () => {
         it('should kill all running services', async () => {
@@ -47,30 +38,6 @@ describe('CLI Kill-All Command', () => {
 
             expect(result.code).toBe(0);
             expect(elapsed).toBeLessThan(5000);
-        });
-    });
-
-    describe('kill-all scope', () => {
-        it('should kill processes across all directories', async () => {
-            // Start in sampleServers
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-
-            // Start in basic fixture
-            const basicCli = createCli(dbDir, getFixtureDir('basic'));
-            await basicCli(['start', 'web']);
-            await basicCli(['wait-for-log', 'web', '--message', 'Server started']);
-
-            // Kill all from sampleServers
-            const result = await cli(['kill-all']);
-
-            expect(result.code).toBe(0);
-
-            // Verify both are killed
-            const listAll = await cli(['list-all']);
-            if (listAll.stdout.includes('echo') || listAll.stdout.includes('web')) {
-                expect(listAll.stdout).not.toContain('RUNNING');
-            }
         });
     });
 

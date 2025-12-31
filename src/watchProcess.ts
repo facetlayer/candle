@@ -16,7 +16,7 @@ export async function watchProcess(options: WatchOptions): Promise<void> {
   const { projectDir, commandName, exitAfterMs, consoleOutputFormat } = options;
   const logIterator = new LogIterator({
     projectDir,
-    commandName,
+    commandNames: [commandName],
     limitToLatestProcessLogs: true,
   });
   let watching = true;

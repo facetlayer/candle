@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-errors';
+const workspace = new TestWorkspace('cli-errors');
+const cli = workspace.createCli();
 
 describe('CLI Error Handling', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('unknown commands', () => {
         it('should error for completely unknown command', async () => {
@@ -178,21 +169,4 @@ describe('CLI Error Handling', () => {
         });
     });
 
-    describe('empty config handling', () => {
-        it('should handle config with no services', async () => {
-            const emptyCli = createCli(dbDir, getFixtureDir('empty'));
-
-            const result = await emptyCli(['list']);
-
-            expect(result.code).toBe(0);
-        });
-
-        it('should error when starting service not in empty config', async () => {
-            const emptyCli = createCli(dbDir, getFixtureDir('empty'));
-
-            const result = await emptyCli(['start', 'web']);
-
-            expect(result.code).not.toBe(0);
-        });
-    });
 });

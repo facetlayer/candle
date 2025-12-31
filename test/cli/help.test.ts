@@ -1,14 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir, normalizeOutput } from './utils';
+import { describe, it, expect } from 'vitest';
+import { TestWorkspace, normalizeOutput } from './utils';
 
-const TEST_NAME = 'cli-help';
-const dbDir = ensureCleanDbDir(TEST_NAME);
-const cli = createCli(dbDir, getFixtureDir('basic'));
+const workspace = new TestWorkspace('cli-help');
+const cli = workspace.createCli();
 
 describe('CLI Help Command', () => {
-    beforeAll(() => {
-        ensureCleanDbDir(TEST_NAME);
-    });
 
     describe('--help flag', () => {
         it('should display main help when --help is passed', async () => {

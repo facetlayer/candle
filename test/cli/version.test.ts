@@ -1,14 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir } from './utils';
+import { describe, it, expect } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-version';
-const dbDir = ensureCleanDbDir(TEST_NAME);
-const cli = createCli(dbDir, getFixtureDir('basic'));
+const workspace = new TestWorkspace('cli-version');
+const cli = workspace.createCli();
 
 describe('CLI Version Command', () => {
-    beforeAll(() => {
-        ensureCleanDbDir(TEST_NAME);
-    });
 
     describe('--version flag', () => {
         it('should display version number', async () => {

@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { createCli, ensureCleanDbDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-logs';
+const workspace = new TestWorkspace('cli-logs');
+const cli = workspace.createCli();
 
 describe('CLI Logs Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('basic logs functionality', () => {
         it('should show logs for a running service', async () => {

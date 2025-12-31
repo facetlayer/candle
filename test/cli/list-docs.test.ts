@@ -1,16 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir } from './utils';
+import { describe, it, expect } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-list-docs';
+const workspace = new TestWorkspace('cli-list-docs');
+const cli = workspace.createCli();
 
 describe('CLI List-Docs Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getFixtureDir('basic'));
-    });
 
     describe('basic list-docs functionality', () => {
         it('should list available documentation files', async () => {

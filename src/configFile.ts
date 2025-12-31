@@ -48,7 +48,13 @@ export function findConfigFile(
 
       if (fs.existsSync(configFilePath)) {
         try {
-          const content = fs.readFileSync(configFilePath, 'utf8');
+          const content = fs.readFileSync(configFilePath, 'utf8').trim();
+
+          if (content.length === 0) {
+            // Empty config file, don't try to parse as JSON.
+            return { config: { services: [] }, projectDir: currentDir, configFilename: filename };
+          }
+
           let config = JSON.parse(content) as CandleSetupConfig;
           config = validateConfig(config);
           return { config, projectDir: currentDir, configFilename: filename };

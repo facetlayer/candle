@@ -6,7 +6,7 @@ import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.
 import { LogIterator } from '../logs/LogIterator.ts';
 import { ProcessLogType, saveProcessLog } from '../logs/processLogs.ts';
 import { watchProcess } from '../watchProcess.ts';
-import { getDatabase } from '../database/database.ts';
+import { debugLog } from '../debug.ts';
 
 export interface RunOptions {
   commandName: string;
@@ -25,26 +25,6 @@ function isValidRelativePath(p: string): boolean {
     return false;
   }
   return true;
-}
-
-async function waitForProcessToStart(commandName: string, projectDir: string) {
-  const logIterator = new LogIterator({
-    commandName: commandName,
-    projectDir: projectDir,
-  });
-
-  for (;;) {
-    for (const log of logIterator.getNextLogs()) {
-      if (log.log_type === ProcessLogType.process_started) {
-        return;
-      }
-
-      if (log.log_type === ProcessLogType.process_start_failed) {
-        throw new Error(`Process ${commandName} failed to start`);
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
 }
 
 /*
@@ -89,6 +69,14 @@ export async function startOneService(req: RunOptions) {
   // Kill any existing processes for this service
   await handleKill({ commandNames: [serviceConfig.name], quietFailure: true });
 
+  debugLog('[startOneService] process_start_initiated for name=' + serviceConfig.name + ', projectDir=' + projectDir);
+
+  const logIterator = new LogIterator({
+    commandNames: [serviceConfig.name],
+    projectDir: projectDir,
+  });
+  logIterator.resetToLatestLogMessage();
+
   // Save the 'process has started' log.
   saveProcessLog({
     command_name: serviceConfig.name,
@@ -103,7 +91,35 @@ export async function startOneService(req: RunOptions) {
     root: serviceConfig.root,
   });
 
-  await waitForProcessToStart(serviceConfig.name, projectDir);
+  debugLog('[startOneService] waiting for process to start');
+
+  // Watch the logs for either 'process_started' or 'process_start_failed'
+  const waitForSuccess = (async () => {
+    for await (const log of logIterator.it()) {
+      debugLog('[startOneService] saw log while waiting: ' + JSON.stringify(log));
+
+      if (log.log_type === ProcessLogType.process_started) {
+        // success
+        break;
+      }
+
+      if (log.log_type === ProcessLogType.process_start_failed) {
+        throw new Error(`Process '${serviceConfig.name}' failed to start`);
+      }
+    }
+  })();
+
+  // Wait on the logs with a timeout
+  await Promise.race([
+    waitForSuccess,
+    new Promise((resolve, reject) => {
+      setTimeout(() => {
+        reject(new Error('Process failed to start (timed out while waiting)'));
+      }, 10000);
+    }),
+  ]);
+
+  debugLog('[startOneService] finished startup');
 
   let launchDir = projectDir;
   if (serviceConfig.root) {

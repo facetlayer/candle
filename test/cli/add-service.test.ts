@@ -1,21 +1,17 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createCli, ensureCleanDbDir, getTestDbDir } from './utils';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-add-service';
+const workspace = new TestWorkspace('cli-add-service');
+const cli = workspace.createCli();
 
 describe('CLI Add-Service Command', () => {
-    let dbDir: string;
     let tempDir: string;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-    });
 
     beforeEach(() => {
         // Create fresh temp directory for each test
-        tempDir = path.join(getTestDbDir(TEST_NAME), 'fixture-' + Date.now());
+        tempDir = path.join(workspace.dbDir, 'fixture-' + Date.now());
         fs.mkdirSync(tempDir, { recursive: true });
     });
 
@@ -30,8 +26,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service', 'npm run dev']);
+            const result = await cli(['add-service', 'my-service', 'npm run dev'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
             expect(result.stdout).toContain("'my-service'");
@@ -48,8 +43,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service', 'node server.js']);
+            const result = await cli(['add-service', 'my-service', 'node server.js'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
 
@@ -72,8 +66,7 @@ describe('CLI Add-Service Command', () => {
                 )
             );
 
-            const cli = createCli(dbDir, tempDir);
-            await cli(['add-service', 'new-service', 'echo new']);
+            await cli(['add-service', 'new-service', 'echo new'], { cwd: tempDir });
 
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             expect(config.services).toHaveLength(2);
@@ -88,8 +81,7 @@ describe('CLI Add-Service Command', () => {
 
             expect(fs.existsSync(configPath)).toBe(false);
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'new-service', 'node app.js']);
+            const result = await cli(['add-service', 'new-service', 'node app.js'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
             expect(fs.existsSync(configPath)).toBe(true);
@@ -106,8 +98,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'backend', 'npm start', '--root', 'packages/backend']);
+            const result = await cli(['add-service', 'backend', 'npm start', '--root', 'packages/backend'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
 
@@ -121,8 +112,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service']);
+            const result = await cli(['add-service'], { cwd: tempDir });
 
             expect(result.code).not.toBe(0);
         });
@@ -131,8 +121,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service']);
+            const result = await cli(['add-service', 'my-service'], { cwd: tempDir });
 
             expect(result.code).not.toBe(0);
         });
@@ -143,8 +132,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service', 'npm run start:dev']);
+            const result = await cli(['add-service', 'my-service', 'npm run start:dev'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
 
@@ -156,8 +144,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-backend-service', 'npm start']);
+            const result = await cli(['add-service', 'my-backend-service', 'npm start'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
 
@@ -171,8 +158,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service', 'npm start']);
+            const result = await cli(['add-service', 'my-service', 'npm start'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
             expect(result.stdout).toContain('my-service');
@@ -182,8 +168,7 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
-            const result = await cli(['add-service', 'my-service', 'npm start']);
+            const result = await cli(['add-service', 'my-service', 'npm start'], { cwd: tempDir });
 
             expect(result.code).toBe(0);
             expect(result.stderr).toBe('');
@@ -195,9 +180,8 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
-            const cli = createCli(dbDir, tempDir);
             const startTime = Date.now();
-            await cli(['add-service', 'my-service', 'npm start']);
+            await cli(['add-service', 'my-service', 'npm start'], { cwd: tempDir });
             const elapsed = Date.now() - startTime;
 
             expect(elapsed).toBeLessThan(2000);

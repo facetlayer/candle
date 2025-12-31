@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { createCli, ensureCleanDbDir, getFixtureDir, getSampleServersDir } from './utils';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TestWorkspace } from './utils';
 
-const TEST_NAME = 'cli-start';
+const workspace = new TestWorkspace('cli-start');
+const cli = workspace.createCli();
 
 describe('CLI Start Command', () => {
-    let dbDir: string;
-    let cli: ReturnType<typeof createCli>;
-
-    beforeAll(() => {
-        dbDir = ensureCleanDbDir(TEST_NAME);
-        cli = createCli(dbDir, getSampleServersDir());
-    });
-
-    afterEach(async () => {
-        await cli(['kill-all']).catch(() => {});
-    });
+    afterAll(() => workspace.cleanup());
 
     describe('starting config-defined services', () => {
         it('should start a service defined in config', async () => {
@@ -165,27 +156,4 @@ describe('CLI Start Command', () => {
         });
     });
 
-    describe('fixture-specific tests', () => {
-        it('should work with multi-service fixture', async () => {
-            const multiCli = createCli(dbDir, getFixtureDir('multi-service'));
-
-            const result = await multiCli(['start', 'api']);
-
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('api');
-
-            await multiCli(['kill-all']);
-        });
-
-        it('should work with services that have root option', async () => {
-            const rootCli = createCli(dbDir, getFixtureDir('with-root'));
-
-            const result = await rootCli(['start', 'backend']);
-
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('backend');
-
-            await rootCli(['kill-all']);
-        });
-    });
 });

@@ -27,7 +27,7 @@ export async function handleLogs(options: LogsCommandOptions): Promise<void> {
 
   // Get logs using the command name and project directory
   const logs = getProcessLogs({
-    commandName,
+    commandNames: [commandName],
     limit,
     limitToLatestProcessLogs: true,
     projectDir,

@@ -3,7 +3,6 @@ candle.log
 target
 dist
 *.tsbuildinfo
-test/tempdata
 *.db
 *.db-shm
 *.db-wal

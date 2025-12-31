@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { spawn } from 'child_process';
-import { clearTestData, getCliPath } from './utils';
+import { getCliPath } from './utils';
 
 describe('Simple Candle Test', () => {
-    beforeAll(() => {
-        clearTestData('simple');
-    });
-
     it('should show help when candle is run', async () => {
         const cliPath = getCliPath();
 
@@ -14,10 +10,10 @@ describe('Simple Candle Test', () => {
             const proc = spawn('node', [cliPath, '--help']);
             let stdout = '';
             let stderr = '';
-            
+
             proc.stdout.on('data', (data) => stdout += data);
             proc.stderr.on('data', (data) => stderr += data);
-            
+
             proc.on('close', (code) => {
                 resolve({ stdout, stderr, code: code || 0 });
             });
