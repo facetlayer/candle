@@ -1,6 +1,3 @@
-import { readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -16,6 +13,7 @@ import { handleLogs } from '../logs-command.ts';
 import { handleRestart } from '../restart-command.ts';
 import { startOneService } from '../run-command.ts';
 import { infoLog } from '../logs.ts';
+import { findPackageJson } from '../findPackageJson.ts';
 import { ConsoleLogInterceptor } from './ConsoleLogInterceptor.ts';
 
 async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
@@ -256,8 +254,7 @@ const toolDefinitions: ToolDefinition[] = [
 export async function serveMCP() {
   infoLog('MCP: Starting MCP server');
 
-  const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
-  const packageInfo = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+  const packageInfo = findPackageJson();
 
   // Create server with proper initialization
   const server = new Server(

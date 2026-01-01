@@ -3,7 +3,8 @@
  - Add support for transient services
  - Rename config file to .candle.json
  - add-service: Autocreate the config file if missing
- - Bug fix: Logs not showing up when a service failed to start
+ - Better logs when a service fails to start
+ - Add grace period, `start` waits 500ms to ensure the process doesn't fail on startup
 
 # 0.9.0
  - Show observed logs when wait-for-log fails.
