@@ -2,121 +2,115 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-list');
-const cli = workspace.createCli();
 
 describe('CLI List Command', () => {
     afterAll(() => workspace.cleanup());
 
     describe('basic list functionality', () => {
         it('should show empty list when no processes running', async () => {
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('NAME');
-            expect(result.stdout).toContain('STATUS');
+            expect(result.stdoutAsString()).toContain('NAME');
+            expect(result.stdoutAsString()).toContain('STATUS');
         });
 
         it('should show running process in list', async () => {
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('echo');
-            expect(result.stdout).toContain('RUNNING');
+            expect(result.stdoutAsString()).toContain('echo');
+            expect(result.stdoutAsString()).toContain('RUNNING');
         });
 
         it('should show multiple running processes', async () => {
-            await cli(['start', 'echo']);
-            await cli(['start', 'echo-test']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-            await cli(['wait-for-log', 'echo-test', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['start', 'echo-test']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['wait-for-log', 'echo-test', '--message', 'Echo server started']);
 
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('echo');
-            expect(result.stdout).toContain('echo-test');
+            expect(result.stdoutAsString()).toContain('echo');
+            expect(result.stdoutAsString()).toContain('echo-test');
         });
 
         it('should show uptime for running processes', async () => {
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toMatch(/\d+s|\d+m/);
+            expect(result.stdoutAsString()).toMatch(/\d+s|\d+m/);
         });
     });
 
     describe('ls alias', () => {
         it('should work with ls alias', async () => {
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            const listResult = await cli(['list']);
-            const lsResult = await cli(['ls']);
+            const listResult = await workspace.runCli(['list']);
+            const lsResult = await workspace.runCli(['ls']);
 
-            expect(listResult.code).toBe(0);
-            expect(lsResult.code).toBe(0);
-
-            expect(listResult.stdout).toContain('echo');
-            expect(lsResult.stdout).toContain('echo');
+            expect(listResult.stdoutAsString()).toContain('echo');
+            expect(lsResult.stdoutAsString()).toContain('echo');
         });
     });
 
     describe('list output format', () => {
         it('should have table-like format with columns', async () => {
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.stdout).toContain('NAME');
-            expect(result.stdout).toContain('STATUS');
-            expect(result.stdout).toContain('UPTIME');
+            expect(result.stdoutAsString()).toContain('NAME');
+            expect(result.stdoutAsString()).toContain('STATUS');
+            expect(result.stdoutAsString()).toContain('UPTIME');
         });
 
         it('should show config changed warning for transient overrides', async () => {
             // Start 'echo' as transient with different shell
-            await cli(['start', 'echo', '--shell', 'node testProcess.js']);
-            await cli(['wait-for-log', 'echo', '--message', 'Test server started']);
+            await workspace.runCli(['start', 'echo', '--shell', 'node ../../sampleServers/testProcess.js']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Test server started']);
 
-            const result = await cli(['list']);
+            const result = await workspace.runCli(['list']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('[config changed]');
+            expect(result.stdoutAsString()).toContain('[config changed]');
         });
     });
 
     describe('edge cases', () => {
         it('should handle list when database is empty', async () => {
             const freshWorkspace = new TestWorkspace('cli-list-fresh');
-            const freshCli = freshWorkspace.createCli();
 
-            const result = await freshCli(['list']);
-
-            expect(result.code).toBe(0);
+            await freshWorkspace.runCli(['list']);
         });
 
         it('should not show killed process as RUNNING', async () => {
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             // Verify it's running
-            const runningResult = await cli(['list']);
-            expect(runningResult.stdout).toContain('echo');
-            expect(runningResult.stdout).toContain('RUNNING');
+            const runningResult = await workspace.runCli(['list']);
+            expect(runningResult.stdoutAsString()).toContain('echo');
+            // Find the line with 'echo' specifically (not echo-test) and verify it's RUNNING
+            const echoLineRunning = runningResult.stdoutAsString().split('\n').find(line =>
+                line.includes('echo') && !line.includes('echo-test') && line.includes('RUNNING')
+            );
+            expect(echoLineRunning).toBeDefined();
 
             // Kill it
-            await cli(['kill', 'echo']);
+            await workspace.runCli(['kill', 'echo']);
 
-            // After kill, should not show as RUNNING
-            const afterKillResult = await cli(['list']);
-            expect(afterKillResult.code).toBe(0);
-            expect(afterKillResult.stdout).not.toContain('RUNNING');
+            // After kill, 'echo' specifically should not show as RUNNING
+            const afterKillResult = await workspace.runCli(['list']);
+            const echoLineAfterKill = afterKillResult.stdoutAsString().split('\n').find(line =>
+                line.includes('echo') && !line.includes('echo-test') && line.includes('RUNNING')
+            );
+            expect(echoLineAfterKill).toBeUndefined();
         });
     });
 });

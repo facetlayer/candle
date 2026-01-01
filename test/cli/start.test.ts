@@ -2,48 +2,42 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-start');
-const cli = workspace.createCli();
 
 describe('CLI Start Command', () => {
     afterAll(() => workspace.cleanup());
 
     describe('starting config-defined services', () => {
         it('should start a service defined in config', async () => {
-            const result = await cli(['start', 'echo']);
+            const result = await workspace.runCli(['start', 'echo']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('Started');
-            expect(result.stdout).toContain('echo');
+            expect(result.stdoutAsString()).toContain('Started');
+            expect(result.stdoutAsString()).toContain('echo');
         });
 
         it('should start multiple services at once', async () => {
-            const result = await cli(['start', 'echo', 'web']);
+            const result = await workspace.runCli(['start', 'echo', 'web']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('echo');
-            expect(result.stdout).toContain('web');
+            expect(result.stdoutAsString()).toContain('echo');
+            expect(result.stdoutAsString()).toContain('web');
         });
 
         it('should start default service when no name provided', async () => {
-            const result = await cli(['start']);
-
             // Should start first service (web) or error if no default
-            expect(result.code).toBe(0);
+            await workspace.runCli(['start']);
         });
 
         it('should show error for unknown service name', async () => {
-            const result = await cli(['start', 'nonexistent-service']);
+            const result = await workspace.runCli(['start', 'nonexistent-service'], { ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
-            expect(result.stderr).toContain('nonexistent-service');
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('nonexistent-service');
         });
 
         it('should exit quickly after starting', async () => {
             const startTime = Date.now();
-            const result = await cli(['start', 'echo']);
+            await workspace.runCli(['start', 'echo']);
             const elapsed = Date.now() - startTime;
 
-            expect(result.code).toBe(0);
             // Should exit within a reasonable time (not waiting for process to complete)
             expect(elapsed).toBeLessThan(5000);
         });
@@ -51,108 +45,101 @@ describe('CLI Start Command', () => {
 
     describe('transient processes with --shell', () => {
         it('should start transient process with --shell flag', async () => {
-            const result = await cli(['start', 'my-transient', '--shell', 'node testProcess.js']);
+            const result = await workspace.runCli(['start', 'my-transient', '--shell', 'node ../../sampleServers/testProcess.js']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('Started');
-            expect(result.stdout).toContain('my-transient');
+            expect(result.stdoutAsString()).toContain('Started');
+            expect(result.stdoutAsString()).toContain('my-transient');
         });
 
         it('should start transient process with --shell and --root', async () => {
-            const result = await cli(['start', 'rooted', '--shell', 'node ../testProcess.js', '--root', 'test']);
+            const result = await workspace.runCli(['start', 'rooted', '--shell', 'node ../../../sampleServers/testProcess.js', '--root', 'test']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('Started');
+            expect(result.stdoutAsString()).toContain('Started');
         });
 
         it('should error when --root is provided without --shell', async () => {
-            const result = await cli(['start', 'bad-config', '--root', 'test']);
+            const result = await workspace.runCli(['start', 'bad-config', '--root', 'test'], { ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
+            expect(result.failed()).toBe(true);
         });
 
         it('should error when --root escapes project directory', async () => {
-            const result = await cli(['start', 'escape', '--shell', 'echo hi', '--root', '../../../escape']);
+            const result = await workspace.runCli(['start', 'escape', '--shell', 'echo hi', '--root', '../../../escape'], { ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
-            expect(result.stderr).toContain('root');
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('root');
         });
 
         it('should allow transient to shadow config service', async () => {
             // 'echo' exists in config, but we start with different shell
-            const result = await cli(['start', 'echo', '--shell', 'node testProcess.js']);
+            const result = await workspace.runCli(['start', 'echo', '--shell', 'node ../../sampleServers/testProcess.js']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('Started');
+            expect(result.stdoutAsString()).toContain('Started');
 
             // Verify it uses our shell by checking logs
-            await cli(['wait-for-log', 'echo', '--message', 'Test server started']);
-            const logs = await cli(['logs', 'echo']);
-            expect(logs.stdout).toContain('Test server started');
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Test server started']);
+            const logs = await workspace.runCli(['logs', 'echo']);
+            expect(logs.stdoutAsString()).toContain('Test server started');
         });
     });
 
     describe('starting already running services', () => {
         it('should handle starting already running service', async () => {
             // Start once
-            await cli(['start', 'echo']);
-            await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             // Start again
-            const result = await cli(['start', 'echo']);
+            const result = await workspace.runCli(['start', 'echo']);
 
             // Should either succeed (restart) or give informative message
-            expect(result.code).toBe(0);
+            expect(result.stdoutAsString()).toBeDefined();
         });
     });
 
     describe('directory without config', () => {
         it('should error when starting in directory without config', async () => {
-            const result = await cli(['start', 'something'], { cwd: '/tmp' });
+            const result = await workspace.runCli(['start', 'something'], { cwd: '/tmp', ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
-            expect(result.stderr).toContain('.candle.json');
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('.candle.json');
         });
 
         it('should error for transient in directory without config', async () => {
-            const result = await cli(['start', 'temp', '--shell', 'echo hello'], { cwd: '/tmp' });
+            const result = await workspace.runCli(['start', 'temp', '--shell', 'echo hello'], { cwd: '/tmp', ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
-            expect(result.stderr).toContain('.candle.json');
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('.candle.json');
         });
     });
 
     describe('start output format', () => {
         it('should show process info after starting', async () => {
-            const result = await cli(['start', 'echo']);
+            const result = await workspace.runCli(['start', 'echo']);
 
-            expect(result.code).toBe(0);
             // Should indicate the process was started
-            expect(result.stdout.toLowerCase()).toMatch(/start/);
+            expect(result.stdoutAsString().toLowerCase()).toMatch(/start/);
         });
 
         it('should have minimal stderr on success', async () => {
-            const result = await cli(['start', 'echo']);
+            const result = await workspace.runCli(['start', 'echo']);
 
-            expect(result.code).toBe(0);
             // No errors on success
-            expect(result.stderr).toBe('');
+            expect(result.stderrAsString()).toBe('');
         });
     });
 
     describe('special characters in names', () => {
         it('should handle names with dashes', async () => {
-            const result = await cli(['start', 'my-dashed-name', '--shell', 'node testProcess.js']);
+            const result = await workspace.runCli(['start', 'my-dashed-name', '--shell', 'node ../../sampleServers/testProcess.js']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('my-dashed-name');
+            expect(result.stdoutAsString()).toContain('my-dashed-name');
         });
 
         it('should handle names with underscores', async () => {
-            const result = await cli(['start', 'my_underscore_name', '--shell', 'node testProcess.js']);
+            const result = await workspace.runCli(['start', 'my_underscore_name', '--shell', 'node ../../sampleServers/testProcess.js']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('my_underscore_name');
+            expect(result.stdoutAsString()).toContain('my_underscore_name');
         });
     });
 

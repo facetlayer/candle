@@ -2,15 +2,15 @@
   "services": [
     {
       "name": "web",
-      "shell": "node ../sampleServers/testProcess.js"
+      "shell": "node ../../sampleServers/testProcess.js"
     },
     {
       "name": "echo",
-      "shell": "node ../sampleServers/echoServer.js"
+      "shell": "node ../../sampleServers/echoServer.js"
     },
     {
       "name": "delayed-logger",
-      "shell": "node ../sampleServers/delayedLogger.js"
+      "shell": "node ../../sampleServers/delayedLogger.js"
     }
   ]
 }

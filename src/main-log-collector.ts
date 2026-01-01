@@ -7,7 +7,7 @@ import { readStdinAsJson } from './log-collector/readStdinJson.ts';
 import { ProcessLogType, saveProcessLog } from './logs/processLogs.ts';
 import { debugLog } from './debug.ts';
 
-const DEFAULT_SUCCESSFUL_START_WAIT_MS = 500;
+const DEFAULT_GRACE_PERIOD_WAIT_MS = 500;
 
 function startService(message: LogCollectorLaunchInfo): Subprocess {
   const { commandName, projectDir, shell, root } = message;
@@ -73,10 +73,10 @@ async function main() {
     process.exit(1);
   }
   
-  // Wait for a short period to ensure the process has started.
-  await new Promise(resolve => setTimeout(resolve, DEFAULT_SUCCESSFUL_START_WAIT_MS));
+  // Grace period: Wait for a short period to ensure the process does not fail quickly.
+  await new Promise(resolve => setTimeout(resolve, DEFAULT_GRACE_PERIOD_WAIT_MS));
 
-  if (subprocess.proc.exitCode !== 0) {
+  if (subprocess.proc.exitCode != null && subprocess.proc.exitCode !== 0) {
     debugLog('[main-log-collector] Process failed during grace period, pid=' + subprocess.proc.pid + ', code=' + subprocess.proc.exitCode);
     saveProcessLog({
       command_name: launchInfo.commandName,

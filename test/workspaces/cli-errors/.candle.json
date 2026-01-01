@@ -2,11 +2,11 @@
   "services": [
     {
       "name": "web",
-      "shell": "node ../sampleServers/testProcess.js"
+      "shell": "node ../../sampleServers/testProcess.js"
     },
     {
       "name": "echo",
-      "shell": "node ../sampleServers/echoServer.js"
+      "shell": "node ../../sampleServers/echoServer.js"
     }
   ]
 }

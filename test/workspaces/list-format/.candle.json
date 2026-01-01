@@ -2,7 +2,7 @@
   "services": [
     {
       "name": "test-format",
-      "shell": "node ../sampleServers/testProcess.js"
+      "shell": "node ../../sampleServers/testProcess.js"
     }
   ]
 }

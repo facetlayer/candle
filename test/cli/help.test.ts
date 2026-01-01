@@ -2,26 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { TestWorkspace, normalizeOutput } from './utils';
 
 const workspace = new TestWorkspace('cli-help');
-const cli = workspace.createCli();
 
 describe('CLI Help Command', () => {
 
     describe('--help flag', () => {
         it('should display main help when --help is passed', async () => {
-            const result = await cli(['--help']);
+            const result = await workspace.runCli(['--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('Commands:');
-            expect(result.stdout).toContain('run');
-            expect(result.stdout).toContain('start');
-            expect(result.stdout).toContain('kill');
-            expect(result.stdout).toContain('restart');
-            expect(result.stdout).toContain('list');
-            expect(result.stdout).toContain('logs');
+            expect(result.stdoutAsString()).toContain('Commands:');
+            expect(result.stdoutAsString()).toContain('run');
+            expect(result.stdoutAsString()).toContain('start');
+            expect(result.stdoutAsString()).toContain('kill');
+            expect(result.stdoutAsString()).toContain('restart');
+            expect(result.stdoutAsString()).toContain('list');
+            expect(result.stdoutAsString()).toContain('logs');
         });
 
         it('should display help with all expected commands', async () => {
-            const result = await cli(['--help']);
+            const result = await workspace.runCli(['--help']);
 
             // All main commands should be listed
             const commands = [
@@ -45,169 +43,154 @@ describe('CLI Help Command', () => {
             ];
 
             for (const cmd of commands) {
-                expect(result.stdout).toContain(cmd);
+                expect(result.stdoutAsString()).toContain(cmd);
             }
         });
 
         it('should have consistent help output format (snapshot)', async () => {
-            const result = await cli(['--help']);
+            const result = await workspace.runCli(['--help']);
 
             // Snapshot the structure of help output (normalized)
-            const normalized = normalizeOutput(result.stdout);
+            const normalized = normalizeOutput(result.stdoutAsString());
 
             // Check for consistent structure
             expect(normalized).toContain('Commands:');
             expect(normalized).toContain('Options:');
-            expect(result.code).toBe(0);
         });
     });
 
     describe('no arguments', () => {
         it('should display help when no arguments provided', async () => {
-            const result = await cli([]);
+            const result = await workspace.runCli([]);
 
-            const output = result.stdout + result.stderr;
+            const output = result.stdoutAsString() + result.stderrAsString();
             expect(output).toContain('Commands:');
         });
     });
 
     describe('command-specific help', () => {
         it('should show help for run command', async () => {
-            const result = await cli(['run', '--help']);
+            const result = await workspace.runCli(['run', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('run');
+            expect(result.stdoutAsString()).toContain('run');
         });
 
         it('should show help for start command', async () => {
-            const result = await cli(['start', '--help']);
+            const result = await workspace.runCli(['start', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('start');
+            expect(result.stdoutAsString()).toContain('start');
         });
 
         it('should show help for kill command', async () => {
-            const result = await cli(['kill', '--help']);
+            const result = await workspace.runCli(['kill', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('kill');
+            expect(result.stdoutAsString()).toContain('kill');
         });
 
         it('should show help for list command', async () => {
-            const result = await cli(['list', '--help']);
+            const result = await workspace.runCli(['list', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('list');
+            expect(result.stdoutAsString()).toContain('list');
         });
 
         it('should show help for logs command', async () => {
-            const result = await cli(['logs', '--help']);
+            const result = await workspace.runCli(['logs', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('logs');
+            expect(result.stdoutAsString()).toContain('logs');
         });
 
         it('should show help for wait-for-log command', async () => {
-            const result = await cli(['wait-for-log', '--help']);
+            const result = await workspace.runCli(['wait-for-log', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('wait-for-log');
-            expect(result.stdout).toContain('--message');
-            expect(result.stdout).toContain('--timeout');
+            expect(result.stdoutAsString()).toContain('wait-for-log');
+            expect(result.stdoutAsString()).toContain('--message');
+            expect(result.stdoutAsString()).toContain('--timeout');
         });
 
         it('should show help for add-service command', async () => {
-            const result = await cli(['add-service', '--help']);
+            const result = await workspace.runCli(['add-service', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('add-service');
-            expect(result.stdout).toContain('--root');
+            expect(result.stdoutAsString()).toContain('add-service');
+            expect(result.stdoutAsString()).toContain('--root');
         });
 
         it('should show help for restart command', async () => {
-            const result = await cli(['restart', '--help']);
+            const result = await workspace.runCli(['restart', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('restart');
+            expect(result.stdoutAsString()).toContain('restart');
         });
 
         it('should show help for list-all command', async () => {
-            const result = await cli(['list-all', '--help']);
+            const result = await workspace.runCli(['list-all', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('list-all');
+            expect(result.stdoutAsString()).toContain('list-all');
         });
 
         it('should show help for kill-all command', async () => {
-            const result = await cli(['kill-all', '--help']);
+            const result = await workspace.runCli(['kill-all', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('kill-all');
+            expect(result.stdoutAsString()).toContain('kill-all');
         });
 
         it('should show help for clear-logs command', async () => {
-            const result = await cli(['clear-logs', '--help']);
+            const result = await workspace.runCli(['clear-logs', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('clear-logs');
+            expect(result.stdoutAsString()).toContain('clear-logs');
         });
 
         it('should show help for erase-database command', async () => {
-            const result = await cli(['erase-database', '--help']);
+            const result = await workspace.runCli(['erase-database', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('erase-database');
+            expect(result.stdoutAsString()).toContain('erase-database');
         });
 
         it('should show help for list-docs command', async () => {
-            const result = await cli(['list-docs', '--help']);
+            const result = await workspace.runCli(['list-docs', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('list-docs');
+            expect(result.stdoutAsString()).toContain('list-docs');
         });
 
         it('should show help for get-doc command', async () => {
-            const result = await cli(['get-doc', '--help']);
+            const result = await workspace.runCli(['get-doc', '--help']);
 
-            expect(result.code).toBe(0);
-            expect(result.stdout).toContain('get-doc');
+            expect(result.stdoutAsString()).toContain('get-doc');
         });
     });
 
     describe('help aliases', () => {
         it('should show same help for ls and list', async () => {
-            const listResult = await cli(['list', '--help']);
-            const lsResult = await cli(['ls', '--help']);
+            const listResult = await workspace.runCli(['list', '--help']);
+            const lsResult = await workspace.runCli(['ls', '--help']);
 
             // Both should succeed and have similar content
-            expect(listResult.code).toBe(0);
-            expect(lsResult.code).toBe(0);
+            expect(listResult.stdoutAsString()).toBeDefined();
+            expect(lsResult.stdoutAsString()).toBeDefined();
         });
 
         it('should show same help for stop and kill', async () => {
-            const killResult = await cli(['kill', '--help']);
-            const stopResult = await cli(['stop', '--help']);
+            const killResult = await workspace.runCli(['kill', '--help']);
+            const stopResult = await workspace.runCli(['stop', '--help']);
 
             // Both should succeed
-            expect(killResult.code).toBe(0);
-            expect(stopResult.code).toBe(0);
+            expect(killResult.stdoutAsString()).toBeDefined();
+            expect(stopResult.stdoutAsString()).toBeDefined();
         });
     });
 
     describe('invalid commands', () => {
         it('should show error for unrecognized command', async () => {
-            const result = await cli(['nonexistent-command']);
+            const result = await workspace.runCli(['nonexistent-command'], { ignoreExitCode: true });
 
-            expect(result.code).not.toBe(0);
-            const output = result.stdout + result.stderr;
+            expect(result.failed()).toBe(true);
+            const output = result.stdoutAsString() + result.stderrAsString();
             expect(output.toLowerCase()).toContain('unrecognized');
         });
 
         it('should suggest similar commands for typos', async () => {
-            const result = await cli(['stat']); // typo for 'start'
+            const result = await workspace.runCli(['stat'], { ignoreExitCode: true }); // typo for 'start'
 
             // May or may not have suggestions, but should fail
-            expect(result.code).not.toBe(0);
+            expect(result.failed()).toBe(true);
         });
     });
 });

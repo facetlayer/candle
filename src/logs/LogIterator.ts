@@ -10,6 +10,12 @@ export class LogIterator {
     this.options = options;
   }
 
+  copy(): LogIterator {
+    const copy = new LogIterator(this.options);
+    copy.currentLogId = this.currentLogId;
+    return copy;
+  }
+
   /*
     Set the iterator position to use the most recent log message.
     (with these filters)
@@ -23,7 +29,7 @@ export class LogIterator {
     });
 
     // temp
-    console.log('[LogIterator] resetToLatestLogMessage', logs);
+    //console.log('[LogIterator] resetToLatestLogMessage', logs);
 
     if (logs.length > 0) {
       this.currentLogId = logs[0].id;

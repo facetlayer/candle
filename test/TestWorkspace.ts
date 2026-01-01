@@ -1,8 +1,9 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { runShellCommand } from '@facetlayer/subprocess-wrapper';
+import { runShellCommand, SubprocessResult } from '@facetlayer/subprocess-wrapper';
 import { mcpShell, MCPStdinSubprocess } from 'expect-mcp';
 
+// DEPRECATED: CommandResult is the old response object. This will be deleted. Use SubprocessResult instead.
 export interface CommandResult {
     stdout: string;
     stderr: string;
@@ -12,6 +13,7 @@ export interface CommandResult {
 export interface CliOptions {
     cwd?: string;
     env?: Record<string, string>;
+    ignoreExitCode?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ export interface CliOptions {
  *
  * Usage:
  *   const workspace = new TestWorkspace('my-test-suite');
- *   const cli = workspace.createCli();
+ *   const result = await workspace.runCli(['start', 'echo']);
  *
  *   afterAll(() => workspace.cleanup());
  *
@@ -46,37 +48,36 @@ export class TestWorkspace {
         }
     }
 
-    /**
-     * Creates a CLI runner function that automatically sets CANDLE_DATABASE_DIR
-     * and uses the workspace directory as the default cwd.
-     */
-    createCli() {
-        const dbDir = this.dbDir;
-        const cliPath = this.cliPath;
+    /*
+      Runs a CLI command in the workspace.
 
-        return async function runCandleCommand(
-            args: string[],
-            options: CliOptions = {}
-        ): Promise<CommandResult> {
-            const env = {
-                ...process.env,
-                CANDLE_DATABASE_DIR: dbDir,
-                // Ensure consistent output for testing
-                FORCE_COLOR: '0',
-                ...(options.env || {}),
-            };
+      This will use the workspace directory as the current working directory for the shell command,
+      so Candle will use the local .candle.json config.
 
-            const result = await runShellCommand('node', [cliPath, ...args], {
-                cwd: options.cwd ?? dbDir,
-                env,
-            });
-
-            return {
-                stdout: result.stdoutAsString(),
-                stderr: Array.isArray(result.stderr) ? result.stderr.join('\n') : result.stderr || '',
-                code: result.exitCode || 0,
-            };
+      It also sets the CANDLE_DATABASE_DIR environment variable to the workspace directory, so that
+      the command uses the workspace database.
+    */
+    async runCli(args: string[], options: CliOptions = {}): Promise<SubprocessResult> {
+        const cwd = this.dbDir;
+        const env = {
+            ...process.env,
+            CANDLE_DATABASE_DIR: cwd,
+            FORCE_COLOR: '0',
+            ...(options.env || {}),
         };
+
+        //console.log('runCandleCommand', args, options);
+
+        const result = await runShellCommand('node', [this.cliPath, ...args], {
+            cwd: options.cwd ?? cwd,
+            env,
+        });
+
+        if (result.failed() && !options.ignoreExitCode) {
+            throw result.asError();
+        }
+
+        return result;
     }
 
     /**

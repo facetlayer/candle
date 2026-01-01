@@ -1,6 +1,6 @@
 import * as Path from 'node:path';
 import { findProjectDir, getServiceConfigByName, type ServiceConfig } from '../configFile.ts';
-import { UsageError } from '../errors.ts';
+import { ProcessStartFailedError, UsageError } from '../errors.ts';
 import { handleKill } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
 import { LogIterator } from '../logs/LogIterator.ts';
@@ -37,6 +37,13 @@ function isValidRelativePath(p: string): boolean {
 export async function startOneService(req: RunOptions) {
   let projectDir: string;
   let serviceConfig: ServiceConfig;
+  const startTime = Date.now();
+
+  function getTimeSinceStart() {
+    return `${Date.now() - startTime}ms`;
+  }
+
+  debugLog('[startOneService] starting: ' + JSON.stringify(req));
 
   if (req.shell) {
     // Transient process - use provided shell/root
@@ -69,13 +76,15 @@ export async function startOneService(req: RunOptions) {
   // Kill any existing processes for this service
   await handleKill({ commandNames: [serviceConfig.name], quietFailure: true });
 
-  debugLog('[startOneService] process_start_initiated for name=' + serviceConfig.name + ', projectDir=' + projectDir);
+  debugLog('[startOneService] killed existing processes, timeSinceStart=' + getTimeSinceStart());
 
   const logIterator = new LogIterator({
     commandNames: [serviceConfig.name],
     projectDir: projectDir,
   });
   logIterator.resetToLatestLogMessage();
+
+  const initialLogPosition = logIterator.copy();
 
   // Save the 'process has started' log.
   saveProcessLog({
@@ -84,6 +93,9 @@ export async function startOneService(req: RunOptions) {
     log_type: ProcessLogType.process_start_initiated,
   });
 
+  debugLog('[startOneService] launching with log collector for name=' + serviceConfig.name + ', projectDir=' + projectDir
+    + ', timeSinceStart=' + getTimeSinceStart());
+
   await launchWithLogCollector({
     commandName: serviceConfig.name,
     projectDir,
@@ -91,7 +103,7 @@ export async function startOneService(req: RunOptions) {
     root: serviceConfig.root,
   });
 
-  debugLog('[startOneService] waiting for process to start');
+  debugLog('[startOneService] waiting for process start logs, timeSinceStart=' + getTimeSinceStart());
 
   // Watch the logs for either 'process_started' or 'process_start_failed'
   const waitForSuccess = (async () => {
@@ -104,7 +116,8 @@ export async function startOneService(req: RunOptions) {
       }
 
       if (log.log_type === ProcessLogType.process_start_failed) {
-        throw new Error(`Process '${serviceConfig.name}' failed to start`);
+        const recentLogs = initialLogPosition.getNextLogs();
+        throw new ProcessStartFailedError({ commandName: serviceConfig.name, recentLogs });
       }
     }
   })();
@@ -119,7 +132,7 @@ export async function startOneService(req: RunOptions) {
     }),
   ]);
 
-  debugLog('[startOneService] finished startup');
+  debugLog('[startOneService] finished startup, timeSinceStart=' + getTimeSinceStart());
 
   let launchDir = projectDir;
   if (serviceConfig.root) {

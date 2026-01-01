@@ -1,10 +1,8 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
 import { MCPStdinSubprocess } from 'expect-mcp';
 import { TestWorkspace } from '../TestWorkspace';
-import { createMcpApp } from '../mcp/utils';
 
 const workspace = new TestWorkspace('invalid-config');
-const cli = workspace.createCli();
 
 describe('Invalid Config Tests', () => {
     let app: MCPStdinSubprocess;
@@ -19,25 +17,55 @@ describe('Invalid Config Tests', () => {
     });
 
     describe('CLI', () => {
-        it('should capture exit code in logs when service fails', async () => {
-            await cli(['start', 'invalid-startup-command']);
+        it('should show error details when service fails to start', async () => {
+            // Start command fails because the service's startup command fails
+            const result = await workspace.runCli(['start', 'invalid-startup-command'], { ignoreExitCode: true });
 
-            // Wait for the process to fail
+            // The CLI should exit with an error
+            expect(result.failed()).toBe(true);
+
+            // The stderr should contain the failure message and the actual error from the process
+            const stderr = result.stderrAsString();
+            expect(stderr).toContain("Process 'invalid-startup-command' failed to start");
+            expect(stderr).toContain('Cannot find module');
+            expect(stderr).toContain('nonexistent-script.js');
+            expect(stderr).toContain('MODULE_NOT_FOUND');
+        });
+
+        it('should also capture error in logs', async () => {
+            // Start command fails
+            await workspace.runCli(['start', 'invalid-startup-command'], { ignoreExitCode: true });
+
+            // Wait for logs to be captured
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const logsResult = await cli(['logs', 'invalid-startup-command']);
+            // The logs command should also show the error
+            const logsResult = await workspace.runCli(['logs', 'invalid-startup-command']);
+            const logsText = logsResult.stdoutAsString();
 
-            expect(logsResult.stdout).toContain('exited with code');
-            expect(logsResult.stdout).toContain('No such file or directory');
+            expect(logsText).toContain('Cannot find module');
+            expect(logsText).toContain('MODULE_NOT_FOUND');
         });
     });
 
     describe('MCP', () => {
-        it('should capture exit code in GetLogs when service fails', async () => {
-            app = createMcpApp({
-                cwd: workspace.dbDir,
-                databaseDir: workspace.dbDir,
+        it('should return error with details when service fails to start', async () => {
+            app = workspace.createMcpApp();
+
+            const result = await app.callTool('StartService', {
+                name: 'invalid-startup-command',
             });
+
+            // The MCP call should return an error
+            expect(result.isError).toBe(true);
+
+            // The error should contain details about the failure
+            const errorText = result.getTextContent() ?? '';
+            expect(errorText).toContain('failed to start');
+        });
+
+        it('should capture error in GetLogs when service fails', async () => {
+            app = workspace.createMcpApp();
 
             await app.callTool('StartService', {
                 name: 'invalid-startup-command',
@@ -53,8 +81,9 @@ describe('Invalid Config Tests', () => {
             await expect(logsResult).toBeSuccessful();
             const logsText = logsResult.getTextContent() ?? '';
 
-            // The exit code should be captured
-            expect(logsText).toMatch(/exited with code/i);
+            // The logs should contain the error details
+            expect(logsText).toContain('Cannot find module');
+            expect(logsText).toContain('MODULE_NOT_FOUND');
         });
     });
 });

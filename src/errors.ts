@@ -1,5 +1,7 @@
 // Error subclasses for specific error types
 
+import { type ProcessLog } from "./logs/processLogs.ts";
+
 export class UsageError extends Error {
   isUsageError = true;
 
@@ -37,5 +39,14 @@ export class MissingSetupFileError extends Error {
     super(`No .candle.json file found in (or above) current directory: ${cwd}`);
     this.name = 'MissingSetupFile';
     this.cwd = cwd;
+  }
+}
+
+export class ProcessStartFailedError extends Error {
+  isUsageError = true;
+
+  constructor({ commandName, recentLogs }: { commandName: string, recentLogs: ProcessLog[] }) {
+    super(`Process '${commandName}' failed to start. Recent logs: ${recentLogs.map(log => log.content).join('\n')}`);
+    this.name = 'ProcessStartFailedError';
   }
 }

@@ -1,16 +1,12 @@
 {
   "services": [
     {
-      "name": "web",
-      "shell": "node ../sampleServers/testProcess.js"
-    },
-    {
       "name": "echo",
-      "shell": "node ../sampleServers/echoServer.js"
+      "shell": "node ../../sampleServers/echoServer.js"
     },
     {
       "name": "error-service",
-      "shell": "node ../sampleServers/errorServer.js"
+      "shell": "node ../../sampleServers/errorServer.js"
     }
   ]
 }
