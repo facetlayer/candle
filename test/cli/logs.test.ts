@@ -140,6 +140,72 @@ describe('logs accumulation', () => {
     });
 });
 
+describe('multiple launches - only show most recent', () => {
+    it('should only show logs from the most recent launch', async () => {
+        // Run service 3 times, with the 3rd still running when we check logs
+        // (transient processes can only be looked up while running)
+
+        // Run 1 - exits quickly
+        await workspace.runCli([
+            'run', 'multi-launch-test',
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_ONE_MARKER 500'
+        ], { timeout: 10000 });
+
+        // Run 2 - exits quickly
+        await workspace.runCli([
+            'run', 'multi-launch-test',
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_TWO_MARKER 500'
+        ], { timeout: 10000 });
+
+        // Run 3 - stays running while we check logs
+        await workspace.runCli([
+            'start', 'multi-launch-test',
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_THREE_MARKER 5000'
+        ]);
+
+        // Wait for it to start
+        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_THREE_MARKER']);
+
+        // Now get logs - should only see the most recent run (run 3)
+        const logsResult = await workspace.runCli(['logs', 'multi-launch-test']);
+        const output = logsResult.stdoutAsString();
+
+        // Should contain the marker from run 3
+        expect(output).toContain('MARKER=RUN_THREE_MARKER');
+
+        // Should NOT contain markers from previous runs
+        expect(output).not.toContain('MARKER=RUN_ONE_MARKER');
+        expect(output).not.toContain('MARKER=RUN_TWO_MARKER');
+    });
+
+    it('should show most recent launch for currently running process', async () => {
+        // Run the service twice, second time stays running
+        await workspace.runCli([
+            'run', 'multi-launch-running',
+            '--shell', 'node ../../sampleServers/markerServer.js FIRST_RUN_MARKER 500'
+        ], { timeout: 10000 });
+
+        // Start second run that stays running longer
+        await workspace.runCli([
+            'start', 'multi-launch-running',
+            '--shell', 'node ../../sampleServers/markerServer.js SECOND_RUN_MARKER 5000'
+        ]);
+
+        // Wait for it to start
+        await workspace.runCli(['wait-for-log', 'multi-launch-running', '--message', 'MARKER=SECOND_RUN_MARKER']);
+
+        // Get logs - should only see the current run
+        const logsResult = await workspace.runCli(['logs', 'multi-launch-running']);
+        const output = logsResult.stdoutAsString();
+
+        // Should contain the marker from current run
+        expect(output).toContain('MARKER=SECOND_RUN_MARKER');
+
+        // Should NOT contain marker from previous run
+        expect(output).not.toContain('MARKER=FIRST_RUN_MARKER');
+    });
+});
+
 describe('run command with quick-exit processes', () => {
     it('should not say "Process is still running" when process exits successfully', async () => {
         // Use a transient process that exits with code 0 after 1 second (after grace period)

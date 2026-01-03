@@ -1,8 +1,7 @@
 import { getDatabase } from '../database/database.ts';
-import { ProcessLogType } from './ProcessLogType.ts';
 import { buildLogSearchQuery } from './buildLogSearchQuery.ts';
 
-export { ProcessLogType };
+const VerboseLogs = false;
 
 export interface NewProcessLog {
   command_name: string;
@@ -41,16 +40,21 @@ export function saveProcessLog(processLog: NewProcessLog) {
 
 
 export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
-
-  //console.log('getProcessLogs', options);
-
   const db = getDatabase();
   const builder = buildLogSearchQuery(options);
-  
-  //console.log('builder.getSql()', builder.getSql(), builder.getParams());
 
+  if (VerboseLogs) {
+    console.log('getProcessLogs - running SQL', builder.getSql(), builder.getParams());
+  }
+  
   const logItems = db.list(builder.getSql(), builder.getParams());
 
   // Return list in chronological order
-  return logItems.reverse();
+  const sorted = logItems.reverse();
+
+  if (VerboseLogs) {
+    console.log('getProcessLogs - got logs', sorted);
+  }
+
+  return sorted;
 }

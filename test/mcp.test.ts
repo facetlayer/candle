@@ -107,7 +107,6 @@ describe('MCP Integration Tests', () => {
             name: 'mcp-transient',
             shell: 'node ../../sampleServers/testProcess.js'
         });
-        console.log('start result', result);
 
         await expect(result).toBeSuccessful();
         const resultText = result.getTextContent();
@@ -118,7 +117,6 @@ describe('MCP Integration Tests', () => {
         const listResult = await app.callTool('ListServices', {});
         await expect(listResult).toBeSuccessful();
         const listData = JSON.parse(listResult.getTextContent() ?? '{}');
-        console.log(listData);
         const transientProcess = listData.processes?.find((p: any) => p.serviceName === 'mcp-transient');
         expect(transientProcess).toBeDefined();
         expect(transientProcess.status).toBe('RUNNING');

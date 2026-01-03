@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ProcessLogType, type ProcessLog } from './logs/processLogs.ts';
+import { type ProcessLog } from './logs/processLogs.ts';
+import { ProcessLogType } from './logs/ProcessLogType.ts';
 
 export interface ConsoleLogOptions {
   format: 'pretty' | 'json';

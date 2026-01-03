@@ -4,7 +4,8 @@ import { maybeRunCleanup } from './database/cleanup.ts';
 import { createProcessEntry, deleteProcessEntry } from './database/processTable.ts';
 import type { LogCollectorLaunchInfo } from './log-collector/LogCollectorLaunchInfo.ts';
 import { readStdinAsJson } from './log-collector/readStdinJson.ts';
-import { ProcessLogType, saveProcessLog } from './logs/processLogs.ts';
+import { saveProcessLog } from './logs/processLogs.ts';
+import { ProcessLogType } from './logs/ProcessLogType.ts';
 import { debugLog } from './debug.ts';
 
 const DEFAULT_GRACE_PERIOD_WAIT_MS = 500;

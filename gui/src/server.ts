@@ -43,6 +43,7 @@ export async function startApiServer(): Promise<number> {
       });
 
       const logFilter = new AfterProcessStartLogFilter();
+      logFilter.checkLatestLaunchStatus(allLogs);
       const logs = logFilter.filter(allLogs);
 
       res.json({

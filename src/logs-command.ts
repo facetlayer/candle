@@ -1,4 +1,4 @@
-import { AfterProcessStartLogFilter } from './afterProcessStartFilter.ts';
+import { LatestExecutionLogFilter } from './log-filters/LatestExecutionLogFilter.ts';
 import { getServiceInfoByName } from './configFile.ts';
 import { consoleLogRow } from './logs.ts';
 import { getProcessLogs } from './logs/processLogs.ts';
@@ -40,14 +40,16 @@ export async function handleLogs(options: LogsCommandOptions): Promise<void> {
   const projectDir = resolvedServices[0].projectDir;
   const commandNames = resolvedServices.map(s => s.commandName);
 
-  // Get logs and filter to only show logs from the current process run
+  // Get logs and filter to only show logs from the most recent process run
   const allLogs = getProcessLogs({
     commandNames,
     limit,
     projectDir,
   });
 
-  const logFilter = new AfterProcessStartLogFilter();
+  const logFilter = new LatestExecutionLogFilter();
+  logFilter.checkLatestLaunchStatus(allLogs);
+
   const logs = logFilter.filter(allLogs);
 
   if (logs.length === 0) {

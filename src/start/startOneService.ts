@@ -4,7 +4,8 @@ import { ProcessStartFailedError, UsageError } from '../errors.ts';
 import { handleKill } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
 import { LogIterator } from '../logs/LogIterator.ts';
-import { ProcessLogType, saveProcessLog } from '../logs/processLogs.ts';
+import { saveProcessLog } from '../logs/processLogs.ts';
+import { ProcessLogType } from '../logs/ProcessLogType.ts';
 import { debugLog } from '../debug.ts';
 
 export interface RunOptions {
