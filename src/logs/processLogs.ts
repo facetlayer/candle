@@ -29,7 +29,6 @@ export interface LogSearchOptions {
   limit?: number;
   sinceTimestamp?: number;
   afterLogId?: number;
-  limitToLatestProcessLogs?: boolean;
 }
 
 export function saveProcessLog(processLog: NewProcessLog) {
@@ -42,25 +41,15 @@ export function saveProcessLog(processLog: NewProcessLog) {
 
 
 export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
+
+  //console.log('getProcessLogs', options);
+
   const db = getDatabase();
   const builder = buildLogSearchQuery(options);
+  
+  //console.log('builder.getSql()', builder.getSql(), builder.getParams());
 
-  let logItems = db.list(builder.getSql(), builder.getParams());
-
-  if (options.limitToLatestProcessLogs) {
-    // For 'limitToLatestProcessLogs' - Stop if we find process_start_initiated
-    let foundLimit = -1;
-    for (let i = 0; i < logItems.length; i++) {
-      const log = logItems[i];
-      if (log.log_type === ProcessLogType.process_start_initiated) {
-        foundLimit = i + 1;
-        break;
-      }
-    }
-    if (foundLimit !== -1) {
-      logItems = logItems.slice(0, foundLimit);
-    }
-  }
+  const logItems = db.list(builder.getSql(), builder.getParams());
 
   // Return list in chronological order
   return logItems.reverse();

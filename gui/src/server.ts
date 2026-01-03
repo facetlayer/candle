@@ -1,5 +1,5 @@
 import express from 'express';
-import { handleList, getProcessLogs, findConfigFile } from '@facetlayer/candle';
+import { handleList, getProcessLogs, findConfigFile, AfterProcessStartLogFilter } from '@facetlayer/candle';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -36,12 +36,14 @@ export async function startApiServer(): Promise<number> {
 
       const { projectDir } = configResult;
 
-      const logs = getProcessLogs({
-        commandName: serviceName,
+      const allLogs = getProcessLogs({
+        commandNames: [serviceName],
         limit: 100,
-        limitToLatestProcessLogs: true,
         projectDir,
       });
+
+      const logFilter = new AfterProcessStartLogFilter();
+      const logs = logFilter.filter(allLogs);
 
       res.json({
         logs: logs.map(log => ({

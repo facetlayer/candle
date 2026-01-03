@@ -8,6 +8,7 @@ export type { ListOutput } from './list-command.ts';
 // Process logs
 export { getProcessLogs } from './logs/processLogs.ts';
 export type { ProcessLog } from './logs/processLogs.ts';
+export { AfterProcessStartLogFilter } from './afterProcessStartFilter.ts';
 
 // Configuration
 export { findConfigFile, getServiceConfigByName } from './configFile.ts';

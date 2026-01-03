@@ -1,6 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ProcessLogType } from './logs/processLogs.ts';
+import { ProcessLogType, type ProcessLog } from './logs/processLogs.ts';
+
+export interface ConsoleLogOptions {
+  format: 'pretty' | 'json';
+  prefix?: string;
+}
 
 let isLoggingEnabled: boolean | null = null;
 
@@ -35,35 +40,36 @@ export function infoLog(...args: any[]): void {
   }
 }
 
-function consoleLogStdout(format: 'pretty' | 'json', msg: string) {
+function consoleLogStdout(format: 'pretty' | 'json', msg: string, prefix?: string) {
   if (format === 'json') {
     console.log(JSON.stringify({ stdout: msg }));
   } else {
-    console.log(msg);
+    console.log((prefix ?? '') + msg);
   }
 }
 
-function consoleLogStderr(format: 'pretty' | 'json', msg: string) {
+function consoleLogStderr(format: 'pretty' | 'json', msg: string, prefix?: string) {
   if (format === 'json') console.log(JSON.stringify({ stderr: msg }));
-  else console.log('[stderr] ' + msg);
+  else console.log((prefix ?? '') + '[stderr] ' + msg);
 }
 
-export function consoleLogSystemMessage(format: 'pretty' | 'json', msg: string) {
+export function consoleLogSystemMessage(format: 'pretty' | 'json', msg: string, prefix?: string) {
   if (format === 'json') console.log(JSON.stringify({ message: msg }));
-  else console.log(`[${msg}]`);
+  else console.log((prefix ?? '') + `[${msg}]`);
 }
 
-export function consoleLogRow(format: 'pretty' | 'json', row: any) {
+export function consoleLogRow(row: ProcessLog, options: ConsoleLogOptions) {
+  const { format, prefix } = options;
   switch (row.log_type) {
     case ProcessLogType.stdout:
-      consoleLogStdout(format, row.content);
+      consoleLogStdout(format, row.content, prefix);
       break;
     case ProcessLogType.stderr:
-      consoleLogStderr(format, row.content);
+      consoleLogStderr(format, row.content, prefix);
       break;
     case ProcessLogType.process_exited:
     case ProcessLogType.process_start_failed:
-      consoleLogSystemMessage(format, row.content);
+      consoleLogSystemMessage(format, row.content, prefix);
       break;
     case ProcessLogType.process_start_initiated:
     case ProcessLogType.process_started:

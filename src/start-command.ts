@@ -1,7 +1,7 @@
 import { UsageError } from './errors.ts';
-import { startOneService } from './start/startOneService.ts';
+import { startOneService, type StartResult } from './start/startOneService.ts';
 
-export { startOneService };
+export { startOneService, type StartResult };
 
 interface StartOptions {
   commandNames?: string[]; // names of the services to start

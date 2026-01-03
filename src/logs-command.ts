@@ -1,9 +1,10 @@
+import { AfterProcessStartLogFilter } from './afterProcessStartFilter.ts';
 import { getServiceInfoByName } from './configFile.ts';
 import { consoleLogRow } from './logs.ts';
 import { getProcessLogs } from './logs/processLogs.ts';
 
 interface LogsCommandOptions {
-  commandName: string;
+  commandNames: string[];
   limit?: number; // Number of log lines to show
   projectDir?: string; // Optional project directory for cross-directory access
 }
@@ -11,35 +12,56 @@ interface LogsCommandOptions {
 export async function handleLogs(options: LogsCommandOptions): Promise<void> {
   const { limit = 100 } = options;
 
-  let projectDir: string;
-  let commandName: string;
+  // If no names provided, use default
+  const namesToShow = options.commandNames.length > 0 ? options.commandNames : [null];
+  const isBlendedMode = namesToShow.length > 1;
 
-  if (options.projectDir) {
-    // Use the provided project directory directly
-    projectDir = options.projectDir;
-    commandName = options.commandName;
-  } else {
-    // Get service info - works for both config-defined and transient processes
-    const info = getServiceInfoByName(options.commandName);
-    projectDir = info.projectDir;
-    commandName = info.commandName;
+  // Resolve all command names to their actual names and project directories
+  const resolvedServices: { commandName: string; projectDir: string }[] = [];
+
+  for (const name of namesToShow) {
+    if (options.projectDir) {
+      // Use the provided project directory directly
+      resolvedServices.push({
+        projectDir: options.projectDir,
+        commandName: name,
+      });
+    } else {
+      // Get service info - works for both config-defined and transient processes
+      const info = getServiceInfoByName(name);
+      resolvedServices.push({
+        projectDir: info.projectDir,
+        commandName: info.commandName,
+      });
+    }
   }
 
-  // Get logs using the command name and project directory
-  const logs = getProcessLogs({
-    commandNames: [commandName],
+  // All services should be in the same project directory
+  const projectDir = resolvedServices[0].projectDir;
+  const commandNames = resolvedServices.map(s => s.commandName);
+
+  // Get logs and filter to only show logs from the current process run
+  const allLogs = getProcessLogs({
+    commandNames,
     limit,
-    limitToLatestProcessLogs: true,
     projectDir,
   });
 
+  const logFilter = new AfterProcessStartLogFilter();
+  const logs = logFilter.filter(allLogs);
+
   if (logs.length === 0) {
-    console.log(`No logs found for command '${commandName}' in project '${projectDir}'.`);
+    if (commandNames.length === 1) {
+      console.log(`No logs found for command '${commandNames[0]}' in project '${projectDir}'.`);
+    } else {
+      console.log(`No logs found for commands in project '${projectDir}'.`);
+    }
     return;
   }
 
-  // Display logs
+  // Display logs with prefix in blended mode
   for (const log of logs) {
-    consoleLogRow('pretty', log);
+    const prefix = isBlendedMode ? `[${log.command_name}] ` : undefined;
+    consoleLogRow(log, { format: 'pretty', prefix });
   }
 }

@@ -99,7 +99,7 @@ async function killProcess(
     const result = await killProcessTree(process.pid);
     if (result === 'success') {
       if (!options.quiet) {
-        console.log(`Killed '${process.command_name}' process with PID: ${process.pid}`);
+        console.log(`[Killed '${process.command_name}' process with PID: ${process.pid}]`);
       }
 
       // If the killed_at date is over 5 minutes old, delete the stale entry.
@@ -108,7 +108,7 @@ async function killProcess(
       if (process.killed_at && process.killed_at < Date.now() - 5 * 60 * 1000) {
         if (!options.quiet) {
           console.warn(
-            `Cleaning up stale process entry for '${process.command_name}' with PID: ${process.pid}`
+            `[Cleaning up stale process entry for '${process.command_name}' with PID: ${process.pid}]`
           );
         }
         deleteProcessEntry({
@@ -127,7 +127,7 @@ async function killProcess(
     } else if (result === 'process_not_found') {
       if (!options.quiet) {
         console.warn(
-          `Cleaning up stale process entry for '${process.command_name}' with PID: ${process.pid}`
+          `[Cleaning up stale process entry for '${process.command_name}' with PID: ${process.pid}]`
         );
       }
       deleteProcessEntry({

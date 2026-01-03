@@ -1,33 +1,60 @@
-import { getServiceConfigByName } from './configFile.ts';
-import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
+import { getServiceInfoByName } from './configFile.ts';
 import { watchProcess } from './watchProcess.ts';
 
 interface WatchCommandOptions {
-  commandName: string; // Name of the command to watch
+  commandNames: string[]; // Names of the commands to watch
 }
 
 export async function handleWatch(options: WatchCommandOptions): Promise<void> {
-  const { serviceConfig, projectDir } = getServiceConfigByName(options.commandName);
+  // If no names provided, use default
+  const namesToWatch = options.commandNames.length > 0 ? options.commandNames : [null];
 
-  // Find the running process to watch using projectDir and commandName
-  const found = findProcessesByCommandNameAndProjectDir(serviceConfig.name, projectDir)[0];
+  const foundProcesses: { serviceName: string; pid: number; projectDir: string }[] = [];
 
-  if (!found) {
-    console.log(
-      `No running process found for command '${serviceConfig.name}' in project '${projectDir}'.`
-    );
+  for (const name of namesToWatch) {
+    // getServiceInfoByName handles both config-defined and transient processes
+    const info = getServiceInfoByName(name);
+
+    if (!info.runningProcess) {
+      console.log(
+        `No running process found for command '${info.commandName}' in project '${info.projectDir}'.`
+      );
+      continue;
+    }
+
+    foundProcesses.push({
+      serviceName: info.commandName,
+      pid: info.runningProcess.pid,
+      projectDir: info.projectDir,
+    });
+  }
+
+  if (foundProcesses.length === 0) {
+    console.log('No running processes found to watch.');
     console.log('');
     return;
   }
 
-  console.log(`Watching process '${serviceConfig.name}' (PID: ${found.pid})`);
+  // Print what we're watching
+  if (foundProcesses.length === 1) {
+    console.log(`Watching process '${foundProcesses[0].serviceName}' (PID: ${foundProcesses[0].pid})`);
+  } else {
+    console.log(`Watching ${foundProcesses.length} processes:`);
+    for (const proc of foundProcesses) {
+      console.log(`  - '${proc.serviceName}' (PID: ${proc.pid})`);
+    }
+  }
   console.log('Press Ctrl+C to stop watching.');
   console.log('');
 
-  // Start watching the process
+  // All processes should be in the same project directory
+  const projectDir = foundProcesses[0].projectDir;
+  const serviceNames = foundProcesses.map(p => p.serviceName);
+
+  // Start watching the processes
   await watchProcess({
     projectDir,
-    commandName: serviceConfig.name,
+    commandNames: serviceNames,
     consoleOutputFormat: 'pretty',
   });
 }

@@ -16,9 +16,10 @@ import { handleKill } from './kill-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
 import { handleLogs } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
-import { startOneService, handleStartCommand } from './run-command.ts';
+import { startOneService, handleStartCommand } from './start-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
+import { watchProcess } from './watchProcess.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,7 +38,7 @@ function configureYargs() {
       describe: 'Enter MCP server mode',
       default: false,
     })
-    .command('run [name]', 'Launch process', (yargs: Argv) => {
+    .command('run [name...]', 'Launch process(es) and watch their output', (yargs: Argv) => {
       yargs
         .option('shell', {
           describe: 'Shell command for transient process',
@@ -72,8 +73,8 @@ function configureYargs() {
     )
     .command(['list', 'ls'], 'List active processes for current directory', (yargs: Argv) => {})
     .command('list-all', 'List all active processes', (yargs: Argv) => {})
-    .command('logs [name]', 'Show recent logs for a process', () => {})
-    .command('watch [name]', 'Watch live output from a running process', () => {})
+    .command('logs [name...]', 'Show recent logs for process(es)', () => {})
+    .command('watch [name...]', 'Watch live output from running process(es)', () => {})
     .command('wait-for-log [name]', 'Wait for a specific log message to appear', (yargs: Argv) => {
       yargs
         .option('message', {
@@ -171,7 +172,32 @@ export async function main(): Promise<void> {
 
   switch (command) {
     case 'run': {
-      await startOneService({ commandName, watchLogs: true, consoleOutputFormat: 'pretty', shell, root });
+      // Handle run command - can accept multiple service names
+      let namesToRun = commandNames.length > 0 ? commandNames : [null]; // null means default service
+
+      // If shell is provided, only one service name is allowed
+      if (shell && namesToRun.length > 1) {
+        console.error('Error: --shell can only be used with a single service name');
+        process.exit(1);
+      }
+
+      const startedServices: { projectDir: string; serviceName: string }[] = [];
+      for (const name of namesToRun) {
+        const result = await startOneService({
+          commandName: name,
+          consoleOutputFormat: 'pretty',
+          shell,
+          root
+        });
+        startedServices.push(result);
+      }
+
+      console.log('[Now watching logs - Press Ctrl+C to exit.]');
+
+      // All services should be in the same project directory
+      const projectDir = startedServices[0].projectDir;
+      const serviceNames = startedServices.map(s => s.serviceName);
+      await watchProcess({ projectDir, commandNames: serviceNames, consoleOutputFormat: 'pretty' });
       process.exit(0);
       break;
     }
@@ -206,19 +232,18 @@ export async function main(): Promise<void> {
       await handleRestart({
         commandName,
         consoleOutputFormat: 'pretty',
-        watchLogs: false,
       });
       process.exit(0);
       break;
     }
 
     case 'logs': {
-      await handleLogs({ commandName });
+      await handleLogs({ commandNames });
       break;
     }
 
     case 'watch': {
-      await handleWatch({ commandName });
+      await handleWatch({ commandNames });
       break;
     }
 

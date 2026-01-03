@@ -5,15 +5,18 @@ import { handleKill } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
 import { LogIterator } from '../logs/LogIterator.ts';
 import { ProcessLogType, saveProcessLog } from '../logs/processLogs.ts';
-import { watchProcess } from '../watchProcess.ts';
 import { debugLog } from '../debug.ts';
 
 export interface RunOptions {
   commandName: string;
   consoleOutputFormat: 'pretty' | 'json';
-  watchLogs?: boolean;
   shell?: string;
   root?: string;
+}
+
+export interface StartResult {
+  projectDir: string;
+  serviceName: string;
 }
 
 function isValidRelativePath(p: string): boolean {
@@ -31,10 +34,8 @@ function isValidRelativePath(p: string): boolean {
  startOneService
 
  Launches a single service as a subprocess.
-
- Has an option to keep running to watch logs.
 */
-export async function startOneService(req: RunOptions) {
+export async function startOneService(req: RunOptions): Promise<StartResult> {
   let projectDir: string;
   let serviceConfig: ServiceConfig;
   const startTime = Date.now();
@@ -138,21 +139,12 @@ export async function startOneService(req: RunOptions) {
   if (serviceConfig.root) {
     launchDir = Path.join(projectDir, serviceConfig.root);
   }
-  if (req.watchLogs) {
-    console.log(
-      `Started '${serviceConfig.name}' (\`${serviceConfig.shell}\`) in directory: '${launchDir}'. Press Ctrl+C to exit.`
-    );
-  } else {
-    console.log(
-      `Started '${serviceConfig.name}' (\`${serviceConfig.shell}\`) in directory: '${launchDir}'.`
-    );
-  }
+  console.log(
+    `[Started process '${serviceConfig.name}' (\`${serviceConfig.shell}\`) in directory: '${launchDir}']`
+  );
 
-  if (req.watchLogs) {
-    await watchProcess({
-      projectDir,
-      commandName: serviceConfig.name,
-      consoleOutputFormat: req.consoleOutputFormat,
-    });
-  }
+  return {
+    projectDir,
+    serviceName: serviceConfig.name,
+  };
 }

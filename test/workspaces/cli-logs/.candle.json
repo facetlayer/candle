@@ -7,6 +7,10 @@
     {
       "name": "error-service",
       "shell": "node ../../sampleServers/errorServer.js"
+    },
+    {
+      "name": "quick-exit",
+      "shell": "node ../../sampleServers/quickExitServer.js"
     }
   ]
 }

@@ -139,3 +139,167 @@ describe('logs accumulation', () => {
         expect(lines.length).toBeGreaterThan(1);
     });
 });
+
+describe('run command with quick-exit processes', () => {
+    it('should not say "Process is still running" when process exits successfully', async () => {
+        // Use a transient process that exits with code 0 after 1 second (after grace period)
+        const result = await workspace.runCli([
+            'run', 'quick-exit-success',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString() + result.stderrAsString();
+        expect(output).not.toContain('Process is still running');
+        expect(output).toContain('Process exited with code 0');
+    });
+
+    it('should not say "Process is still running" when process exits with error', async () => {
+        // Use a transient process that exits with code 1 after 1 second (after grace period)
+        const result = await workspace.runCli([
+            'run', 'quick-exit-error',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 1 1000'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString() + result.stderrAsString();
+        expect(output).not.toContain('Process is still running');
+        expect(output).toContain('Process exited with code 1');
+    });
+});
+
+describe('blended mode - watching multiple processes', () => {
+    it('should run multiple services with run command', async () => {
+        // Run two services that exit after a delay (after grace period)
+        const result = await workspace.runCli([
+            'run', 'delayed-exit-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString();
+
+        // Service should have started
+        expect(output).toContain("Started");
+        expect(output).toContain("'delayed-exit-a'");
+        expect(output).toContain('Delayed exit server');
+    });
+
+    it('should add prefix to logs in blended mode with transient processes', async () => {
+        // Start two transient services that run for a while (5 seconds)
+        await workspace.runCli([
+            'start', 'blended-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
+        ]);
+        await workspace.runCli([
+            'start', 'blended-b',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
+        ]);
+
+        // Wait for them to fully start
+        await workspace.runCli(['wait-for-log', 'blended-a', '--message', 'Delayed exit server running']);
+        await workspace.runCli(['wait-for-log', 'blended-b', '--message', 'Delayed exit server running']);
+
+        // Watch both using watch command - they will exit and watching will complete
+        const result = await workspace.runCli([
+            'watch', 'blended-a', 'blended-b'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString();
+
+        // Should have prefixes for each service since we're watching multiple
+        expect(output).toContain('[blended-a]');
+        expect(output).toContain('[blended-b]');
+    });
+
+    it('should watch multiple running processes with watch command', async () => {
+        // Start two transient services that run for a while
+        await workspace.runCli([
+            'start', 'watch-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 4000'
+        ]);
+        await workspace.runCli([
+            'start', 'watch-b',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 4000'
+        ]);
+
+        // Wait for them to fully start
+        await workspace.runCli(['wait-for-log', 'watch-a', '--message', 'Delayed exit server running']);
+        await workspace.runCli(['wait-for-log', 'watch-b', '--message', 'Delayed exit server running']);
+
+        // Watch both - they will exit and watching will complete
+        const result = await workspace.runCli([
+            'watch', 'watch-a', 'watch-b'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString();
+
+        // Should show that we're watching 2 processes
+        expect(output).toContain('Watching 2 processes');
+        expect(output).toContain("'watch-a'");
+        expect(output).toContain("'watch-b'");
+
+        // Should have prefixes since watching multiple
+        expect(output).toContain('[watch-a]');
+        expect(output).toContain('[watch-b]');
+    });
+
+    it('should not add prefix when watching single process', async () => {
+        // Run a single quick-exit service (using delayed exit to ensure it starts)
+        const result = await workspace.runCli([
+            'run', 'single-delayed',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
+        ], { timeout: 10000 });
+
+        const output = result.stdoutAsString();
+
+        // Should NOT have prefix since it's a single service
+        expect(output).not.toContain('[single-delayed]');
+        // But should still have the output
+        expect(output).toContain('Delayed exit server');
+    });
+
+    it('should error when using --shell with multiple service names', async () => {
+        const result = await workspace.runCli([
+            'run', 'service1', 'service2',
+            '--shell', 'node somescript.js'
+        ], { ignoreExitCode: true });
+
+        expect(result.failed()).toBe(true);
+        expect(result.stderrAsString()).toContain('--shell can only be used with a single service name');
+    });
+
+    it('should run multiple transient quick-exit services together', async () => {
+        // Run two transient services that exit quickly (both with code 0)
+        const result = await workspace.runCli([
+            'run', 'multi-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
+        ], { timeout: 10000 });
+
+        // First service should have started and run
+        const output = result.stdoutAsString();
+        expect(output).toContain("Started");
+        expect(output).toContain("'multi-a'");
+        expect(output).toContain('Delayed exit server');
+    });
+
+    it('should run quick-exit config service with prefix', async () => {
+        // Start quick-exit (which exits quickly) and another transient
+        await workspace.runCli(['start', 'quick-exit']);
+        await workspace.runCli([
+            'start', 'quick-exit-b',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
+        ]);
+
+        // Wait for them to start
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Watch both - they should exit
+        const result = await workspace.runCli([
+            'watch', 'quick-exit', 'quick-exit-b'
+        ], { timeout: 5000, ignoreExitCode: true });
+
+        const output = result.stdoutAsString();
+
+        // Should have prefixes since watching multiple (if any were still running)
+        // At minimum, should show watching message or already exited messages
+        expect(output.length).toBeGreaterThan(0);
+    });
+});

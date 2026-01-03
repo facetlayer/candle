@@ -1,16 +1,15 @@
 import { findProjectDir } from './configFile.ts';
 import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
 import { handleKill } from './kill-command.ts';
-import { startOneService } from './run-command.ts';
+import { startOneService } from './start-command.ts';
 
 interface RestartOptions {
   commandName: string;
   consoleOutputFormat: 'pretty' | 'json';
-  watchLogs: boolean;
 }
 
 export async function handleRestart(options: RestartOptions) {
-  const { commandName, consoleOutputFormat, watchLogs } = options;
+  const { commandName, consoleOutputFormat } = options;
 
   try {
     // Find the project directory
@@ -31,7 +30,6 @@ export async function handleRestart(options: RestartOptions) {
     await startOneService({
       commandName,
       consoleOutputFormat,
-      watchLogs,
       shell,
       root,
     });

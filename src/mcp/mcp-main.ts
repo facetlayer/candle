@@ -11,7 +11,7 @@ import { handleKill } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
 import { handleLogs } from '../logs-command.ts';
 import { handleRestart } from '../restart-command.ts';
-import { startOneService } from '../run-command.ts';
+import { startOneService } from '../start-command.ts';
 import { infoLog } from '../logs.ts';
 import { findPackageJson } from '../findPackageJson.ts';
 import { ConsoleLogInterceptor } from './ConsoleLogInterceptor.ts';
@@ -102,7 +102,7 @@ const toolDefinitions: ToolDefinition[] = [
     },
     handler: async args => {
       const result = await handleLogs({
-        commandName: args?.name as string,
+        commandNames: [args?.name as string],
         limit: args?.limit ?? DEFAULT_LOGS_LIMIT,
         projectDir: args?.projectDir as string | undefined,
       });
@@ -125,7 +125,6 @@ const toolDefinitions: ToolDefinition[] = [
     handler: async args => {
       const result = await startOneService({
         commandName: args?.name as string,
-        watchLogs: false,
         consoleOutputFormat: 'pretty',
       });
       return result;
@@ -162,7 +161,6 @@ const toolDefinitions: ToolDefinition[] = [
 
       const result = await startOneService({
         commandName: name as string,
-        watchLogs: false,
         consoleOutputFormat: 'pretty',
         shell: shell as string,
         root: root as string | undefined,
@@ -207,7 +205,6 @@ const toolDefinitions: ToolDefinition[] = [
       const result = await handleRestart({
         commandName: args?.name as string,
         consoleOutputFormat: 'pretty',
-        watchLogs: false,
       });
       return result;
     },
