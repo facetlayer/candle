@@ -1,4 +1,4 @@
-import { ProcessLog } from "../logs/processLogs.ts";
+import { type ProcessLog } from "../logs/processLogs.ts";
 import { ProcessLogType } from "../logs/ProcessLogType.ts";
 
 interface ExecutionStatus {

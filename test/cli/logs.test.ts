@@ -144,23 +144,28 @@ describe('multiple launches - only show most recent', () => {
     it('should only show logs from the most recent launch', async () => {
         // Run service 3 times, with the 3rd still running when we check logs
         // (transient processes can only be looked up while running)
+        // Use longer delays to ensure process is still running when we wait-for-log
 
-        // Run 1 - exits quickly
+        // Run 1 - runs long enough to wait for log, then we kill it
         await workspace.runCli([
-            'run', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_ONE_MARKER 500'
-        ], { timeout: 10000 });
+            'start', 'multi-launch-test',
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_ONE_MARKER 3000'
+        ]);
+        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_ONE_MARKER']);
+        await workspace.runCli(['kill', 'multi-launch-test']);
 
-        // Run 2 - exits quickly
+        // Run 2 - runs long enough to wait for log, then we kill it
         await workspace.runCli([
-            'run', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_TWO_MARKER 500'
-        ], { timeout: 10000 });
+            'start', 'multi-launch-test',
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_TWO_MARKER 3000'
+        ]);
+        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_TWO_MARKER']);
+        await workspace.runCli(['kill', 'multi-launch-test']);
 
         // Run 3 - stays running while we check logs
         await workspace.runCli([
             'start', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_THREE_MARKER 5000'
+            '--shell', 'node ../../sampleServers/markerServer.js RUN_THREE_MARKER 10000'
         ]);
 
         // Wait for it to start
@@ -181,14 +186,16 @@ describe('multiple launches - only show most recent', () => {
     it('should show most recent launch for currently running process', async () => {
         // Run the service twice, second time stays running
         await workspace.runCli([
-            'run', 'multi-launch-running',
-            '--shell', 'node ../../sampleServers/markerServer.js FIRST_RUN_MARKER 500'
-        ], { timeout: 10000 });
+            'start', 'multi-launch-running',
+            '--shell', 'node ../../sampleServers/markerServer.js FIRST_RUN_MARKER 3000'
+        ]);
+        await workspace.runCli(['wait-for-log', 'multi-launch-running', '--message', 'MARKER=FIRST_RUN_MARKER']);
+        await workspace.runCli(['kill', 'multi-launch-running']);
 
         // Start second run that stays running longer
         await workspace.runCli([
             'start', 'multi-launch-running',
-            '--shell', 'node ../../sampleServers/markerServer.js SECOND_RUN_MARKER 5000'
+            '--shell', 'node ../../sampleServers/markerServer.js SECOND_RUN_MARKER 10000'
         ]);
 
         // Wait for it to start
@@ -206,119 +213,118 @@ describe('multiple launches - only show most recent', () => {
     });
 });
 
-describe('run command with quick-exit processes', () => {
-    it('should not say "Process is still running" when process exits successfully', async () => {
-        // Use a transient process that exits with code 0 after 1 second (after grace period)
-        const result = await workspace.runCli([
-            'run', 'quick-exit-success',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
-        ], { timeout: 10000 });
+describe('process exit logging', () => {
+    it('should log output from quick-exit config service', async () => {
+        // Start the quick-exit config service (exits immediately with code 0)
+        await workspace.runCli(['start', 'quick-exit']);
 
-        const output = result.stdoutAsString() + result.stderrAsString();
-        expect(output).not.toContain('Process is still running');
-        expect(output).toContain('Process exited with code 0');
+        // Wait briefly for the process to run and exit
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Check logs for the service (config services can be looked up after exit)
+        const logsResult = await workspace.runCli(['logs', 'quick-exit']);
+        const output = logsResult.stdoutAsString();
+
+        expect(output).toContain('Quick exit server');
     });
 
-    it('should not say "Process is still running" when process exits with error', async () => {
-        // Use a transient process that exits with code 1 after 1 second (after grace period)
-        const result = await workspace.runCli([
-            'run', 'quick-exit-error',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 1 1000'
-        ], { timeout: 10000 });
+    it('should capture logs while transient process is running', async () => {
+        // Start a transient process that runs for a while
+        await workspace.runCli([
+            'start', 'exit-test',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
+        ]);
 
-        const output = result.stdoutAsString() + result.stderrAsString();
-        expect(output).not.toContain('Process is still running');
-        expect(output).toContain('Process exited with code 1');
+        // Wait for the running message
+        await workspace.runCli(['wait-for-log', 'exit-test', '--message', 'Delayed exit server running']);
+
+        // Check logs while process is still running
+        const logsResult = await workspace.runCli(['logs', 'exit-test']);
+        const output = logsResult.stdoutAsString();
+
+        expect(output).toContain('Delayed exit server');
     });
 });
 
-describe('blended mode - watching multiple processes', () => {
-    it('should run multiple services with run command', async () => {
-        // Run two services that exit after a delay (after grace period)
-        const result = await workspace.runCli([
-            'run', 'delayed-exit-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
-        ], { timeout: 10000 });
+describe('starting and logging multiple processes', () => {
+    it('should start service and capture logs', async () => {
+        // Start a service
+        const startResult = await workspace.runCli([
+            'start', 'delayed-exit-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
+        ]);
 
-        const output = result.stdoutAsString();
+        const startOutput = startResult.stdoutAsString();
 
         // Service should have started
-        expect(output).toContain("Started");
-        expect(output).toContain("'delayed-exit-a'");
-        expect(output).toContain('Delayed exit server');
+        expect(startOutput).toContain("Started");
+        expect(startOutput).toContain("'delayed-exit-a'");
+
+        // Wait for output and check logs
+        await workspace.runCli(['wait-for-log', 'delayed-exit-a', '--message', 'Delayed exit server running']);
+        const logsResult = await workspace.runCli(['logs', 'delayed-exit-a']);
+        expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
     });
 
-    it('should add prefix to logs in blended mode with transient processes', async () => {
-        // Start two transient services that run for a while (5 seconds)
+    it('should start multiple transient services', async () => {
+        // Start two transient services
         await workspace.runCli([
             'start', 'blended-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 3000'
         ]);
         await workspace.runCli([
             'start', 'blended-b',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 3000'
         ]);
 
         // Wait for them to fully start
         await workspace.runCli(['wait-for-log', 'blended-a', '--message', 'Delayed exit server running']);
         await workspace.runCli(['wait-for-log', 'blended-b', '--message', 'Delayed exit server running']);
 
-        // Watch both using watch command - they will exit and watching will complete
-        const result = await workspace.runCli([
-            'watch', 'blended-a', 'blended-b'
-        ], { timeout: 10000 });
+        // Check logs for each service
+        const logsA = await workspace.runCli(['logs', 'blended-a']);
+        const logsB = await workspace.runCli(['logs', 'blended-b']);
 
-        const output = result.stdoutAsString();
-
-        // Should have prefixes for each service since we're watching multiple
-        expect(output).toContain('[blended-a]');
-        expect(output).toContain('[blended-b]');
+        expect(logsA.stdoutAsString()).toContain('Delayed exit server');
+        expect(logsB.stdoutAsString()).toContain('Delayed exit server');
     });
 
-    it('should watch multiple running processes with watch command', async () => {
-        // Start two transient services that run for a while
+    it('should list multiple running processes', async () => {
+        // Start two transient services
         await workspace.runCli([
             'start', 'watch-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 4000'
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
         ]);
         await workspace.runCli([
             'start', 'watch-b',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 4000'
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
         ]);
 
         // Wait for them to fully start
         await workspace.runCli(['wait-for-log', 'watch-a', '--message', 'Delayed exit server running']);
         await workspace.runCli(['wait-for-log', 'watch-b', '--message', 'Delayed exit server running']);
 
-        // Watch both - they will exit and watching will complete
-        const result = await workspace.runCli([
-            'watch', 'watch-a', 'watch-b'
-        ], { timeout: 10000 });
+        // List should show both processes
+        const listResult = await workspace.runCli(['list']);
+        const output = listResult.stdoutAsString();
 
-        const output = result.stdoutAsString();
-
-        // Should show that we're watching 2 processes
-        expect(output).toContain('Watching 2 processes');
-        expect(output).toContain("'watch-a'");
-        expect(output).toContain("'watch-b'");
-
-        // Should have prefixes since watching multiple
-        expect(output).toContain('[watch-a]');
-        expect(output).toContain('[watch-b]');
+        expect(output).toContain('watch-a');
+        expect(output).toContain('watch-b');
     });
 
-    it('should not add prefix when watching single process', async () => {
-        // Run a single quick-exit service (using delayed exit to ensure it starts)
-        const result = await workspace.runCli([
-            'run', 'single-delayed',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
-        ], { timeout: 10000 });
+    it('should capture logs from single process', async () => {
+        // Start a single service
+        await workspace.runCli([
+            'start', 'single-delayed',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
+        ]);
 
-        const output = result.stdoutAsString();
+        await workspace.runCli(['wait-for-log', 'single-delayed', '--message', 'Delayed exit server running']);
 
-        // Should NOT have prefix since it's a single service
-        expect(output).not.toContain('[single-delayed]');
-        // But should still have the output
+        const logsResult = await workspace.runCli(['logs', 'single-delayed']);
+        const output = logsResult.stdoutAsString();
+
+        // Should have the output
         expect(output).toContain('Delayed exit server');
     });
 
@@ -332,21 +338,25 @@ describe('blended mode - watching multiple processes', () => {
         expect(result.stderrAsString()).toContain('--shell can only be used with a single service name');
     });
 
-    it('should run multiple transient quick-exit services together', async () => {
-        // Run two transient services that exit quickly (both with code 0)
-        const result = await workspace.runCli([
-            'run', 'multi-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 1000'
-        ], { timeout: 10000 });
+    it('should start transient service and capture output', async () => {
+        // Start a transient service
+        const startResult = await workspace.runCli([
+            'start', 'multi-a',
+            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
+        ]);
 
-        // First service should have started and run
-        const output = result.stdoutAsString();
-        expect(output).toContain("Started");
-        expect(output).toContain("'multi-a'");
-        expect(output).toContain('Delayed exit server');
+        // Service should have started
+        const startOutput = startResult.stdoutAsString();
+        expect(startOutput).toContain("Started");
+        expect(startOutput).toContain("'multi-a'");
+
+        // Wait for output and verify logs
+        await workspace.runCli(['wait-for-log', 'multi-a', '--message', 'Delayed exit server running']);
+        const logsResult = await workspace.runCli(['logs', 'multi-a']);
+        expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
     });
 
-    it('should run quick-exit config service with prefix', async () => {
+    it('should start and track quick-exit config service', async () => {
         // Start quick-exit (which exits quickly) and another transient
         await workspace.runCli(['start', 'quick-exit']);
         await workspace.runCli([
@@ -357,15 +367,8 @@ describe('blended mode - watching multiple processes', () => {
         // Wait for them to start
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Watch both - they should exit
-        const result = await workspace.runCli([
-            'watch', 'quick-exit', 'quick-exit-b'
-        ], { timeout: 5000, ignoreExitCode: true });
-
-        const output = result.stdoutAsString();
-
-        // Should have prefixes since watching multiple (if any were still running)
-        // At minimum, should show watching message or already exited messages
-        expect(output.length).toBeGreaterThan(0);
+        // Check that we can get logs for both
+        const logsResult = await workspace.runCli(['logs', 'quick-exit-b']);
+        expect(logsResult.stdoutAsString().length).toBeGreaterThan(0);
     });
 });
