@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { maybeRunCleanup } from './database/cleanup.ts';
@@ -8,6 +10,7 @@ import { startMonitoredService } from './log-collector/startMonitoredService.ts'
 import { saveProcessLog } from './logs/processLogs.ts';
 import { ProcessLogType } from './logs/ProcessLogType.ts';
 import { debugLog } from './debug.ts';
+import * as Path from 'node:path';
 
 const DEFAULT_GRACE_PERIOD_WAIT_MS = 500;
 
@@ -38,13 +41,19 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
       type: 'string',
       description: 'Root directory relative to projectDir',
     })
+    .option('usePty', {
+      type: 'boolean',
+      default: false,
+      description: 'Use PTY for interactive process',
+    })
     .parse();
 
   return {
     commandName: parsed.commandName,
-    projectDir: parsed.projectDir,
+    projectDir: Path.resolve(parsed.projectDir),
     shell: parsed.shell,
     root: parsed.root,
+    usePty: parsed.usePty,
   };
 }
 
@@ -58,12 +67,12 @@ async function main() {
 
   const subprocess = startMonitoredService(launchInfo);
 
-  debugLog('[main-log-collector] Launched subprocess, pid=' + subprocess.proc.pid);
+  debugLog('[main-log-collector] Launched subprocess, pid=' + subprocess.pid);
 
   createProcessEntry({
     commandName: launchInfo.commandName,
     projectDir: launchInfo.projectDir,
-    pid: subprocess.proc.pid,
+    pid: subprocess.pid,
     logCollectorPid: process.pid,
     shell: launchInfo.shell,
     root: launchInfo.root,
@@ -72,7 +81,7 @@ async function main() {
   try {
     await subprocess.waitForStart();
   } catch (error) {
-    debugLog('[main-log-collector] Process failed to start, pid=' + subprocess.proc.pid + ', error=' + error.message);
+    debugLog('[main-log-collector] Process failed to start, pid=' + subprocess.pid + ', error=' + error.message);
     saveProcessLog({
       command_name: launchInfo.commandName,
       project_dir: launchInfo.projectDir,
@@ -85,23 +94,23 @@ async function main() {
   // Grace period: Wait for a short period to ensure the process does not fail quickly.
   await new Promise(resolve => setTimeout(resolve, DEFAULT_GRACE_PERIOD_WAIT_MS));
 
-  if (subprocess.proc.exitCode != null && subprocess.proc.exitCode !== 0) {
-    debugLog('[main-log-collector] Process failed during grace period, pid=' + subprocess.proc.pid + ', code=' + subprocess.proc.exitCode);
+  if (subprocess.getExitCode() != null && subprocess.getExitCode() !== 0) {
+    debugLog('[main-log-collector] Process failed during grace period, pid=' + subprocess.pid + ', code=' + subprocess.getExitCode());
     saveProcessLog({
       command_name: launchInfo.commandName,
       project_dir: launchInfo.projectDir,
       log_type: ProcessLogType.process_start_failed,
-      content: 'Process failed to start: ' + subprocess.proc.exitCode,
+      content: 'Process failed to start: ' + subprocess.getExitCode(),
     });
     deleteProcessEntry({
       commandName: launchInfo.commandName,
       projectDir: launchInfo.projectDir,
-      pid: subprocess.proc.pid,
+      pid: subprocess.pid,
     });
     return;
   }
 
-  debugLog('[main-log-collector] Process started, pid=' + subprocess.proc.pid);
+  debugLog('[main-log-collector] Process started, pid=' + subprocess.pid);
 
   saveProcessLog({
     command_name: launchInfo.commandName,
@@ -111,19 +120,19 @@ async function main() {
 
   await subprocess.waitForExit();
 
-  debugLog('[main-log-collector] Process exited, pid=' + subprocess.proc.pid + ', code=' + subprocess.proc.exitCode);
+  debugLog('[main-log-collector] Process exited, pid=' + subprocess.pid + ', code=' + subprocess.getExitCode());
 
   saveProcessLog({
     command_name: launchInfo.commandName,
     project_dir: launchInfo.projectDir,
     log_type: ProcessLogType.process_exited,
-    content: 'Process exited with code ' + subprocess.proc.exitCode,
+    content: 'Process exited with code ' + subprocess.getExitCode(),
   });
 
   deleteProcessEntry({
     commandName: launchInfo.commandName,
     projectDir: launchInfo.projectDir,
-    pid: subprocess.proc.pid,
+    pid: subprocess.pid,
   });
 }
 

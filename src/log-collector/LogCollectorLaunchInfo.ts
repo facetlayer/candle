@@ -3,4 +3,5 @@ export interface LogCollectorLaunchInfo {
   projectDir: string;
   shell: string;
   root?: string;
+  usePty?: boolean;
 }
