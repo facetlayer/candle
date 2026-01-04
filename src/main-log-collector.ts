@@ -1,54 +1,62 @@
-import { startShellCommand, Subprocess } from '@facetlayer/subprocess-wrapper';
-import * as Path from 'node:path';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { createProcessEntry, deleteProcessEntry } from './database/processTable.ts';
 import type { LogCollectorLaunchInfo } from './log-collector/LogCollectorLaunchInfo.ts';
 import { readStdinAsJson } from './log-collector/readStdinJson.ts';
+import { startMonitoredService } from './log-collector/startMonitoredService.ts';
 import { saveProcessLog } from './logs/processLogs.ts';
 import { ProcessLogType } from './logs/ProcessLogType.ts';
 import { debugLog } from './debug.ts';
 
 const DEFAULT_GRACE_PERIOD_WAIT_MS = 500;
 
-function startService(message: LogCollectorLaunchInfo): Subprocess {
-  const { commandName, projectDir, shell, root } = message;
+async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
+  const args = hideBin(process.argv);
 
-  let launchDir = projectDir;
-  if (root) {
-    launchDir = Path.join(projectDir, root);
+  if (args.length === 0) {
+    return readStdinAsJson();
   }
 
-  return startShellCommand(shell, [], {
-    shell: true,
-    cwd: launchDir,
-    onStdout: line => {
-      saveProcessLog({
-        command_name: commandName,
-        project_dir: projectDir,
-        content: line,
-        log_type: ProcessLogType.stdout,
-      });
-    },
-    onStderr: line => {
-      saveProcessLog({
-        command_name: commandName,
-        project_dir: projectDir,
-        content: line,
-        log_type: ProcessLogType.stderr,
-      });
-    },
-  });
+  const parsed = await yargs(args)
+    .option('commandName', {
+      type: 'string',
+      demandOption: true,
+      description: 'Name of the command/service',
+    })
+    .option('projectDir', {
+      type: 'string',
+      demandOption: true,
+      description: 'Project directory',
+    })
+    .option('shell', {
+      type: 'string',
+      demandOption: true,
+      description: 'Shell command to run',
+    })
+    .option('root', {
+      type: 'string',
+      description: 'Root directory relative to projectDir',
+    })
+    .parse();
+
+  return {
+    commandName: parsed.commandName,
+    projectDir: parsed.projectDir,
+    shell: parsed.shell,
+    root: parsed.root,
+  };
 }
 
 async function main() {
-  const launchInfo: LogCollectorLaunchInfo = await readStdinAsJson();
+  const launchInfo = await getLaunchInfo();
 
   // Check for cleanup on an interval.
   setInterval(maybeRunCleanup, 60 * 1000);
 
   debugLog('[main-log-collector] Got launchInfo: ' + JSON.stringify(launchInfo));
 
-  const subprocess = startService(launchInfo);
+  const subprocess = startMonitoredService(launchInfo);
 
   debugLog('[main-log-collector] Launched subprocess, pid=' + subprocess.proc.pid);
 
