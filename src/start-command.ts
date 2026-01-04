@@ -9,6 +9,7 @@ interface StartOptions {
   consoleOutputFormat: 'pretty' | 'json';
   shell?: string;
   root?: string;
+  pty?: boolean;
 }
 
 /*
@@ -38,6 +39,7 @@ export async function handleStartCommand(req: StartOptions) {
       consoleOutputFormat: req.consoleOutputFormat,
       shell: req.shell,
       root: req.root,
+      pty: req.pty,
     });
     return;
   }

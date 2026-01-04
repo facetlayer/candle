@@ -10,6 +10,7 @@ export interface ServiceConfig {
   name: string;
   shell: string;
   root?: string;
+  pty?: boolean;
 }
 
 export interface CandleSetupConfig {

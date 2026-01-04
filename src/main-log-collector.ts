@@ -41,7 +41,7 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
       type: 'string',
       description: 'Root directory relative to projectDir',
     })
-    .option('usePty', {
+    .option('pty', {
       type: 'boolean',
       default: false,
       description: 'Use PTY for interactive process',
@@ -53,7 +53,7 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
     projectDir: Path.resolve(parsed.projectDir),
     shell: parsed.shell,
     root: parsed.root,
-    usePty: parsed.usePty,
+    pty: parsed.pty,
   };
 }
 

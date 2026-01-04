@@ -49,6 +49,10 @@ function configureYargs() {
         .option('root', {
           describe: 'Root directory for transient process',
           type: 'string',
+        })
+        .option('pty', {
+          describe: 'Use PTY for interactive process',
+          type: 'boolean',
         });
     })
     .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
@@ -60,6 +64,10 @@ function configureYargs() {
         .option('root', {
           describe: 'Root directory for transient process',
           type: 'string',
+        })
+        .option('pty', {
+          describe: 'Use PTY for interactive process',
+          type: 'boolean',
         });
     })
     .command('restart [name]', 'Restart a process service', () => {})
@@ -110,6 +118,10 @@ function configureYargs() {
           .option('root', {
             describe: 'Root directory for the service',
             type: 'string',
+          })
+          .option('pty', {
+            describe: 'Use PTY for interactive process',
+            type: 'boolean',
           });
       }
     )
@@ -124,6 +136,7 @@ function parseArgs(): {
   mcp: boolean;
   shell?: string;
   root?: string;
+  pty?: boolean;
   message?: string;
   timeout?: number;
 } {
@@ -138,10 +151,11 @@ function parseArgs(): {
   const mcp = argv.mcp as boolean;
   const shell = argv.shell as string;
   const root = argv.root as string;
+  const pty = argv.pty as boolean;
   const message = argv.message as string;
   const timeout = argv.timeout as number;
 
-  return { command, commandNames, mcp, shell, root, message, timeout };
+  return { command, commandNames, mcp, shell, root, pty, message, timeout };
 }
 
 export async function main(): Promise<void> {
@@ -153,7 +167,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, message, timeout } =
+  const { command, commandNames, mcp, shell, root, pty, message, timeout } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -173,13 +187,13 @@ export async function main(): Promise<void> {
   switch (command) {
     case 'run': {
       const projectDir = findProjectDir();
-      await handleRunCommand({ projectDir, commandNames, shell, root });
+      await handleRunCommand({ projectDir, commandNames, shell, root, pty });
       break;
     }
 
     case 'start': {
       const projectDir = findProjectDir();
-      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root });
+      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, pty });
       process.exit(0);
       break;
     }
@@ -284,6 +298,7 @@ export async function main(): Promise<void> {
           name: commandName,
           shell: shell,
           root: root,
+          pty: pty,
         });
 
       } catch (error) {

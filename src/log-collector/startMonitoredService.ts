@@ -10,7 +10,7 @@ import { debugLog } from '../debug.ts';
 const VERY_VERBOSE_LOGS = true;
 
 export function startMonitoredService(message: LogCollectorLaunchInfo): MonitoredProcess {
-  const { commandName, projectDir, shell, root, usePty } = message;
+  const { commandName, projectDir, shell, root, pty } = message;
 
   let launchDir = projectDir;
   if (root) {
@@ -18,10 +18,10 @@ export function startMonitoredService(message: LogCollectorLaunchInfo): Monitore
   }
 
   if (VERY_VERBOSE_LOGS) {
-    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' usePty=' + usePty);
+    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' pty=' + pty);
   }
 
-  if (usePty) {
+  if (pty) {
     return startWithPty(shell, launchDir, commandName, projectDir);
   } else {
     return startWithSubprocess(shell, launchDir, commandName, projectDir);
