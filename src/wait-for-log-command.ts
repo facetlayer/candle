@@ -9,16 +9,17 @@ const POLL_INTERVAL = 200;
 const LOG_COUNT_SEARCH_LIMIT = 1000;
 
 interface WaitForLogOptions {
-  commandName: string;
+  projectDir: string;
+  commandNames: string[];
   message: string;
   timeoutMs?: number;
 }
 
-function printRecentLogs(commandName: string, projectDir: string) {
-  console.log(`Recent logs for '${commandName}':`);
+function printRecentLogs(projectDir: string, commandNames: string[]) {
+  console.log(`Recent logs for '${commandNames.join(', ')}':`);
   const filter = new LatestExecutionLogFilter();
   const allLogs = getProcessLogs({
-    commandNames: [commandName],
+    commandNames,
     limit: 100,
     projectDir,
   });
@@ -29,15 +30,12 @@ function printRecentLogs(commandName: string, projectDir: string) {
 }
 
 export async function handleWaitForLog(options: WaitForLogOptions) {
-  const { message, timeoutMs = 30000 } = options;
-
-  // Get service info - works for both config-defined and transient processes
-  const { commandName, projectDir } = getServiceInfoByName(options.commandName);
+  const { projectDir, commandNames, message, timeoutMs = 30000 } = options;
 
   // Get recent logs
   const logIterator = new LogIterator({
     projectDir,
-    commandNames: [commandName],
+    commandNames,
     limit: LOG_COUNT_SEARCH_LIMIT,
   });
   const allInitialLogs = logIterator.getNextLogs();
@@ -82,7 +80,7 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   while (true) {
     if (Date.now() - timeStarted > timeoutMs) {
       console.log(`wait-for-log failed: Timed out after ${timeoutMs}ms and message "${message}" not found.`);
-      printRecentLogs(commandName, projectDir);
+      printRecentLogs(projectDir, commandNames);
       return {
         success: false,
       };
@@ -100,7 +98,7 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
 
       if (log.log_type === ProcessLogType.process_exited) {
         console.log(`wait-for-log failed: Process exited before finding message "${message}"`);
-        printRecentLogs(commandName, projectDir);
+        printRecentLogs(projectDir, commandNames);
         return {
           success: false,
         };

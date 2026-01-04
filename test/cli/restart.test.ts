@@ -113,11 +113,10 @@ describe('CLI Restart Command', () => {
     });
 
     describe('restart unknown service', () => {
-        it('should report failure message for unknown service', async () => {
-            const result = await workspace.runCli(['restart', 'nonexistent-service']);
+        it('should fail for unknown service', async () => {
+            const result = await workspace.runCli(['restart', 'nonexistent-service'], { ignoreExitCode: true });
 
-            // CLI exits 0 but reports failure in stderr
-            expect(result.stderrAsString()).toContain('Failed to restart');
+            expect(result.failed()).toBe(true);
             expect(result.stderrAsString()).toContain('No service');
         });
     });

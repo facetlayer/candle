@@ -1,7 +1,7 @@
 import * as Path from 'node:path';
 import { findProjectDir, getServiceConfigByName, type ServiceConfig } from '../configFile.ts';
 import { ProcessStartFailedError, UsageError } from '../errors.ts';
-import { handleKill } from '../kill-command.ts';
+import { handleKillCommand } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
 import { LogIterator } from '../logs/LogIterator.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';
@@ -10,6 +10,7 @@ import { debugLog } from '../debug.ts';
 
 export interface RunOptions {
   commandName: string;
+  projectDir: string;
   consoleOutputFormat: 'pretty' | 'json';
   shell?: string;
   root?: string;
@@ -37,7 +38,12 @@ function isValidRelativePath(p: string): boolean {
  Launches a single service as a subprocess.
 */
 export async function startOneService(req: RunOptions): Promise<StartResult> {
-  let projectDir: string;
+  const { projectDir } = req;
+
+  if (!projectDir) {
+    throw new Error('startOneService: projectDir is required');
+  }
+
   let serviceConfig: ServiceConfig;
   const startTime = Date.now();
 
@@ -60,9 +66,6 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
       );
     }
 
-    // Still need a config file to define the project boundary
-    projectDir = findProjectDir();
-
     serviceConfig = {
       name: req.commandName,
       shell: req.shell,
@@ -71,18 +74,17 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
   } else {
     // Config-based process
     const found = getServiceConfigByName(req.commandName);
-    projectDir = found.projectDir;
     serviceConfig = found.serviceConfig;
   }
 
   // Kill any existing processes for this service
-  await handleKill({ commandNames: [serviceConfig.name], quietFailure: true });
+  await handleKillCommand({ projectDir, commandNames: [serviceConfig.name], quietFailure: true });
 
   debugLog('[startOneService] killed existing processes, timeSinceStart=' + getTimeSinceStart());
 
   const logIterator = new LogIterator({
     commandNames: [serviceConfig.name],
-    projectDir: projectDir,
+    projectDir,
   });
   logIterator.resetToLatestLogMessage();
 

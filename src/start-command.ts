@@ -4,6 +4,7 @@ import { startOneService, type StartResult } from './start/startOneService.ts';
 export { startOneService, type StartResult };
 
 interface StartOptions {
+  projectDir: string;
   commandNames?: string[]; // names of the services to start
   consoleOutputFormat: 'pretty' | 'json';
   shell?: string;
@@ -19,6 +20,10 @@ interface StartOptions {
 */
 
 export async function handleStartCommand(req: StartOptions) {
+  if (!req.projectDir) {
+    throw new Error('handleStartCommand: projectDir is required');
+  }
+
   let commandNames = req.commandNames || [];
 
   // If shell is provided, we're starting a transient process
@@ -28,6 +33,7 @@ export async function handleStartCommand(req: StartOptions) {
     }
 
     await startOneService({
+      projectDir: req.projectDir,
       commandName: commandNames[0],
       consoleOutputFormat: req.consoleOutputFormat,
       shell: req.shell,
@@ -43,6 +49,7 @@ export async function handleStartCommand(req: StartOptions) {
 
   for (const commandName of commandNames) {
     await startOneService({
+      projectDir: req.projectDir,
       commandName: commandName,
       consoleOutputFormat: req.consoleOutputFormat,
     });

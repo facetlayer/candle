@@ -7,14 +7,15 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { addServerConfig } from '../addServerConfig.ts';
-import { handleKill } from '../kill-command.ts';
+import { handleKillCommand } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
-import { handleLogs } from '../logs-command.ts';
+import { handleLogsCommand } from '../logs-command.ts';
 import { handleRestart } from '../restart-command.ts';
 import { startOneService } from '../start-command.ts';
 import { infoLog } from '../logs.ts';
 import { findPackageJson } from '../findPackageJson.ts';
 import { ConsoleLogInterceptor } from './ConsoleLogInterceptor.ts';
+import { findProjectDir } from '../configFile.ts';
 
 async function callWrapped(handler: (args: any) => Promise<any>, args: any) {
   const logWrapper = new ConsoleLogInterceptor();
@@ -101,7 +102,7 @@ const toolDefinitions: ToolDefinition[] = [
       required: ['name'],
     },
     handler: async args => {
-      const result = await handleLogs({
+      const result = await handleLogsCommand({
         commandNames: [args?.name as string],
         limit: args?.limit ?? DEFAULT_LOGS_LIMIT,
         projectDir: args?.projectDir as string | undefined,
@@ -123,7 +124,9 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
+      const projectDir = findProjectDir();
       const result = await startOneService({
+        projectDir,
         commandName: args?.name as string,
         consoleOutputFormat: 'pretty',
       });
@@ -159,7 +162,9 @@ const toolDefinitions: ToolDefinition[] = [
         throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
       }
 
+      const projectDir = findProjectDir();
       const result = await startOneService({
+        projectDir,
         commandName: name as string,
         consoleOutputFormat: 'pretty',
         shell: shell as string,
@@ -183,7 +188,9 @@ const toolDefinitions: ToolDefinition[] = [
     },
     handler: async args => {
       const name = args?.name as string | undefined;
-      await handleKill({
+      const projectDir = findProjectDir();
+      await handleKillCommand({
+        projectDir,
         commandNames: name ? [name] : [],
       });
     },
@@ -202,8 +209,10 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async args => {
+      const projectDir = findProjectDir();
       const result = await handleRestart({
-        commandName: args?.name as string,
+        projectDir,
+        commandNames: [args?.name as string],
         consoleOutputFormat: 'pretty',
       });
       return result;

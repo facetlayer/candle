@@ -1,38 +1,50 @@
 import { findProjectDir } from './configFile.ts';
-import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
-import { handleKill } from './kill-command.ts';
-import { startOneService } from './start-command.ts';
+import { findProcessesByCommandNameAndProjectDir, findProcessesByProjectDir, type ProcessEntry } from './database/processTable.ts';
+import { handleKillCommand } from './kill-command.ts';
+import { startOneService } from './start/startOneService.ts';
 
 interface RestartOptions {
-  commandName: string;
+  projectDir: string;
+  commandNames: string[];
   consoleOutputFormat: 'pretty' | 'json';
 }
 
 export async function handleRestart(options: RestartOptions) {
-  const { commandName, consoleOutputFormat } = options;
+  const { projectDir, consoleOutputFormat } = options;
+  let { commandNames } = options;
+
+  if (!projectDir) {
+    throw new Error('handleRestart: projectDir is required');
+  }
 
   try {
-    // Find the project directory
-    const projectDir = findProjectDir();
+    // If no command names provided, restart all running processes in the project
+    if (commandNames.length === 0) {
+      const runningProcesses = findProcessesByProjectDir(projectDir);
+      commandNames = runningProcesses.map(p => p.command_name);
+    }
 
-    // Look up the running process to get its shell and root from DB
-    const processes = findProcessesByCommandNameAndProjectDir(commandName, projectDir);
-    const runningProcess = processes[0];
+    // First, fetch process info for all command names before killing
+    const processInfoMap = new Map<string, ProcessEntry | undefined>();
+    for (const commandName of commandNames) {
+      const processes = findProcessesByCommandNameAndProjectDir(commandName, projectDir);
+      processInfoMap.set(commandName, processes[0]);
+    }
 
-    // Get shell and root from DB if process is running, otherwise will fall back to config
-    const shell = runningProcess?.shell;
-    const root = runningProcess?.root;
+    // Kill all existing processes
+    await handleKillCommand({ projectDir, commandNames });
 
-    // First kill the existing process
-    await handleKill({ commandNames: [commandName] });
-
-    // Then start it again using stored shell/root if available
-    await startOneService({
-      commandName,
-      consoleOutputFormat,
-      shell,
-      root,
-    });
+    // Then restart each service using stored shell/root if available
+    for (const commandName of commandNames) {
+      const runningProcess = processInfoMap.get(commandName);
+      await startOneService({
+        projectDir,
+        commandName,
+        consoleOutputFormat,
+        shell: runningProcess?.shell,
+        root: runningProcess?.root,
+      });
+    }
   } catch (error) {
     console.error(`Failed to restart: ${error.message}`);
   }

@@ -12,15 +12,17 @@ import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { handleClearDatabaseCommand } from './clear-database-command.ts';
 import { handleClearLogsCommand } from './clear-logs-command.ts';
-import { handleKill } from './kill-command.ts';
+import { handleKillCommand } from './kill-command.ts';
+import { handleKillAll } from './kill-all-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
-import { handleLogs } from './logs-command.ts';
+import { handleLogsCommand } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
-import { startOneService, handleStartCommand } from './start-command.ts';
+import { handleRunCommand } from './run-command.ts';
+import { handleStartCommand } from './start-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
-import { watchProcess } from './watchProcess.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
+import { assertValidCommandNames } from './cli/assertValidCommandName.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -118,7 +120,6 @@ function configureYargs() {
 
 function parseArgs(): {
   command: string;
-  commandName: string;
   commandNames: string[];
   mcp: boolean;
   shell?: string;
@@ -129,7 +130,6 @@ function parseArgs(): {
   const argv = configureYargs().parseSync();
 
   const command = argv._[0] as string;
-  const commandName = argv.name as string;
   const commandNames = Array.isArray(argv.name)
     ? (argv.name as string[])
     : argv.name
@@ -141,7 +141,7 @@ function parseArgs(): {
   const message = argv.message as string;
   const timeout = argv.timeout as number;
 
-  return { command, commandName, commandNames, mcp, shell, root, message, timeout };
+  return { command, commandNames, mcp, shell, root, message, timeout };
 }
 
 export async function main(): Promise<void> {
@@ -153,7 +153,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandName, commandNames, mcp, shell, root, message, timeout } =
+  const { command, commandNames, mcp, shell, root, message, timeout } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -172,38 +172,14 @@ export async function main(): Promise<void> {
 
   switch (command) {
     case 'run': {
-      // Handle run command - can accept multiple service names
-      let namesToRun = commandNames.length > 0 ? commandNames : [null]; // null means default service
-
-      // If shell is provided, only one service name is allowed
-      if (shell && namesToRun.length > 1) {
-        console.error('Error: --shell can only be used with a single service name');
-        process.exit(1);
-      }
-
-      const startedServices: { projectDir: string; serviceName: string }[] = [];
-      for (const name of namesToRun) {
-        const result = await startOneService({
-          commandName: name,
-          consoleOutputFormat: 'pretty',
-          shell,
-          root
-        });
-        startedServices.push(result);
-      }
-
-      console.log('[Now watching logs - Press Ctrl+C to exit.]');
-
-      // All services should be in the same project directory
-      const projectDir = startedServices[0].projectDir;
-      const serviceNames = startedServices.map(s => s.serviceName);
-      await watchProcess({ projectDir, commandNames: serviceNames, consoleOutputFormat: 'pretty' });
-      process.exit(0);
+      const projectDir = findProjectDir();
+      await handleRunCommand({ projectDir, commandNames, shell, root });
       break;
     }
 
     case 'start': {
-      await handleStartCommand({ commandNames, consoleOutputFormat: 'pretty', shell, root });
+      const projectDir = findProjectDir();
+      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root });
       process.exit(0);
       break;
     }
@@ -214,23 +190,32 @@ export async function main(): Promise<void> {
       printListOutput(output);
       break;
     }
+
     case 'list-all': {
       const output = await handleList({ showAll: true });
       printListOutput(output);
       break;
     }
+
     case 'kill':
     case 'stop': {
-      await handleKill({ commandNames });
+      const projectDir = findProjectDir();
+      assertValidCommandNames(commandNames);
+      await handleKillCommand({ projectDir, commandNames });
       break;
     }
+
     case 'kill-all': {
-      await handleKill({ allGlobalServices: true });
+      await handleKillAll();
       break;
     }
+
     case 'restart': {
+      const projectDir = findProjectDir();
+      assertValidCommandNames(commandNames);
       await handleRestart({
-        commandName,
+        projectDir,
+        commandNames,
         consoleOutputFormat: 'pretty',
       });
       process.exit(0);
@@ -238,18 +223,27 @@ export async function main(): Promise<void> {
     }
 
     case 'logs': {
-      await handleLogs({ commandNames });
+      const projectDir = findProjectDir();
+      assertValidCommandNames(commandNames);
+      await handleLogsCommand({
+        projectDir,
+        commandNames,
+      });
       break;
     }
 
     case 'watch': {
+      assertValidCommandNames(commandNames);
       await handleWatch({ commandNames });
       break;
     }
 
     case 'wait-for-log': {
+      const projectDir = findProjectDir();
+      assertValidCommandNames(commandNames);
       const result = await handleWaitForLog({
-        commandName: commandName || 'default',
+        projectDir,
+        commandNames,
         message,
         timeoutMs: timeout * 1000,
       });
@@ -263,7 +257,8 @@ export async function main(): Promise<void> {
 
     case 'clear-logs': {
       const projectDir = findProjectDir();
-      await handleClearLogsCommand({ projectDir, commandName });
+      // Don't validate command names - allow clearing logs for dead transient processes
+      await handleClearLogsCommand({ projectDir, commandNames });
       break;
     }
 
@@ -272,6 +267,18 @@ export async function main(): Promise<void> {
       break;
 
     case 'add-service': {
+
+      const commandName = commandNames[0];
+      if (!commandName) {
+        console.error('Error: No command name provided');
+        process.exit(1);
+      }
+
+      if (commandNames.length > 1) {
+        console.error('Error: Cannot use multiple command names for add-service');
+        process.exit(1);
+      }
+
       try {
         addServerConfig({
           name: commandName,
@@ -291,7 +298,7 @@ export async function main(): Promise<void> {
       break;
 
     case 'get-doc':
-      docFiles.printDocFileContents(commandName);
+      docFiles.printDocFileContents(commandNames[0]);
       break;
 
     default:

@@ -2,29 +2,29 @@ import { getDatabase } from './database/database.ts';
 
 interface ClearLogsCommandOptions {
   projectDir: string;
-  commandName: string;
+  commandNames: string[];
 }
 
 export async function handleClearLogsCommand(options: ClearLogsCommandOptions): Promise<void> {
-  const { projectDir, commandName } = options;
+  const { projectDir, commandNames } = options;
   const db = getDatabase();
 
   console.log(`Clearing logs for project: ${projectDir}`);
-  if (commandName !== 'default') {
-    console.log(`Command: ${commandName}`);
-  }
 
   try {
-    // Clear logs for this specific project directory and command
-    const result = db.run(
-      `
-            DELETE FROM process_output 
-            WHERE command_name = ? AND project_dir = ?
-        `,
-      [commandName, projectDir]
-    );
+    let clearedCount = 0;
 
-    const clearedCount = result.changes || 0;
+    for (const commandName of commandNames) {
+      // Clear logs for this specific project directory and command
+      const result = db.run(
+        `
+              DELETE FROM process_output 
+              WHERE command_name = ? AND project_dir = ?
+          `,
+        [commandName, projectDir]
+      );
+      clearedCount += result.changes || 0;
+    }
 
     if (clearedCount > 0) {
       console.log(`✓ Cleared ${clearedCount} log entries`);
