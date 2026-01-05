@@ -6,11 +6,14 @@ import type { MonitoredProcess } from './MonitoredProcess.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';
 import { ProcessLogType } from '../logs/ProcessLogType.ts';
 import { debugLog } from '../debug.ts';
+import { popStdinMessage, clearStdinMessages } from '../database/stdinMessagesTable.ts';
 
 const VERY_VERBOSE_LOGS = true;
 
+const STDIN_POLL_INTERVAL_MS = 500;
+
 export function startMonitoredService(message: LogCollectorLaunchInfo): MonitoredProcess {
-  const { commandName, projectDir, shell, root, pty } = message;
+  const { commandName, projectDir, shell, root, pty, enableStdin } = message;
 
   let launchDir = projectDir;
   if (root) {
@@ -18,13 +21,14 @@ export function startMonitoredService(message: LogCollectorLaunchInfo): Monitore
   }
 
   if (VERY_VERBOSE_LOGS) {
-    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' pty=' + pty);
+    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' pty=' + pty + ' enableStdin=' + enableStdin);
   }
 
   if (pty) {
+    // PTY mode does not support enableStdin
     return startWithPty(shell, launchDir, commandName, projectDir);
   } else {
-    return startWithSubprocess(shell, launchDir, commandName, projectDir);
+    return startWithSubprocess(shell, launchDir, commandName, projectDir, enableStdin);
   }
 }
 
@@ -84,6 +88,7 @@ function startWithSubprocess(
   launchDir: string,
   commandName: string,
   projectDir: string,
+  enableStdin?: boolean,
 ): MonitoredProcess {
   const subprocess = startShellCommand(shell, [], {
     shell: true,
@@ -118,12 +123,47 @@ function startWithSubprocess(
     });
   }
 
+  // Set up stdin polling if enabled
+  let stdinPollInterval: NodeJS.Timeout | null = null;
+  if (enableStdin) {
+    // Clear any stale stdin messages from previous runs
+    clearStdinMessages(commandName, projectDir);
+
+    stdinPollInterval = setInterval(() => {
+      // Check if process has exited
+      if (subprocess.proc.exitCode !== null) {
+        if (stdinPollInterval) {
+          clearInterval(stdinPollInterval);
+          stdinPollInterval = null;
+        }
+        return;
+      }
+
+      // Poll for stdin messages
+      const message = popStdinMessage(commandName, projectDir);
+      if (message) {
+        if (VERY_VERBOSE_LOGS) {
+          debugLog('[startService] writing stdin message: ' + message.data);
+        }
+        try {
+          subprocess.proc.stdin?.write(message.data, message.encoding as BufferEncoding);
+        } catch (error) {
+          debugLog('[startService] error writing to stdin: ' + error);
+        }
+      }
+    }, STDIN_POLL_INTERVAL_MS);
+  }
+
   return {
     pid: subprocess.proc.pid!,
     getExitCode: () => subprocess.proc.exitCode,
     waitForStart: () => subprocess.waitForStart(),
     waitForExit: async () => {
       await subprocess.waitForExit();
+      // Clean up stdin polling when process exits
+      if (stdinPollInterval) {
+        clearInterval(stdinPollInterval);
+      }
     },
   };
 }

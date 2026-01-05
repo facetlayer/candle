@@ -37,9 +37,18 @@ const schema = {
     `create table process_last_cleanup(
            timestamp integer not null
         )`,
+    `create table stdin_messages(
+            id integer primary key autoincrement,
+            command_name text not null,
+            project_dir text not null,
+            data text not null,
+            encoding text not null default 'utf8',
+            created_at integer not null default (strftime('%s', 'now'))
+        )`,
     `create index idx_process_output_command_name on process_output(command_name)`,
     `create index idx_process_output_project_dir on process_output(project_dir)`,
     `create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`,
+    `create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id)`,
   ],
 };
 

@@ -4,4 +4,5 @@ export interface LogCollectorLaunchInfo {
   shell: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
 }

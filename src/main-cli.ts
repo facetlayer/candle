@@ -53,6 +53,10 @@ function configureYargs() {
         .option('pty', {
           describe: 'Use PTY for interactive process',
           type: 'boolean',
+        })
+        .option('enable-stdin', {
+          describe: 'Enable stdin message polling from database',
+          type: 'boolean',
         });
     })
     .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
@@ -67,6 +71,10 @@ function configureYargs() {
         })
         .option('pty', {
           describe: 'Use PTY for interactive process',
+          type: 'boolean',
+        })
+        .option('enable-stdin', {
+          describe: 'Enable stdin message polling from database',
           type: 'boolean',
         });
     })
@@ -122,6 +130,10 @@ function configureYargs() {
           .option('pty', {
             describe: 'Use PTY for interactive process',
             type: 'boolean',
+          })
+          .option('enable-stdin', {
+            describe: 'Enable stdin message polling from database',
+            type: 'boolean',
           });
       }
     )
@@ -137,6 +149,7 @@ function parseArgs(): {
   shell?: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
   message?: string;
   timeout?: number;
 } {
@@ -152,10 +165,11 @@ function parseArgs(): {
   const shell = argv.shell as string;
   const root = argv.root as string;
   const pty = argv.pty as boolean;
+  const enableStdin = argv['enable-stdin'] as boolean;
   const message = argv.message as string;
   const timeout = argv.timeout as number;
 
-  return { command, commandNames, mcp, shell, root, pty, message, timeout };
+  return { command, commandNames, mcp, shell, root, pty, enableStdin, message, timeout };
 }
 
 export async function main(): Promise<void> {
@@ -167,7 +181,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, pty, message, timeout } =
+  const { command, commandNames, mcp, shell, root, pty, enableStdin, message, timeout } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -187,13 +201,13 @@ export async function main(): Promise<void> {
   switch (command) {
     case 'run': {
       const projectDir = findProjectDir();
-      await handleRunCommand({ projectDir, commandNames, shell, root, pty });
+      await handleRunCommand({ projectDir, commandNames, shell, root, pty, enableStdin });
       break;
     }
 
     case 'start': {
       const projectDir = findProjectDir();
-      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, pty });
+      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, pty, enableStdin });
       process.exit(0);
       break;
     }
@@ -299,6 +313,7 @@ export async function main(): Promise<void> {
           shell: shell,
           root: root,
           pty: pty,
+          enableStdin: enableStdin,
         });
 
       } catch (error) {

@@ -1,0 +1,9 @@
+{
+  "services": [
+    {
+      "name": "stdin-echo",
+      "shell": "node ../../sampleServers/stdinEchoServer.js",
+      "enableStdin": true
+    }
+  ]
+}

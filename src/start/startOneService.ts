@@ -15,6 +15,7 @@ export interface RunOptions {
   shell?: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
 }
 
 export interface StartResult {
@@ -72,6 +73,7 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
       shell: req.shell,
       root: req.root,
       pty: req.pty,
+      enableStdin: req.enableStdin,
     };
   } else {
     // Config-based process
@@ -108,6 +110,7 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     shell: serviceConfig.shell,
     root: serviceConfig.root,
     pty: serviceConfig.pty,
+    enableStdin: serviceConfig.enableStdin,
   });
 
   debugLog('[startOneService] waiting for process start logs, timeSinceStart=' + getTimeSinceStart());

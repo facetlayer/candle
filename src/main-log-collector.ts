@@ -46,6 +46,11 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
       default: false,
       description: 'Use PTY for interactive process',
     })
+    .option('enableStdin', {
+      type: 'boolean',
+      default: false,
+      description: 'Enable stdin message polling from database',
+    })
     .parse();
 
   return {
@@ -54,6 +59,7 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
     shell: parsed.shell,
     root: parsed.root,
     pty: parsed.pty,
+    enableStdin: parsed.enableStdin,
   };
 }
 

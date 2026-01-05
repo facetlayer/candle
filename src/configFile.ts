@@ -11,6 +11,7 @@ export interface ServiceConfig {
   shell: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
 }
 
 export interface CandleSetupConfig {

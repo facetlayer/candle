@@ -9,6 +9,7 @@ export interface AddServerConfigArgs {
   shell: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
 }
 
 export function addServerConfig(args: AddServerConfigArgs, startDir: string = process.cwd()): void {
@@ -29,6 +30,7 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
     shell: args.shell,
     ...(args.root && { root: args.root }),
     ...(args.pty && { pty: args.pty }),
+    ...(args.enableStdin && { enableStdin: args.enableStdin }),
   };
 
   // Add new service to config

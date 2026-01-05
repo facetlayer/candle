@@ -7,6 +7,7 @@ interface RunOptions {
   shell?: string;
   root?: string;
   pty?: boolean;
+  enableStdin?: boolean;
 }
 
 export async function handleRunCommand(req: RunOptions): Promise<void> {
@@ -14,7 +15,7 @@ export async function handleRunCommand(req: RunOptions): Promise<void> {
     throw new Error('handleStartCommand: projectDir is required');
   }
 
-  const { projectDir, commandNames, shell, root, pty } = req;
+  const { projectDir, commandNames, shell, root, pty, enableStdin } = req;
 
   let namesToRun = commandNames.length > 0 ? commandNames : [null]; // null means default service
 
@@ -33,6 +34,7 @@ export async function handleRunCommand(req: RunOptions): Promise<void> {
       shell,
       root,
       pty,
+      enableStdin,
     });
     startedServices.push(result);
   }
