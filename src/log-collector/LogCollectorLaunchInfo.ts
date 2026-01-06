@@ -3,6 +3,5 @@ export interface LogCollectorLaunchInfo {
   projectDir: string;
   shell: string;
   root?: string;
-  pty?: boolean;
   enableStdin?: boolean;
 }

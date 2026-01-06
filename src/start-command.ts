@@ -9,7 +9,6 @@ interface StartOptions {
   consoleOutputFormat: 'pretty' | 'json';
   shell?: string;
   root?: string;
-  pty?: boolean;
   enableStdin?: boolean;
 }
 
@@ -40,7 +39,6 @@ export async function handleStartCommand(req: StartOptions) {
       consoleOutputFormat: req.consoleOutputFormat,
       shell: req.shell,
       root: req.root,
-      pty: req.pty,
       enableStdin: req.enableStdin,
     });
     return;

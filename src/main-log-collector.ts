@@ -41,11 +41,6 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
       type: 'string',
       description: 'Root directory relative to projectDir',
     })
-    .option('pty', {
-      type: 'boolean',
-      default: false,
-      description: 'Use PTY for interactive process',
-    })
     .option('enableStdin', {
       type: 'boolean',
       default: false,
@@ -58,7 +53,6 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
     projectDir: Path.resolve(parsed.projectDir),
     shell: parsed.shell,
     root: parsed.root,
-    pty: parsed.pty,
     enableStdin: parsed.enableStdin,
   };
 }
@@ -72,13 +66,14 @@ async function main() {
   debugLog('[main-log-collector] Got launchInfo: ' + JSON.stringify(launchInfo));
 
   const subprocess = startMonitoredService(launchInfo);
+  const pid = subprocess.proc.pid!;
 
-  debugLog('[main-log-collector] Launched subprocess, pid=' + subprocess.pid);
+  debugLog('[main-log-collector] Launched subprocess, pid=' + pid);
 
   createProcessEntry({
     commandName: launchInfo.commandName,
     projectDir: launchInfo.projectDir,
-    pid: subprocess.pid,
+    pid,
     logCollectorPid: process.pid,
     shell: launchInfo.shell,
     root: launchInfo.root,
@@ -87,7 +82,7 @@ async function main() {
   try {
     await subprocess.waitForStart();
   } catch (error) {
-    debugLog('[main-log-collector] Process failed to start, pid=' + subprocess.pid + ', error=' + error.message);
+    debugLog('[main-log-collector] Process failed to start, pid=' + pid + ', error=' + error.message);
     saveProcessLog({
       command_name: launchInfo.commandName,
       project_dir: launchInfo.projectDir,
@@ -96,27 +91,27 @@ async function main() {
     });
     process.exit(1);
   }
-  
+
   // Grace period: Wait for a short period to ensure the process does not fail quickly.
   await new Promise(resolve => setTimeout(resolve, DEFAULT_GRACE_PERIOD_WAIT_MS));
 
-  if (subprocess.getExitCode() != null && subprocess.getExitCode() !== 0) {
-    debugLog('[main-log-collector] Process failed during grace period, pid=' + subprocess.pid + ', code=' + subprocess.getExitCode());
+  if (subprocess.proc.exitCode != null && subprocess.proc.exitCode !== 0) {
+    debugLog('[main-log-collector] Process failed during grace period, pid=' + pid + ', code=' + subprocess.proc.exitCode);
     saveProcessLog({
       command_name: launchInfo.commandName,
       project_dir: launchInfo.projectDir,
       log_type: ProcessLogType.process_start_failed,
-      content: 'Process failed to start: ' + subprocess.getExitCode(),
+      content: 'Process failed to start: ' + subprocess.proc.exitCode,
     });
     deleteProcessEntry({
       commandName: launchInfo.commandName,
       projectDir: launchInfo.projectDir,
-      pid: subprocess.pid,
+      pid,
     });
     return;
   }
 
-  debugLog('[main-log-collector] Process started, pid=' + subprocess.pid);
+  debugLog('[main-log-collector] Process started, pid=' + pid);
 
   saveProcessLog({
     command_name: launchInfo.commandName,
@@ -126,19 +121,19 @@ async function main() {
 
   await subprocess.waitForExit();
 
-  debugLog('[main-log-collector] Process exited, pid=' + subprocess.pid + ', code=' + subprocess.getExitCode());
+  debugLog('[main-log-collector] Process exited, pid=' + pid + ', code=' + subprocess.proc.exitCode);
 
   saveProcessLog({
     command_name: launchInfo.commandName,
     project_dir: launchInfo.projectDir,
     log_type: ProcessLogType.process_exited,
-    content: 'Process exited with code ' + subprocess.getExitCode(),
+    content: 'Process exited with code ' + subprocess.proc.exitCode,
   });
 
   deleteProcessEntry({
     commandName: launchInfo.commandName,
     projectDir: launchInfo.projectDir,
-    pid: subprocess.pid,
+    pid,
   });
 }
 

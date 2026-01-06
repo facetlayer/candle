@@ -8,7 +8,6 @@ export interface AddServerConfigArgs {
   name: string;
   shell: string;
   root?: string;
-  pty?: boolean;
   enableStdin?: boolean;
 }
 
@@ -29,7 +28,6 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
     name: args.name,
     shell: args.shell,
     ...(args.root && { root: args.root }),
-    ...(args.pty && { pty: args.pty }),
     ...(args.enableStdin && { enableStdin: args.enableStdin }),
   };
 

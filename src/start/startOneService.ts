@@ -14,7 +14,6 @@ export interface RunOptions {
   consoleOutputFormat: 'pretty' | 'json';
   shell?: string;
   root?: string;
-  pty?: boolean;
   enableStdin?: boolean;
 }
 
@@ -72,7 +71,6 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
       name: req.commandName,
       shell: req.shell,
       root: req.root,
-      pty: req.pty,
       enableStdin: req.enableStdin,
     };
   } else {
@@ -109,7 +107,6 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     projectDir,
     shell: serviceConfig.shell,
     root: serviceConfig.root,
-    pty: serviceConfig.pty,
     enableStdin: serviceConfig.enableStdin,
   });
 
