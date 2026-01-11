@@ -6,6 +6,7 @@ import { ProcessLogType } from './logs/ProcessLogType.ts';
 export interface ConsoleLogOptions {
   format: 'pretty' | 'json';
   prefix?: string;
+  enableAppNamePrefix?: boolean;
 }
 
 let isLoggingEnabled: boolean | null = null;
@@ -60,7 +61,11 @@ export function consoleLogSystemMessage(format: 'pretty' | 'json', msg: string, 
 }
 
 export function consoleLogRow(row: ProcessLog, options: ConsoleLogOptions) {
-  const { format, prefix } = options;
+  let { format, prefix, enableAppNamePrefix } = options;
+  if (enableAppNamePrefix) {
+    prefix = `[${row.command_name}] ${prefix || ''}`;
+  }
+
   switch (row.log_type) {
     case ProcessLogType.stdout:
       consoleLogStdout(format, row.content, prefix);

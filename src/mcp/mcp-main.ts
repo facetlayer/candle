@@ -118,16 +118,20 @@ const toolDefinitions: ToolDefinition[] = [
       properties: {
         name: {
           type: 'string',
-          description:
-            'Name of the service to start (optional - uses default service if not provided)',
+          description: 'Name of the service to start',
         },
       },
+      required: ['name'],
     },
     handler: async args => {
+      const name = args?.name as string;
+      if (!name) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
       const projectDir = findProjectDir();
       const result = await startOneService({
         projectDir,
-        commandName: args?.name as string,
+        commandName: name,
         consoleOutputFormat: 'pretty',
       });
       return result;
@@ -181,38 +185,41 @@ const toolDefinitions: ToolDefinition[] = [
       properties: {
         name: {
           type: 'string',
-          description:
-            'Name of the service to kill (optional - uses default service if not provided)',
+          description: 'Name of the service to kill',
+        },
+      },
+      required: ['name'],
+    },
+    handler: async args => {
+      const name = args?.name as string;
+      if (!name) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
+      const projectDir = findProjectDir();
+      await handleKillCommand({
+        projectDir,
+        commandNames: [name],
+      });
+    },
+  },
+  {
+    name: 'RestartService',
+    description: 'Restart a running service. If no name provided, restarts all running services in the project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Name of the service to restart. If not provided, restarts all running services.',
         },
       },
     },
     handler: async args => {
       const name = args?.name as string | undefined;
       const projectDir = findProjectDir();
-      await handleKillCommand({
-        projectDir,
-        commandNames: name ? [name] : [],
-      });
-    },
-  },
-  {
-    name: 'RestartService',
-    description: 'Restart a running service',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description:
-            'Name of the service to restart (optional - uses default service if not provided)',
-        },
-      },
-    },
-    handler: async args => {
-      const projectDir = findProjectDir();
       const result = await handleRestart({
         projectDir,
-        commandNames: [args?.name as string],
+        commandNames: name ? [name] : [],
         consoleOutputFormat: 'pretty',
       });
       return result;

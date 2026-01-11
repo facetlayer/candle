@@ -5,6 +5,17 @@ interface LaunchStatus {
   startLogId: number;
 }
 
+type ShowPastLogsBehavior = 'show_logs_from_previous_launch' | 'only_show_after_recent_launch';
+
+interface LatestExecutionLogFilterOptions {
+  /**
+   * What to do if no recent launch event is found in the logs:
+   * - 'show_logs_from_previous_launch': Show all logs anyway (useful for `logs` and `watch` commands)
+   * - 'only_show_after_recent_launch': Only show logs after finding a start event (useful for `run`)
+   */
+  showPastLogsBehavior: ShowPastLogsBehavior;
+}
+
 /**
  * AfterProcessStartLogFilter
  *
@@ -18,6 +29,11 @@ interface LaunchStatus {
  */
 export class LatestExecutionLogFilter {
   recentCommandLaunch = new Map<string, LaunchStatus>();
+  private showPastLogsBehavior: ShowPastLogsBehavior;
+
+  constructor(options: LatestExecutionLogFilterOptions) {
+    this.showPastLogsBehavior = options.showPastLogsBehavior;
+  }
 
   /**
    * Analyze logs to determine the latest launch status for each command.
@@ -42,6 +58,10 @@ export class LatestExecutionLogFilter {
   /**
    * Filter logs to only include logs from the most recent launch for each command.
    * Only includes logs with id >= the startLogId determined by checkLatestLaunchStatus.
+   *
+   * Behavior when no start event is found depends on ifRecentLaunchNotFound option:
+   * - 'show_existing_logs': Include all logs (for viewing historical output)
+   * - 'only_show_after_recent_launch': Exclude logs until a start event is found
    */
   filter(logs: ProcessLog[]): ProcessLog[] {
     const result: ProcessLog[] = [];
@@ -53,17 +73,23 @@ export class LatestExecutionLogFilter {
       let shouldIncludeLog = false;
 
       if (status) {
+        // We found a start event - only include logs from that point forward
         if (log.id >= status.startLogId) {
           shouldIncludeLog = true;
         }
-      }
-
-      if (!status && log.log_type === ProcessLogType.process_start_initiated) {
-        // Mark that we found the start event for this command
-        this.recentCommandLaunch.set(commandName, {
-          startLogId: log.id,
-        });
-        shouldIncludeLog = true;
+      } else {
+        // No start event found yet for this command
+        if (log.log_type === ProcessLogType.process_start_initiated) {
+          // Found a start event - mark it and include this log
+          this.recentCommandLaunch.set(commandName, {
+            startLogId: log.id,
+          });
+          shouldIncludeLog = true;
+        } else if (this.showPastLogsBehavior === 'show_logs_from_previous_launch') {
+          // No start event, but configured to show existing logs anyway
+          shouldIncludeLog = true;
+        }
+        // If 'only_show_after_recent_launch', shouldIncludeLog stays false
       }
 
       if (shouldIncludeLog) {

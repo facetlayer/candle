@@ -100,15 +100,25 @@ describe('CLI Restart Command', () => {
     });
 
     describe('restart without name', () => {
-        it('should restart default service when no name provided', async () => {
-            // Start echo instead of web to avoid port conflicts
+        it('should restart all running processes when no name provided', async () => {
+            // Start a service first
             await workspace.runCli(['start', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            // Restart with no name restarts the first running service
+            // Restart with no name restarts all running services
             const result = await workspace.runCli(['restart']);
 
             expect(result.stdoutAsString()).toContain('Started');
+        });
+
+        it('should error when no running processes to restart', async () => {
+            // Make sure nothing is running
+            await workspace.runCli(['kill-all']);
+
+            const result = await workspace.runCli(['restart'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('No running processes');
         });
     });
 

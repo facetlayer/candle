@@ -5,8 +5,10 @@ export function buildLogSearchQuery(options: LogSearchOptions): SqlBuilder {
   const { projectDir, commandNames, limit, sinceTimestamp, afterLogId } = options;
   const builder = new SqlBuilder();
 
-  // Prioritize projectDir + commandNames approach
-  if (projectDir !== undefined && commandNames !== undefined && commandNames.length > 0) {
+  const hasCommandNames = commandNames !== undefined && commandNames.length > 0;
+
+  if (projectDir !== undefined && hasCommandNames) {
+    // Filter by projectDir and specific command names
     if (commandNames.length === 1) {
       builder.add(
         'select po.* from process_output po where po.project_dir = ? and po.command_name = ?',
@@ -20,11 +22,10 @@ export function buildLogSearchQuery(options: LogSearchOptions): SqlBuilder {
       );
     }
   } else if (projectDir !== undefined) {
-    builder.add(
-      "select po.* from process_output po where po.project_dir = ? and po.command_name = 'default'",
-      [projectDir]
-    );
-  } else if (commandNames !== undefined && commandNames.length > 0) {
+    // No command names specified - return all logs for the project
+    builder.add('select po.* from process_output po where po.project_dir = ?', [projectDir]);
+  } else if (hasCommandNames) {
+    // Only command names specified (no projectDir)
     if (commandNames.length === 1) {
       builder.add('select po.* from process_output po where po.command_name = ?', [commandNames[0]]);
     } else {

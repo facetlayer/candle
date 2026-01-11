@@ -22,7 +22,7 @@ export interface ProcessLog {
 export interface LogSearchOptions {
   // Primary search parameters
   projectDir: string;
-  commandNames: string[];
+  commandNames?: string[]; // If empty/undefined, returns logs for all commands in the project
 
   // Filtering parameters
   limit?: number;

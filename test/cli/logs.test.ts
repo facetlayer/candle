@@ -88,21 +88,22 @@ describe('logs for non-running service', () => {
 
 describe('logs for unknown service', () => {
     it('should handle unknown service name', async () => {
-        const result = await workspace.runCli(['logs', 'nonexistent-service'], { ignoreExitCode: true });
+        const result = await workspace.runCli(['logs', 'nonexistent-service']);
 
-        // May return error or empty logs
-        expect(result.failed()).toBe(true);
+        // Returns success with "no logs found" message
+        expect(result.stdoutAsString()).toContain('No logs found');
     });
 });
 
 describe('logs without name', () => {
     it('should handle logs without service name', async () => {
-        await workspace.runCli(['start']);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await workspace.runCli(['start', 'echo']);
+        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
+        // Logs without a service name shows logs for all running services
         const result = await workspace.runCli(['logs']);
 
-        // TODO: check logs
+        expect(result.stdoutAsString()).toContain('Echo server started');
     });
 });
 

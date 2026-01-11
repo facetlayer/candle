@@ -25,11 +25,15 @@ export async function handleStartCommand(req: StartOptions) {
     throw new Error('handleStartCommand: projectDir is required');
   }
 
-  let commandNames = req.commandNames || [];
+  const commandNames = req.commandNames || [];
+
+  if (commandNames.length === 0) {
+    throw new UsageError(`At least one service name is required for 'start' command`);
+  }
 
   // If shell is provided, we're starting a transient process
   if (req.shell) {
-    if (commandNames.length !== 1 || !commandNames[0]) {
+    if (commandNames.length !== 1) {
       throw new UsageError('Exactly one service name is required when using --shell');
     }
 
@@ -42,11 +46,6 @@ export async function handleStartCommand(req: StartOptions) {
       enableStdin: req.enableStdin,
     });
     return;
-  }
-
-  // If no service names provided, start the default service
-  if (commandNames.length === 0) {
-    commandNames = [null];
   }
 
   for (const commandName of commandNames) {

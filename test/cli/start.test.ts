@@ -21,9 +21,11 @@ describe('CLI Start Command', () => {
             expect(result.stdoutAsString()).toContain('web');
         });
 
-        it('should start default service when no name provided', async () => {
-            // Should start first service (web) or error if no default
-            await workspace.runCli(['start']);
+        it('should error when no service name is provided', async () => {
+            const result = await workspace.runCli(['start'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('At least one service name is required');
         });
 
         it('should show error for unknown service name', async () => {

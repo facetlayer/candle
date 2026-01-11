@@ -26,14 +26,14 @@ describe('buildLogSearchQuery', () => {
     expect(builder.getParams()).toEqual(['/path/to/project', 'cmd1', 'cmd2', 'cmd3']);
   });
 
-  it('builds query with only projectDir (uses default command)', () => {
+  it('builds query with only projectDir (no command filter)', () => {
     const builder = buildLogSearchQuery({
       projectDir: '/path/to/project',
       commandNames: [],
     });
 
     expect(builder.getSql()).toBe(
-      "select po.* from process_output po where po.project_dir = ? and po.command_name = 'default' order by po.timestamp desc, po.id desc"
+      'select po.* from process_output po where po.project_dir = ? order by po.timestamp desc, po.id desc'
     );
     expect(builder.getParams()).toEqual(['/path/to/project']);
   });

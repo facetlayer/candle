@@ -16,15 +16,15 @@ describe('MCP Integration Tests', () => {
         }
     });
 
-    it('can start and use a service (default service)', async () => {
+    it('can start and use a service', async () => {
         // Set up MCP subprocess
         app = workspace.createMcpApp({ allowDebugLogging: true });
 
         // Verify the StartService tool exists
         await expect(app).toHaveTool('StartService');
 
-        // Call StartService
-        const result = await app.callTool('StartService', {});
+        // Call StartService with a service name (required)
+        const result = await app.callTool('StartService', { name: 'web' });
 
         // Check that the call was successful
         await expect(result).toBeSuccessful();
@@ -59,6 +59,20 @@ describe('MCP Integration Tests', () => {
         // Kill the service
         const killService = await app.callTool('KillService', { name: 'web' });
         await expect(killService).toBeSuccessful();
+
+        await app.close();
+    });
+
+    it('should error when StartService called without name', async () => {
+        app = workspace.createMcpApp();
+
+        // Call StartService without a name
+        const result = await app.callTool('StartService', {});
+
+        // Should return error
+        expect(result.isError).toBe(true);
+        const errorText = result.getTextContent();
+        expect(errorText).toContain('name');
 
         await app.close();
     });
@@ -181,8 +195,8 @@ describe('MCP Integration Tests', () => {
     it('should support ListServices with showAll parameter', async () => {
         app = workspace.createMcpApp();
 
-        // Start a service
-        await app.callTool('StartService', {});
+        // Start a service with explicit name
+        await app.callTool('StartService', { name: 'web' });
 
         // List with showAll: true
         const listResult = await app.callTool('ListServices', { showAll: true });
@@ -198,8 +212,8 @@ describe('MCP Integration Tests', () => {
     it('should get logs with custom limit', async () => {
         app = workspace.createMcpApp();
 
-        // Start a service
-        await app.callTool('StartService', {});
+        // Start a service with explicit name
+        await app.callTool('StartService', { name: 'web' });
 
         // Wait for some logs to be generated
         await new Promise(resolve => setTimeout(resolve, 1000));

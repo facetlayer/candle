@@ -96,7 +96,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
           workingDir: projectDir,
           uptime: '-',
           pid: 0,
-          status: 'NOT LAUNCHED',
+          status: 'not running',
         });
       }
     }

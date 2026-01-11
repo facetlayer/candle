@@ -9,27 +9,25 @@ interface LogsCommandOptions {
 }
 
 export async function handleLogsCommand(req: LogsCommandOptions): Promise<void> {
-  const { projectDir, limit = 100 } = req;
+  const { projectDir, commandNames, limit = 100 } = req;
 
-  // If no names provided, use default
-  const namesToShow = req.commandNames.length > 0 ? req.commandNames : [null];
-  const isBlendedMode = namesToShow.length > 1;
+  const isBlendedMode = commandNames.length !== 1;
 
   // Get logs and filter to only show logs from the most recent process run
   const allLogs = getProcessLogs({
-    commandNames: req.commandNames,
-    limit,
     projectDir,
+    commandNames: commandNames.length > 0 ? commandNames : undefined,
+    limit,
   });
 
-  const logFilter = new LatestExecutionLogFilter();
+  const logFilter = new LatestExecutionLogFilter({ showPastLogsBehavior: 'show_logs_from_previous_launch' });
   logFilter.checkLatestLaunchStatus(allLogs);
 
   const logs = logFilter.filter(allLogs);
 
   if (logs.length === 0) {
-    if (req.commandNames.length === 1) {
-      console.log(`No logs found for command '${req.commandNames[0]}' in project '${projectDir}'.`);
+    if (commandNames.length === 1) {
+      console.log(`No logs found for command '${commandNames[0]}' in project '${projectDir}'.`);
     } else {
       console.log(`No logs found for commands in project '${projectDir}'.`);
     }
@@ -38,7 +36,6 @@ export async function handleLogsCommand(req: LogsCommandOptions): Promise<void> 
 
   // Display logs with prefix in blended mode
   for (const log of logs) {
-    const prefix = isBlendedMode ? `[${log.command_name}] ` : undefined;
-    consoleLogRow(log, { format: 'pretty', prefix });
+    consoleLogRow(log, { format: 'pretty', enableAppNamePrefix: isBlendedMode });
   }
 }

@@ -1,3 +1,4 @@
+import { UsageError } from './errors.ts';
 import { startOneService } from './start-command.ts';
 import { watchProcess } from './watchProcess.ts';
 
@@ -16,16 +17,18 @@ export async function handleRunCommand(req: RunOptions): Promise<void> {
 
   const { projectDir, commandNames, shell, root, enableStdin } = req;
 
-  let namesToRun = commandNames.length > 0 ? commandNames : [null]; // null means default service
+  if (commandNames.length === 0) {
+    throw new UsageError(`At least one service name is required for 'run' command`);
+  }
 
   // If shell is provided, only one service name is allowed
-  if (shell && namesToRun.length > 1) {
+  if (shell && commandNames.length > 1) {
     console.error('Error: --shell can only be used with a single service name');
     process.exit(1);
   }
 
   const startedServices: { projectDir: string; serviceName: string }[] = [];
-  for (const name of namesToRun) {
+  for (const name of commandNames) {
     const result = await startOneService({
       projectDir,
       commandName: name,
@@ -39,6 +42,12 @@ export async function handleRunCommand(req: RunOptions): Promise<void> {
 
   console.log('[Now watching logs - Press Ctrl+C to exit.]');
 
-  await watchProcess({ projectDir, commandNames, consoleOutputFormat: 'pretty' });
+  const serviceNamesToWatch = startedServices.map(s => s.serviceName);
+  await watchProcess({
+    projectDir,
+    commandNames: serviceNamesToWatch,
+    consoleOutputFormat: 'pretty',
+    showPastLogsBehavior: 'only_show_after_recent_launch',
+  });
   process.exit(0);
 }

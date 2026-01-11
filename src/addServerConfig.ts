@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { CandleSetupConfig, ServiceConfig } from './configFile.ts';
-import { DEFAULT_CONFIG_FILENAME, findConfigFile, validateConfig } from './configFile.ts';
+import { DEFAULT_CONFIG_FILENAME, findConfigFile, readConfigFile, validateConfig } from './configFile.ts';
 import { MissingSetupFileError } from './errors.ts';
 
 export interface AddServerConfigArgs {
@@ -15,8 +15,7 @@ export function addServerConfig(args: AddServerConfigArgs, startDir: string = pr
   const configPath = findOrCreateSetupFile(startDir);
 
   // Read existing config
-  const content = fs.readFileSync(configPath, 'utf8');
-  const config = validateConfig(JSON.parse(content) as CandleSetupConfig);
+  const config = readConfigFile(configPath);
 
   // Check if service name already exists
   if (config.services.some(service => service.name === args.name)) {

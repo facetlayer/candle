@@ -1,4 +1,8 @@
-import { getServiceInfoByName } from './configFile.ts';
+import { findProjectDir } from './configFile.ts';
+import {
+  findProcessesByCommandNameAndProjectDir,
+  findProcessesByProjectDir,
+} from './database/processTable.ts';
 import { watchProcess } from './watchProcess.ts';
 
 interface WatchCommandOptions {
@@ -6,27 +10,38 @@ interface WatchCommandOptions {
 }
 
 export async function handleWatch(options: WatchCommandOptions): Promise<void> {
-  // If no names provided, use default
-  const namesToWatch = options.commandNames.length > 0 ? options.commandNames : [null];
+  const projectDir = findProjectDir();
+  const commandNames = options.commandNames;
 
   const foundProcesses: { serviceName: string; pid: number; projectDir: string }[] = [];
 
-  for (const name of namesToWatch) {
-    // getServiceInfoByName handles both config-defined and transient processes
-    const info = getServiceInfoByName(name);
+  if (commandNames.length > 0) {
+    // Watch specific command names
+    for (const name of commandNames) {
+      const runningProcesses = findProcessesByCommandNameAndProjectDir(name, projectDir);
 
-    if (!info.runningProcess) {
-      console.log(
-        `No running process found for command '${info.commandName}' in project '${info.projectDir}'.`
-      );
-      continue;
+      if (runningProcesses.length === 0) {
+        console.log(`No running process found for command '${name}' in project '${projectDir}'.`);
+        continue;
+      }
+
+      foundProcesses.push({
+        serviceName: name,
+        pid: runningProcesses[0].pid,
+        projectDir,
+      });
     }
+  } else {
+    // No names provided - watch all running processes in the project
+    const runningProcesses = findProcessesByProjectDir(projectDir);
 
-    foundProcesses.push({
-      serviceName: info.commandName,
-      pid: info.runningProcess.pid,
-      projectDir: info.projectDir,
-    });
+    for (const process of runningProcesses) {
+      foundProcesses.push({
+        serviceName: process.command_name,
+        pid: process.pid,
+        projectDir,
+      });
+    }
   }
 
   if (foundProcesses.length === 0) {
@@ -47,8 +62,6 @@ export async function handleWatch(options: WatchCommandOptions): Promise<void> {
   console.log('Press Ctrl+C to stop watching.');
   console.log('');
 
-  // All processes should be in the same project directory
-  const projectDir = foundProcesses[0].projectDir;
   const serviceNames = foundProcesses.map(p => p.serviceName);
 
   // Start watching the processes

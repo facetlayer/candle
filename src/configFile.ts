@@ -36,6 +36,28 @@ export function findProjectDir(cwd: string = process.cwd()): string {
   throw new MissingSetupFileError(cwd);
 }
 
+/**
+ * Reads and parses a config file.
+ */
+export function readConfigFile(configFilePath: string): CandleSetupConfig {
+  const content = fs.readFileSync(configFilePath, 'utf8').trim();
+
+  if (content.length === 0) {
+    // Empty file is allowed.
+    return { services: [] };
+  }
+
+  const config = JSON.parse(content) as CandleSetupConfig;
+
+  // Make sure .services is not undefined.
+  config.services = config.services || [];
+
+  return validateConfig(config);
+}
+
+/**
+ * Finds the nearest config file in the target directory or above.
+ */
 export function findConfigFile(
   currentDir: string
 ): { config: CandleSetupConfig; projectDir: string; configFilename: string } | null {
@@ -49,15 +71,7 @@ export function findConfigFile(
 
       if (fs.existsSync(configFilePath)) {
         try {
-          const content = fs.readFileSync(configFilePath, 'utf8').trim();
-
-          if (content.length === 0) {
-            // Empty config file, don't try to parse as JSON.
-            return { config: { services: [] }, projectDir: currentDir, configFilename: filename };
-          }
-
-          let config = JSON.parse(content) as CandleSetupConfig;
-          config = validateConfig(config);
+          const config = readConfigFile(configFilePath);
           return { config, projectDir: currentDir, configFilename: filename };
         } catch (error) {
           throw new Error(`Invalid ${filename} at ${configFilePath}: ${error.message}`);
@@ -76,6 +90,9 @@ export function findConfigFile(
   throw new MissingSetupFileError(startingDir);
 }
 
+/**
+ * Validate & typecheck the config file contents.
+ */
 export function validateConfig(config: CandleSetupConfig) {
   const names = new Set<string>();
 
@@ -128,6 +145,7 @@ export function validateConfig(config: CandleSetupConfig) {
   };
 }
 
+
 export function isValidRelativePath(p: string): boolean {
   // Don't allow absolute paths or paths that escape the config directory
   if (path.isAbsolute(p)) {
@@ -150,18 +168,7 @@ export function getServiceCwd(service: ServiceConfig, configPath: string): strin
   return configDir;
 }
 
-export function findServiceByName(config: CandleSetupConfig, name?: string): ServiceConfig | null {
-  if (!name) {
-    // No name provided - use default service
-    const defaultService = config.services[0];
-    if (defaultService) {
-      return defaultService;
-    }
-
-    // If no default is marked, return null to indicate we need a service name
-    return null;
-  }
-
+export function findServiceByName(config: CandleSetupConfig, name: string): ServiceConfig | null {
   return config.services.find(s => s.name === name) || null;
 }
 
@@ -225,24 +232,18 @@ function findLooseCommandName(
 }
 
 export function getServiceConfigByName(
-  commandName?: string,
+  commandName: string,
   currentDir?: string
-): FoundServiceConfig | null {
+): FoundServiceConfig {
   const foundConfig = findConfigFile(currentDir);
 
   const { config, projectDir } = foundConfig;
 
-  let serviceConfig: ServiceConfig | null = null;
+  let serviceConfig: ServiceConfig | null = config.services.find(s => s.name === commandName) || null;
 
-  if (!commandName) {
-    serviceConfig = config.services[0];
-  } else {
-    serviceConfig = config.services.find(s => s.name === commandName) || null;
-
-    if (!serviceConfig) {
-      // Try loose matching if exact match fails
-      serviceConfig = findLooseCommandName(commandName, config, projectDir, currentDir);
-    }
+  if (!serviceConfig) {
+    // Try loose matching if exact match fails
+    serviceConfig = findLooseCommandName(commandName, config, projectDir, currentDir);
   }
 
   if (!serviceConfig) {

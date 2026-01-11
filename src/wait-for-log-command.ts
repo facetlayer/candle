@@ -1,5 +1,4 @@
 import { LatestExecutionLogFilter } from './log-filters/LatestExecutionLogFilter.ts';
-import { getServiceInfoByName } from './configFile.ts';
 import { consoleLogRow } from './logs.ts';
 import { LogIterator } from './logs/LogIterator.ts';
 import { ProcessLogType } from './logs/ProcessLogType.ts';
@@ -17,7 +16,7 @@ interface WaitForLogOptions {
 
 function printRecentLogs(projectDir: string, commandNames: string[]) {
   console.log(`Recent logs for '${commandNames.join(', ')}':`);
-  const filter = new LatestExecutionLogFilter();
+  const filter = new LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' });
   const allLogs = getProcessLogs({
     commandNames,
     limit: 100,
@@ -41,7 +40,7 @@ export async function handleWaitForLog(options: WaitForLogOptions) {
   const allInitialLogs = logIterator.getNextLogs();
 
   // Use filter to only show logs from the most recent process run
-  const logFilter = new LatestExecutionLogFilter();
+  const logFilter = new LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' });
   logFilter.checkLatestLaunchStatus(allInitialLogs);
   const initialLogs = logFilter.filter(allInitialLogs);
 

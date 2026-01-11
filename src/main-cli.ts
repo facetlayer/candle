@@ -238,7 +238,7 @@ export async function main(): Promise<void> {
 
     case 'logs': {
       const projectDir = findProjectDir();
-      assertValidCommandNames(commandNames);
+      // Don't validate command names - allow viewing logs for transient processes
       await handleLogsCommand({
         projectDir,
         commandNames,
@@ -247,14 +247,14 @@ export async function main(): Promise<void> {
     }
 
     case 'watch': {
-      assertValidCommandNames(commandNames);
+      // Don't validate command names - allow watching transient processes
       await handleWatch({ commandNames });
       break;
     }
 
     case 'wait-for-log': {
       const projectDir = findProjectDir();
-      assertValidCommandNames(commandNames);
+      // Don't validate command names - allow waiting for logs from transient processes
       const result = await handleWaitForLog({
         projectDir,
         commandNames,

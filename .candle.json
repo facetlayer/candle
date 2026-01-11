@@ -1,0 +1,8 @@
+{
+  "services": [
+    {
+      "name": "test:watch",
+      "shell": "./node_modules/.bin/vitest watch"
+    }
+  ]
+}
