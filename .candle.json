@@ -3,6 +3,11 @@
     {
       "name": "test:watch",
       "shell": "./node_modules/.bin/vitest watch"
+    },
+    {
+      "name": "docs",
+      "shell": "npm run start",
+      "root": "docs-site"
     }
   ]
 }

@@ -1,0 +1,45 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #e25822;
+  --ifm-color-primary-dark: #d04a15;
+  --ifm-color-primary-darker: #c54614;
+  --ifm-color-primary-darkest: #a23a10;
+  --ifm-color-primary-light: #e66a39;
+  --ifm-color-primary-lighter: #e87546;
+  --ifm-color-primary-lightest: #ed936c;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #f5a366;
+  --ifm-color-primary-dark: #f29145;
+  --ifm-color-primary-darker: #f18835;
+  --ifm-color-primary-darkest: #e06d0e;
+  --ifm-color-primary-light: #f8b587;
+  --ifm-color-primary-lighter: #f9be97;
+  --ifm-color-primary-lightest: #fdd8c4;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* Sidebar styling */
+.menu__link {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.menu__link--active {
+  background: linear-gradient(90deg, rgba(226, 88, 34, 0.1) 0%, rgba(226, 88, 34, 0.05) 100%);
+  border-left: 3px solid var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .menu__link--active {
+  background: linear-gradient(90deg, rgba(245, 163, 102, 0.15) 0%, rgba(245, 163, 102, 0.05) 100%);
+}
