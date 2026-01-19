@@ -14,15 +14,11 @@ The `erase-database` command deletes the SQLite database and all associated file
 
 ## Database Location
 
-The database is stored at:
-
-```
-~/.candle/candle.db
-```
+See [Database](../database) for details on the database location.
 
 Associated files that are also deleted:
-- `~/.candle/candle.db-wal` (Write-Ahead Log)
-- `~/.candle/candle.db-shm` (Shared Memory)
+- `candle.db-wal` (Write-Ahead Log)
+- `candle.db-shm` (Shared Memory)
 
 ## Example
 
@@ -34,8 +30,8 @@ candle erase-database
 
 This command will:
 - Delete all log history
-- Remove all process tracking data
-- Orphan any currently running processes (they will continue running but Candle won't be able to manage them)
+- Remove all service tracking data
+- Orphan any currently running services (they will continue running but Candle won't be able to manage them)
 
 Make sure to stop all services before erasing the database:
 
@@ -53,4 +49,4 @@ candle erase-database
 ## See Also
 
 - [clear-logs](clear-logs) - Clear logs without erasing the database
-- [kill-all](kill-all) - Stop all running processes
+- [kill-all](kill-all) - Stop all running services

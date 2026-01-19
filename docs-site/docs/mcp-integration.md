@@ -39,10 +39,10 @@ Start a config-defined service.
 
 ### StartTransientService
 
-Start a transient process with a custom shell command.
+Start a transient service with a custom shell command.
 
 **Parameters:**
-- `name` (string, required) - Name for the transient process
+- `name` (string, required) - Name for the transient service
 - `shell` (string, required) - Shell command to run
 - `root` (string, optional) - Root directory for the service
 

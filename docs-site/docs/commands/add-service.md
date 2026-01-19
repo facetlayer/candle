@@ -20,7 +20,6 @@ The `add-service` command adds a new service definition to your `.candle.json` c
 ## Options
 
 - `--root <directory>` - Working directory for the service (relative path)
-- `--enable-stdin` - Enable stdin message polling
 
 ## Examples
 
@@ -47,12 +46,6 @@ This creates or updates `.candle.json`:
 
 ```bash
 candle add-service api "npm run dev" --root packages/api
-```
-
-### Add a service with stdin enabled
-
-```bash
-candle add-service worker "node worker.js" --enable-stdin
 ```
 
 ## Behavior

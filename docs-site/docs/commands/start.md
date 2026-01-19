@@ -1,6 +1,6 @@
 # start
 
-Start process(es) in the background and exit immediately.
+Start service(s) in the background.
 
 ## Syntax
 
@@ -10,9 +10,16 @@ candle start [name...] [options]
 
 ## Description
 
-The `start` command launches one or more services in the background without displaying their output. The command exits immediately after starting the services.
+The `start` command launches one or more services in the background without displaying their output.
 
-Use this command when you want to start services without monitoring their output.
+The flow of running `start`:
+
+1. If the service is already running, restart it.
+2. Launch and wait for the service to successfully start.
+3. Wait for a 'grace period' (default of 500ms) to make sure the service stays running.
+4. Then exit.
+
+After running `start` you can check on the service using the `watch` or `logs` commands.
 
 ## Arguments
 
@@ -20,9 +27,8 @@ Use this command when you want to start services without monitoring their output
 
 ## Options
 
-- `--shell <command>` - Start a transient process with the specified shell command
-- `--root <directory>` - Set the working directory for a transient process
-- `--enable-stdin` - Enable stdin message polling from the database
+- `--shell <command>` - Start a transient service with the specified shell command
+- `--root <directory>` - Set the working directory for a transient service
 
 ## Examples
 
@@ -38,24 +44,6 @@ candle start api
 candle start api web worker
 ```
 
-### Start all configured services
-
-```bash
-candle start
-```
-
-### Start a transient process
-
-```bash
-candle start --shell "node server.js"
-```
-
-### Start with a custom working directory
-
-```bash
-candle start --shell "npm run dev" --root ./backend
-```
-
 ## Behavior
 
 1. The service is started in the background
@@ -63,10 +51,23 @@ candle start --shell "npm run dev" --root ./backend
 3. The command exits immediately
 4. Use `candle watch` or `candle logs` to view output
 
-## Exit Codes
+## Transient Services
 
-- `0` - Service started successfully
-- `1` - Service not found or error occurred
+A "transient" service is when you launch a service without defining it in the `.candle.json` config file.
+
+This can be done with the `--shell` option (and optionally `--root` to change the directory).
+
+### Start a transient service
+
+```bash
+candle start server --shell "python -m http.server 8080"
+```
+
+### Start a transient service in a subdirectory
+
+```bash
+candle start server --shell "npm run dev" --root ./packages/api
+```
 
 ## See Also
 

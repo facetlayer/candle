@@ -44,7 +44,7 @@ candle clear-logs
 
 ## Notes
 
-- This only clears logs, not running processes
+- This only clears logs, not running services
 - The action cannot be undone
 - Use `candle erase-database` to completely reset all data
 

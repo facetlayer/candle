@@ -16,33 +16,31 @@ Or using pnpm:
 pnpm add -g candle
 ```
 
-## Creating a Configuration File
+## Configure a service
 
-Create a `.candle.json` file in your project root:
+Use the `add-service` command to add a new configured service:
 
-```json
-{
-  "services": [
-    {
-      "name": "api",
-      "shell": "npm run dev"
-    },
-    {
-      "name": "web",
-      "shell": "npm start",
-      "root": "packages/web"
-    }
-  ]
-}
+```bash
+candle add-service api "npm run dev"
 ```
 
-Each service requires:
-- `name` - A unique identifier for the service
-- `shell` - The command to run
+This will create a `.candle.json` file in the current directory.
 
-Optional fields:
-- `root` - Subdirectory to run the command in (relative to config file location)
-- `enableStdin` - Enable stdin message polling (advanced use case)
+## Project Organization
+
+Candle services are organized by project directory. The project directory is the nearest directory that has a `.candle.json` configuration file.
+
+This means you can use Candle in different projects, and the services will be separate.
+
+```
+cd ~/projects/my-project-1
+candle start api          # Starts the service named "api" for "my-project-1"
+cd ~/projects/my-project-2
+candle start api          # Starts a different service named "api" for "my-project-2"
+```
+
+See [Project Organization](project-organization) for more details.
+
 
 ## Starting Services
 
@@ -104,28 +102,6 @@ List all running services globally:
 
 ```bash
 candle list-all
-```
-
-## Running Transient Commands
-
-Run a command without adding it to your config:
-
-```bash
-candle run --shell "python -m http.server 8080"
-```
-
-Start a transient process in the background:
-
-```bash
-candle start --shell "node server.js" --root ./backend
-```
-
-## Adding Services via CLI
-
-Add a service to your config file without editing it manually:
-
-```bash
-candle add-service myservice "npm run myservice"
 ```
 
 ## Next Steps

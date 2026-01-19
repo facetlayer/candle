@@ -1,6 +1,6 @@
 # logs
 
-Show recent logs for process(es).
+Show recent logs for service(s).
 
 ## Syntax
 
@@ -12,7 +12,7 @@ candle logs [name...]
 
 The `logs` command displays the most recent log output from one or more services. By default, it shows the last 100 lines and then exits (non-interactive).
 
-Logs are persisted in the database, so you can view them even after a service has stopped.
+This can include logs from previous launches, or logs for services that aren't running.
 
 ## Arguments
 
@@ -31,19 +31,6 @@ candle logs api
 ```bash
 candle logs api web
 ```
-
-## Behavior
-
-1. Retrieves the most recent 100 log lines from the database
-2. Displays them and exits immediately
-3. Works even if the service is not currently running
-4. Shows logs from the most recent process run
-
-## Notes
-
-- Logs are stored in the SQLite database at `~/.candle/candle.db`
-- Use `candle clear-logs` to clear log history
-- For live output, use `candle watch` instead
 
 ## See Also
 

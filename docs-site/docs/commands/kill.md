@@ -1,17 +1,16 @@
-# kill / stop
+# kill
 
-Kill (stop) running processes.
+Kill running services.
 
 ## Syntax
 
 ```bash
 candle kill [name...]
-candle stop [name...]
 ```
 
 ## Description
 
-The `kill` command stops running services. The `stop` command is an alias with identical behavior.
+The `kill` command stops running services.
 
 When called without arguments, it kills all services in the current project directory.
 
@@ -38,23 +37,6 @@ candle kill api web worker
 ```bash
 candle kill
 ```
-
-### Using the stop alias
-
-```bash
-candle stop api
-```
-
-## Behavior
-
-1. The specified service(s) receive a termination signal
-2. The process is removed from the running services list
-3. Logs are preserved and can still be viewed with `candle logs`
-
-## Exit Codes
-
-- `0` - Service(s) killed successfully
-- `1` - Service not found or error occurred
 
 ## See Also
 

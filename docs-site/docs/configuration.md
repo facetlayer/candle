@@ -19,8 +19,7 @@ The configuration file should be placed in your project root. Candle will search
     {
       "name": "string",
       "shell": "string",
-      "root": "string (optional)",
-      "enableStdin": "boolean (optional)"
+      "root": "string (optional)"
     }
   ]
 }
@@ -62,16 +61,6 @@ A relative directory path where the command will run. Must be relative to the co
 }
 ```
 
-### enableStdin (optional)
-
-Enable stdin message polling from the database. This is an advanced feature for sending input to running processes.
-
-```json
-{
-  "enableStdin": true
-}
-```
-
 ## Complete Example
 
 ```json
@@ -89,8 +78,7 @@ Enable stdin message polling from the database. This is an advanced feature for 
     },
     {
       "name": "worker",
-      "shell": "node worker.js",
-      "enableStdin": true
+      "shell": "node worker.js"
     },
     {
       "name": "database",
@@ -112,13 +100,7 @@ This will create or update `.candle.json` with the new service.
 
 ## Database Location
 
-Candle stores process state and logs in a SQLite database at:
-
-```
-~/.candle/candle.db
-```
-
-This can be overridden with the `LOCAL_SERVER_STATE_DIR` environment variable.
+See [Database](database) for details on where Candle stores logs and service state.
 
 ## See Also
 

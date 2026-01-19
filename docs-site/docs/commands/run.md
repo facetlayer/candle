@@ -1,6 +1,6 @@
 # run
 
-Launch process(es) and watch their output in interactive mode.
+Launch service(s) and watch their output in interactive mode.
 
 ## Syntax
 
@@ -10,9 +10,15 @@ candle run [name...] [options]
 
 ## Description
 
-The `run` command starts one or more services and enters watch mode, displaying their output in real-time. Press `Ctrl+C` to exit watch mode - the process will continue running in the background.
+The `run` command starts one or more services and then enters watch mode, displaying their output in real-time. Press `Ctrl+C` to exit watch mode - the service will continue running in the background.
 
-If the service is already running, it will be restarted first.
+If a service is already running, it will be restarted first.
+
+## Difference in run vs start
+
+The `run` and `start` commands are similar, the main differences are:
+ - `run` - Watches the logs after launch.
+ - `start` - Exits as soon as the service is running, does not watch logs.
 
 ## Arguments
 
@@ -20,9 +26,8 @@ If the service is already running, it will be restarted first.
 
 ## Options
 
-- `--shell <command>` - Run a transient process with the specified shell command (no config required)
-- `--root <directory>` - Set the working directory for a transient process
-- `--enable-stdin` - Enable stdin message polling from the database
+- `--shell <command>` - Override the shell command. Can be used for transient services.
+- `--root <directory>` - Override the working directory. Can be used for transient services.
 
 ## Examples
 
@@ -38,35 +43,32 @@ candle run api
 candle run api web worker
 ```
 
-### Run all configured services
-
-```bash
-candle run
-```
-
-### Run a transient process
-
-```bash
-candle run --shell "python -m http.server 8080"
-```
-
-### Run a transient process in a subdirectory
-
-```bash
-candle run --shell "npm run dev" --root ./packages/api
-```
-
-## Behavior
-
-1. If the service is already running, Candle will restart it
-2. The service starts and output is displayed in real-time
-3. Press `Ctrl+C` to exit watch mode
-4. The process continues running in the background after exiting
-
 ## Exit Codes
 
 - `0` - Command executed successfully
 - `1` - Service not found or error occurred
+
+
+## Transient Services
+
+A "transient" service is when you launch a service without defining it in the `.candle.json` config file.
+
+This can be done with the `--shell` option (and optionally `--root` to change the directory). You'll still need to provide a unique name for the service.
+
+### Run a transient service
+
+This example starts a Python server with a name of `server`:
+
+```bash
+candle run server --shell "python -m http.server 8080"
+candle kill server
+```
+
+### Run a transient service in a subdirectory
+
+```bash
+candle run server --shell "npm run dev" --root ./packages/api
+```
 
 ## See Also
 

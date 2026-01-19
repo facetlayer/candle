@@ -2,15 +2,16 @@
 
 Wait for a specific log message to appear.
 
+This is a convenience command that is really helpful for CI based build scripts. You can launch a service in CI and then use `wait-for-log` to block the job until the service has fully started up.
+
+The command is smart about checking for the most recent service launch, and not triggering from
+a log that happened on a previous launch. If you use `candle wait-for-log` immediately after `candle start` then it will do the right thing.
+
 ## Syntax
 
 ```bash
 candle wait-for-log <name> --message <message> [--timeout <seconds>]
 ```
-
-## Description
-
-The `wait-for-log` command polls the service logs until a specific message appears. This is particularly useful in CI/CD pipelines to wait for a server to be ready before running tests.
 
 ## Arguments
 
@@ -50,20 +51,6 @@ else
   exit 1
 fi
 ```
-
-## Behavior
-
-1. Checks existing logs for the message immediately
-2. If not found, polls for new log entries
-3. Returns success (exit code 0) when the message appears
-4. Returns failure (exit code 1) if timeout is reached
-
-The command handles race conditions intelligently - it checks for the message in existing logs first, so it works even if the message appeared before the command started.
-
-## Exit Codes
-
-- `0` - Message found in logs
-- `1` - Timeout reached or service not found
 
 ## See Also
 
