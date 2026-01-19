@@ -22,7 +22,7 @@ The `run` and `start` commands are similar, the main differences are:
 
 ## Arguments
 
-- `name` - Name of the service(s) to run. If omitted, runs all services defined in the configuration file.
+- `name` - Name of the service(s) to run (required). You can specify multiple services.
 
 ## Options
 

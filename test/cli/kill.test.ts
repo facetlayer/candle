@@ -45,27 +45,6 @@ describe('CLI Kill Command', () => {
         });
     });
 
-    describe('stop alias', () => {
-        it('should work with stop command', async () => {
-            await workspace.runCli(['start', 'echo']);
-            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-
-            await workspace.runCli(['stop', 'echo']);
-        });
-
-        it('should behave same as kill', async () => {
-            // Start and kill with 'kill'
-            await workspace.runCli(['start', 'echo']);
-            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-            await workspace.runCli(['kill', 'echo']);
-
-            // Start and kill with 'stop'
-            await workspace.runCli(['start', 'echo']);
-            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-            await workspace.runCli(['stop', 'echo']);
-        });
-    });
-
     describe('killing transient processes', () => {
         it('should kill transient process', async () => {
             await workspace.runCli(['start', 'my-transient', '--shell', 'node ../../sampleServers/testProcess.js']);
@@ -172,16 +151,6 @@ describe('CLI Kill Command', () => {
             // CLI exits 1 for unknown service
             expect(result.failed()).toBe(true);
             expect(result.stderrAsString()).toContain('nonexistent-service');
-        });
-
-        it('should work with stop alias for multiple services', async () => {
-            await workspace.runCli(['start', 'echo', 'echo2']);
-            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
-            await workspace.runCli(['wait-for-log', 'echo2', '--message', 'Echo server started']);
-
-            const result = await workspace.runCli(['stop', 'echo', 'echo2']);
-
-            expect(result.stdoutAsString()).toContain('Killed');
         });
 
         it('should kill multiple transient processes', async () => {

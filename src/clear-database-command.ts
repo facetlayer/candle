@@ -1,9 +1,9 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
+import { getStateDirectory } from './dirs.ts';
 
 export async function handleClearDatabaseCommand(): Promise<void> {
-  const stateDir = process.env.LOCAL_SERVER_STATE_DIR || path.join(os.homedir(), '.candle');
+  const stateDir = getStateDirectory();
   const dbPath = path.join(stateDir, 'candle.db');
   const walPath = path.join(stateDir, 'candle.db-wal');
   const shmPath = path.join(stateDir, 'candle.db-shm');

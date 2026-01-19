@@ -73,7 +73,7 @@ function configureYargs() {
     })
     .command('restart [name]', 'Restart a process service', () => {})
     .command(
-      ['kill [name...]', 'stop [name...]'],
+      'kill [name...]',
       'Kill processes started in the current working directory',
       (yargs: Argv) => {}
     )
@@ -226,8 +226,7 @@ export async function main(): Promise<void> {
       break;
     }
 
-    case 'kill':
-    case 'stop': {
+    case 'kill': {
       const projectDir = findProjectDir();
       assertValidCommandNames(commandNames);
       await handleKillCommand({ projectDir, commandNames });
@@ -334,7 +333,7 @@ export async function main(): Promise<void> {
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
+        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
       );
       process.exit(1);
   }

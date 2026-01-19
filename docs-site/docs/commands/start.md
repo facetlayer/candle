@@ -23,7 +23,7 @@ After running `start` you can check on the service using the `watch` or `logs` c
 
 ## Arguments
 
-- `name` - Name of the service(s) to start. If omitted, starts all services defined in the configuration file.
+- `name` - Name of the service(s) to start (required). You can specify multiple services.
 
 ## Options
 

@@ -27,7 +27,6 @@ describe('CLI Help Command', () => {
                 'start',
                 'restart',
                 'kill',
-                'stop',
                 'kill-all',
                 'list',
                 'ls',
@@ -165,15 +164,6 @@ describe('CLI Help Command', () => {
             // Both should succeed and have similar content
             expect(listResult.stdoutAsString()).toBeDefined();
             expect(lsResult.stdoutAsString()).toBeDefined();
-        });
-
-        it('should show same help for stop and kill', async () => {
-            const killResult = await workspace.runCli(['kill', '--help']);
-            const stopResult = await workspace.runCli(['stop', '--help']);
-
-            // Both should succeed
-            expect(killResult.stdoutAsString()).toBeDefined();
-            expect(stopResult.stdoutAsString()).toBeDefined();
         });
     });
 
