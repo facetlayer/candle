@@ -15,6 +15,7 @@ import { handleClearLogsCommand } from './clear-logs-command.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { handleKillAll } from './kill-all-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
+import { handleListPorts, printListPortsOutput } from './list-ports-command.ts';
 import { handleLogsCommand } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
 import { handleRunCommand } from './run-command.ts';
@@ -83,6 +84,8 @@ function configureYargs() {
     )
     .command(['list', 'ls'], 'List active processes for current directory', (yargs: Argv) => {})
     .command('list-all', 'List all active processes', (yargs: Argv) => {})
+    .command('list-ports', 'List open ports for running services', (yargs: Argv) => {})
+    .command('list-ports-all', 'List open ports for all running services', (yargs: Argv) => {})
     .command('logs [name...]', 'Show recent logs for process(es)', () => {})
     .command('watch [name...]', 'Watch live output from running process(es)', () => {})
     .command('wait-for-log [name]', 'Wait for a specific log message to appear', (yargs: Argv) => {
@@ -211,6 +214,18 @@ export async function main(): Promise<void> {
       break;
     }
 
+    case 'list-ports': {
+      const output = await handleListPorts({});
+      printListPortsOutput(output);
+      break;
+    }
+
+    case 'list-ports-all': {
+      const output = await handleListPorts({ showAll: true });
+      printListPortsOutput(output);
+      break;
+    }
+
     case 'kill':
     case 'stop': {
       const projectDir = findProjectDir();
@@ -319,7 +334,7 @@ export async function main(): Promise<void> {
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
+        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
       );
       process.exit(1);
   }

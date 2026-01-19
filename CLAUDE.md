@@ -1,4 +1,20 @@
 
+# Repo organization #
+
+ ./src/ - Main source code
+ ./test/ - Automated tests
+ ./docs/ - Internal docs, aimed at tools and developers
+ ./docs-site/ - Public documentation website
+ ./docs-site/docs/ - Contents for public documentation
+ ./docs-site/docs/commands/ - Public documentation for each command.
+ ./README.md - Front page documentation that appears on Github
+
+### Updating docs
+
+If you change the publically facing behavior of the app, including any
+CLI commands, make sure to update the corresponding documentation
+inside ./docs-site/
+
 # Development #
 
 When running the test suite, prefer to use `candle` itself to manage the

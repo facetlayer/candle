@@ -1,4 +1,4 @@
-import treeKill from 'tree-kill';
+import { getProcessTree } from '../process-tree.ts';
 
 type KillProcessTreeResult = 'success' | 'process_not_found' | 'error';
 
@@ -7,17 +7,33 @@ export async function killProcessTree(pid: number): Promise<KillProcessTreeResul
     throw new Error(`internal error: tryKillProcessTree called with invalid PID: ${pid}`);
   }
 
-  return new Promise(resolve => {
-    treeKill(pid, 'SIGTERM', (error: any) => {
-      if (error && error.code === 'ESRCH') {
-        // Process does not exist
-        resolve('process_not_found');
-      } else if (error) {
-        console.warn(`Warning: Could not kill process tree for PID ${pid}:`, error.message);
-        resolve('error');
+  const pids = await getProcessTree(pid);
+
+  if (pids.length === 0) {
+    return 'process_not_found';
+  }
+
+  let hasError = false;
+  let allNotFound = true;
+
+  // Kill children first (reverse order), then the root
+  for (const childPid of pids.reverse()) {
+    try {
+      process.kill(childPid, 'SIGTERM');
+      allNotFound = false;
+    } catch (err: any) {
+      if (err.code === 'ESRCH') {
+        // Process doesn't exist, continue
       } else {
-        resolve('success');
+        console.warn(`Warning: Could not kill process ${childPid}:`, err.message);
+        hasError = true;
       }
-    });
-  });
+    }
+  }
+
+  if (allNotFound) {
+    return 'process_not_found';
+  }
+
+  return hasError ? 'error' : 'success';
 }

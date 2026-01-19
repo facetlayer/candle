@@ -6,6 +6,7 @@
  - Better logs when a service fails to start
  - Add grace period, `start` waits 500ms to ensure the process doesn't fail on startup
  - Better support when commands are called with multiple service names.
+ - Add list-ports command.
 
 # 0.9.0
  - Show observed logs when wait-for-log fails.

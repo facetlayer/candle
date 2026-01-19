@@ -9,6 +9,7 @@ import {
 import { addServerConfig } from '../addServerConfig.ts';
 import { handleKillCommand } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
+import { handleListPorts } from '../list-ports-command.ts';
 import { handleLogsCommand } from '../logs-command.ts';
 import { handleRestart } from '../restart-command.ts';
 import { startOneService } from '../start-command.ts';
@@ -77,6 +78,24 @@ const toolDefinitions: ToolDefinition[] = [
       const showAll = args?.showAll as boolean | undefined;
       const listOutput = await handleList({ showAll });
       return listOutput;
+    },
+  },
+  {
+    name: 'ListPorts',
+    description: 'List open ports for running services',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        showAll: {
+          type: 'boolean',
+          description: 'Show ports for all services or just current directory (optional)',
+        },
+      },
+    },
+    handler: async args => {
+      const showAll = args?.showAll as boolean | undefined;
+      const portsOutput = await handleListPorts({ showAll });
+      return portsOutput;
     },
   },
   {
