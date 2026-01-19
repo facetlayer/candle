@@ -1,3 +1,4 @@
+import { findConfigFile, getAllServiceNames } from './configFile.ts';
 import { UsageError } from './errors.ts';
 import { startOneService, type StartResult } from './start/startOneService.ts';
 
@@ -25,10 +26,15 @@ export async function handleStartCommand(req: StartOptions) {
     throw new Error('handleStartCommand: projectDir is required');
   }
 
-  const commandNames = req.commandNames || [];
+  let commandNames = req.commandNames || [];
 
-  if (commandNames.length === 0) {
-    throw new UsageError(`At least one service name is required for 'start' command`);
+  // If no service names provided and no --shell flag, start all configured services
+  if (commandNames.length === 0 && !req.shell) {
+    const { config } = findConfigFile(req.projectDir);
+    commandNames = getAllServiceNames(config);
+    if (commandNames.length === 0) {
+      throw new UsageError('No services configured in .candle.json');
+    }
   }
 
   // If shell is provided, we're starting a transient process

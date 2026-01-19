@@ -23,7 +23,7 @@ After running `start` you can check on the service using the `watch` or `logs` c
 
 ## Arguments
 
-- `name` - Name of the service(s) to start (required). You can specify multiple services.
+- `name` - Name of the service(s) to start. If omitted, starts all services defined in the configuration file.
 
 ## Options
 
@@ -31,6 +31,12 @@ After running `start` you can check on the service using the `watch` or `logs` c
 - `--root <directory>` - Set the working directory for a transient service
 
 ## Examples
+
+### Start all configured services
+
+```bash
+candle start
+```
 
 ### Start a configured service
 

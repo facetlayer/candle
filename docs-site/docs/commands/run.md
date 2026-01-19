@@ -22,7 +22,7 @@ The `run` and `start` commands are similar, the main differences are:
 
 ## Arguments
 
-- `name` - Name of the service(s) to run (required). You can specify multiple services.
+- `name` - Name of the service(s) to run. If omitted, runs all services defined in the configuration file.
 
 ## Options
 
@@ -30,6 +30,12 @@ The `run` and `start` commands are similar, the main differences are:
 - `--root <directory>` - Override the working directory. Can be used for transient services.
 
 ## Examples
+
+### Run all configured services
+
+```bash
+candle run
+```
 
 ### Run a configured service
 

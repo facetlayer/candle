@@ -21,11 +21,19 @@ describe('CLI Start Command', () => {
             expect(result.stdoutAsString()).toContain('web');
         });
 
-        it('should error when no service name is provided', async () => {
-            const result = await workspace.runCli(['start'], { ignoreExitCode: true });
+        it('should start all configured services when no name provided', async () => {
+            const result = await workspace.runCli(['start']);
 
-            expect(result.failed()).toBe(true);
-            expect(result.stderrAsString()).toContain('At least one service name is required');
+            // Should start both configured services (web and echo)
+            expect(result.stdoutAsString()).toContain('Started');
+
+            // Verify both are running
+            const listResult = await workspace.runCli(['list']);
+            expect(listResult.stdoutAsString()).toContain('web');
+            expect(listResult.stdoutAsString()).toContain('echo');
+
+            // Cleanup
+            await workspace.runCli(['kill']);
         });
 
         it('should show error for unknown service name', async () => {
@@ -145,4 +153,16 @@ describe('CLI Start Command', () => {
         });
     });
 
+});
+
+describe('CLI Start with empty config', () => {
+    const emptyWorkspace = new TestWorkspace('cli-start-empty');
+    afterAll(() => emptyWorkspace.cleanup());
+
+    it('should error when no services configured and no args', async () => {
+        const result = await emptyWorkspace.runCli(['start'], { ignoreExitCode: true });
+
+        expect(result.failed()).toBe(true);
+        expect(result.stderrAsString()).toContain('No services configured');
+    });
 });

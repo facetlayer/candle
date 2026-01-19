@@ -1,3 +1,4 @@
+import { findConfigFile, getAllServiceNames } from './configFile.ts';
 import { UsageError } from './errors.ts';
 import { startOneService } from './start-command.ts';
 import { watchProcess } from './watchProcess.ts';
@@ -12,13 +13,19 @@ interface RunOptions {
 
 export async function handleRunCommand(req: RunOptions): Promise<void> {
   if (!req.projectDir) {
-    throw new Error('handleStartCommand: projectDir is required');
+    throw new Error('handleRunCommand: projectDir is required');
   }
 
-  const { projectDir, commandNames, shell, root, enableStdin } = req;
+  const { projectDir, shell, root, enableStdin } = req;
+  let commandNames = req.commandNames;
 
-  if (commandNames.length === 0) {
-    throw new UsageError(`At least one service name is required for 'run' command`);
+  // If no service names provided and no --shell flag, run all configured services
+  if (commandNames.length === 0 && !shell) {
+    const { config } = findConfigFile(projectDir);
+    commandNames = getAllServiceNames(config);
+    if (commandNames.length === 0) {
+      throw new UsageError('No services configured in .candle.json');
+    }
   }
 
   // If shell is provided, only one service name is allowed
