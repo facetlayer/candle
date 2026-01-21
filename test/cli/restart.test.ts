@@ -131,6 +131,47 @@ describe('CLI Restart Command', () => {
         });
     });
 
+    describe('restart duplicate kill messages', () => {
+        it('should not print duplicate kill messages when restarting a service', async () => {
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            const result = await workspace.runCli(['restart', 'echo']);
+
+            const output = result.stdoutAsString() + result.stderrAsString();
+            const killedCount = (output.match(/Killed/g) || []).length;
+
+            expect(killedCount).toBeLessThanOrEqual(1);
+        });
+
+        it('should not print duplicate kill messages when restarting all services', async () => {
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            // Restart without name restarts all running services
+            const result = await workspace.runCli(['restart']);
+
+            const output = result.stdoutAsString() + result.stderrAsString();
+            const killedCount = (output.match(/Killed/g) || []).length;
+
+            expect(killedCount).toBeLessThanOrEqual(1);
+        });
+
+        it('should not print duplicate kill messages even with multiple rapid restarts', async () => {
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            // Rapid restarts might leave stale entries
+            await workspace.runCli(['restart', 'echo']);
+            const result = await workspace.runCli(['restart', 'echo']);
+
+            const output = result.stdoutAsString() + result.stderrAsString();
+            const killedCount = (output.match(/Killed/g) || []).length;
+
+            expect(killedCount).toBeLessThanOrEqual(1);
+        });
+    });
+
     describe('start over existing process', () => {
         it('should not print duplicate kill message when starting over existing process', async () => {
             await workspace.runCli(['start', 'echo']);

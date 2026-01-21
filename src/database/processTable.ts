@@ -84,6 +84,13 @@ export function findProcessesByProjectDir(projectDir: string): ProcessEntry[] {
   return db.list('select * from processes where project_dir = ?', [projectDir]);
 }
 
+export function findRunningProcessesByProjectDir(projectDir: string): ProcessEntry[] {
+  const db = getDatabase();
+  return db.list('select * from processes where project_dir = ? and killed_at is null', [
+    projectDir,
+  ]);
+}
+
 export function findAllProcesses(): ProcessEntry[] {
   const db = getDatabase();
   return db.list('select * from processes');

@@ -10,9 +10,10 @@ interface KillCommandOptions extends KillProcessOptions {
 export async function handleKillCommand(req: KillCommandOptions) {
   const commandNames = req.commandNames ?? [];
 
-  // If specific names provided, kill each one
+  // If specific names provided, kill each one (deduplicate to avoid double kills)
   if (commandNames.length > 0) {
-    for (const commandName of commandNames) {
+    const uniqueCommandNames = [...new Set(commandNames)];
+    for (const commandName of uniqueCommandNames) {
       await killByCommandName(req.projectDir, commandName, req);
     }
     return;

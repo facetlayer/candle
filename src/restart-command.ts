@@ -1,4 +1,4 @@
-import { findProcessesByCommandNameAndProjectDir, findProcessesByProjectDir, type ProcessEntry } from './database/processTable.ts';
+import { findProcessesByCommandNameAndProjectDir, findRunningProcessesByProjectDir, type ProcessEntry } from './database/processTable.ts';
 import { UsageError } from './errors.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { startOneService } from './start/startOneService.ts';
@@ -19,11 +19,12 @@ export async function handleRestart(options: RestartOptions) {
 
   // If no command names provided, restart all running processes in the project
   if (commandNames.length === 0) {
-    const runningProcesses = findProcessesByProjectDir(projectDir);
+    const runningProcesses = findRunningProcessesByProjectDir(projectDir);
     if (runningProcesses.length === 0) {
       throw new UsageError('No running processes found in this project to restart');
     }
-    commandNames = runningProcesses.map(p => p.command_name);
+    // Deduplicate command names to avoid killing the same service multiple times
+    commandNames = [...new Set(runningProcesses.map(p => p.command_name))];
   }
 
   try {
