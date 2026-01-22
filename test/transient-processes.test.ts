@@ -1,8 +1,9 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { TestWorkspace } from './TestWorkspace';
 
 const workspace = new TestWorkspace('transient-processes');
 
+beforeAll(() => workspace.ensureSubdir('test'));
 afterAll(() => workspace.cleanup());
 
 describe('Basic Operations', () => {

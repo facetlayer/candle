@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, beforeAll } from 'vitest';
 import { MCPStdinSubprocess } from 'expect-mcp';
 import { TestWorkspace } from './TestWorkspace';
 
@@ -7,6 +7,7 @@ const workspace = new TestWorkspace('mcp');
 describe('MCP Integration Tests', () => {
     let app: MCPStdinSubprocess;
 
+    beforeAll(() => workspace.ensureSubdir('subdir'));
     afterAll(() => workspace.cleanup());
 
     afterEach(async () => {

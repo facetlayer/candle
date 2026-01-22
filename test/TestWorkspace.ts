@@ -98,6 +98,17 @@ export class TestWorkspace {
     }
 
     /**
+     * Ensures a subdirectory exists within the workspace.
+     * Useful for tests that use the --root parameter.
+     */
+    ensureSubdir(name: string): void {
+        const subdir = path.join(this.dbDir, name);
+        if (!fs.existsSync(subdir)) {
+            fs.mkdirSync(subdir, { recursive: true });
+        }
+    }
+
+    /**
      * Cleans up any running processes managed by this workspace.
      * Call this in afterAll() to prevent orphaned processes.
      *

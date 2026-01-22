@@ -1,9 +1,10 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-start');
 
 describe('CLI Start Command', () => {
+    beforeAll(() => workspace.ensureSubdir('test'));
     afterAll(() => workspace.cleanup());
 
     describe('starting config-defined services', () => {
