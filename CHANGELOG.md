@@ -1,5 +1,5 @@
 
-# Unreleased
+# 0.10.0
  - Add support for transient services
  - Rename config file to .candle.json
  - add-service: Autocreate the config file if missing
