@@ -5,7 +5,7 @@ Add a new service to the configuration file.
 ## Syntax
 
 ```bash
-candle add-service <name> <shell> [options]
+candle add-service <name> --shell <command> [options]
 ```
 
 ## Description
@@ -15,10 +15,10 @@ The `add-service` command adds a new service definition to your `.candle.json` c
 ## Arguments
 
 - `name` - Name for the new service (required)
-- `shell` - Shell command to run (required)
 
 ## Options
 
+- `--shell <command>` - Shell command to run the service (required)
 - `--root <directory>` - Working directory for the service (relative path)
 
 ## Examples
@@ -26,7 +26,7 @@ The `add-service` command adds a new service definition to your `.candle.json` c
 ### Add a basic service
 
 ```bash
-candle add-service api "npm run dev"
+candle add-service api --shell "npm run dev"
 ```
 
 This creates or updates `.candle.json`:
@@ -45,7 +45,7 @@ This creates or updates `.candle.json`:
 ### Add a service with a root directory
 
 ```bash
-candle add-service api "npm run dev" --root packages/api
+candle add-service api --shell "npm run dev" --root packages/api
 ```
 
 ## Behavior

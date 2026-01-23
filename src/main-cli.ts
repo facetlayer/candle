@@ -106,17 +106,18 @@ function configureYargs() {
     .command('list-docs', 'List available documentation files', () => {})
     .command('get-doc <name>', 'Display the contents of a documentation file', () => {})
     .command(
-      'add-service <name> <shell>',
-      'Add a new service to .candle-setup.json',
+      'add-service <name>',
+      'Add a new service to .candle.json',
       (yargs: Argv) => {
         yargs
           .positional('name', {
             describe: 'Name of the service',
             type: 'string',
           })
-          .positional('shell', {
+          .option('shell', {
             describe: 'Shell command to run the service',
             type: 'string',
+            demandOption: true,
           })
           .option('root', {
             describe: 'Root directory for the service',
