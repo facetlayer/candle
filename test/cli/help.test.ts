@@ -54,9 +54,10 @@ describe('CLI Help Command', () => {
 
             // Check for consistent structure with sections
             expect(normalized).toContain('Process Management:');
-            expect(normalized).toContain('Port Reservations:');
-            expect(normalized).toContain('Configuration & Maintenance:');
+            expect(normalized).toContain('Configuration:');
+            expect(normalized).toContain('Troubleshooting & Maintenance:');
             expect(normalized).toContain('Options:');
+            expect(normalized).toContain('Topics:');
         });
     });
 
@@ -66,6 +67,34 @@ describe('CLI Help Command', () => {
 
             const output = result.stdoutAsString() + result.stderrAsString();
             expect(output).toContain('Process Management:');
+        });
+    });
+
+    describe('help command', () => {
+        it('should display main help when help command is used', async () => {
+            const result = await workspace.runCli(['help']);
+
+            expect(result.stdoutAsString()).toContain('Process Management:');
+            expect(result.stdoutAsString()).toContain('run');
+            expect(result.stdoutAsString()).toContain('start');
+        });
+
+        it('should display port-reservation help topic', async () => {
+            const result = await workspace.runCli(['help', 'port-reservation']);
+
+            expect(result.stdoutAsString()).toContain('Port Reservation Commands');
+            expect(result.stdoutAsString()).toContain('reserve-port');
+            expect(result.stdoutAsString()).toContain('release-ports');
+            expect(result.stdoutAsString()).toContain('get-reserved-port');
+            expect(result.stdoutAsString()).toContain('list-reserved-ports');
+        });
+
+        it('should error for unknown help topic', async () => {
+            const result = await workspace.runCli(['help', 'nonexistent'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            const output = result.stdoutAsString() + result.stderrAsString();
+            expect(output).toContain('Unknown help topic');
         });
     });
 

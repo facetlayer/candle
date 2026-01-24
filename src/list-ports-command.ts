@@ -20,12 +20,18 @@ export interface ListPortsOutput {
   ports: PortInfo[];
 }
 
-export async function handleListPorts(options?: { showAll?: boolean }): Promise<ListPortsOutput> {
+export async function handleListPorts(options?: { showAll?: boolean; serviceName?: string }): Promise<ListPortsOutput> {
   const { projectDir } = findConfigFile(process.cwd());
 
-  const processEntries = options?.showAll
+  let processEntries = options?.showAll
     ? findAllProcesses()
     : findProcessesByProjectDir(projectDir);
+
+  if (options?.serviceName) {
+    processEntries = processEntries.filter(
+      (entry) => entry.command_name === options.serviceName
+    );
+  }
 
   const allPorts: PortInfo[] = [];
 
@@ -40,18 +46,13 @@ export async function handleListPorts(options?: { showAll?: boolean }): Promise<
 async function getPortsForService(processEntry: ProcessEntry): Promise<PortInfo[]> {
   const rootPid = processEntry.pid;
   const serviceName = processEntry.command_name;
-
-  // Get all PIDs in the process tree
   const allPids = await getProcessTree(rootPid);
 
   if (allPids.length === 0) {
     return [];
   }
 
-  // Get listening ports for all PIDs
   const portInfos = await getListeningPorts(allPids);
-
-  // Map to PortInfo with service name
   return portInfos.map((info) => ({
     serviceName,
     pid: info.pid,
@@ -164,7 +165,7 @@ function parseLsofOutput(output: string): RawPortInfo[] {
     });
   }
 
-  // Deduplicate by pid+port (lsof can show both IPv4 and IPv6 for same port)
+  // Deduplicate by pid+port (lsof shows both IPv4 and IPv6 for same port)
   const seen = new Set<string>();
   return portInfos.filter((info) => {
     const key = `${info.pid}:${info.port}`;

@@ -8,9 +8,11 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { addServerConfig } from '../addServerConfig.ts';
 import { handleGetReservedPort } from '../get-reserved-port-command.ts';
+import { handleGetOrReservePort } from '../get-or-reserve-port-command.ts';
 import { handleKillCommand } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
 import { handleListPorts } from '../list-ports-command.ts';
+import { handleOpenBrowser } from '../open-browser-command.ts';
 import { handleListReservedPorts } from '../list-reserved-ports-command.ts';
 import { handleLogsCommand } from '../logs-command.ts';
 import { handleReleasePorts } from '../release-ports-command.ts';
@@ -94,12 +96,39 @@ const toolDefinitions: ToolDefinition[] = [
           type: 'boolean',
           description: 'Show ports for all services or just current directory (optional)',
         },
+        serviceName: {
+          type: 'string',
+          description: 'Filter to a specific service name (optional)',
+        },
       },
     },
     handler: async args => {
       const showAll = args?.showAll as boolean | undefined;
-      const portsOutput = await handleListPorts({ showAll });
+      const serviceName = args?.serviceName as string | undefined;
+      const portsOutput = await handleListPorts({ showAll, serviceName });
       return portsOutput;
+    },
+  },
+  {
+    name: 'OpenBrowser',
+    description: 'Open a browser window to a running service\'s port',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceName: {
+          type: 'string',
+          description: 'Name of the service to open in browser',
+        },
+      },
+      required: ['serviceName'],
+    },
+    handler: async args => {
+      const serviceName = args?.serviceName as string;
+      if (!serviceName) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
+      const result = await handleOpenBrowser({ serviceName });
+      return result;
     },
   },
   {
@@ -361,6 +390,29 @@ const toolDefinitions: ToolDefinition[] = [
       }
       const projectDir = findProjectDir();
       const result = await handleGetReservedPort({ projectDir, serviceName });
+      return result;
+    },
+  },
+  {
+    name: 'GetOrReservePort',
+    description: 'Get the existing reserved port for a service, or reserve a new one if none exists',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceName: {
+          type: 'string',
+          description: 'Name of the service to get or reserve a port for',
+        },
+      },
+      required: ['serviceName'],
+    },
+    handler: async args => {
+      const serviceName = args?.serviceName as string;
+      if (!serviceName) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
+      const projectDir = findProjectDir();
+      const result = await handleGetOrReservePort({ projectDir, serviceName });
       return result;
     },
   },

@@ -1,6 +1,7 @@
 
 # Unreleased
- - Add port reservation tools
+ - Add port reservation system
+ - Add 'open-browser' command
 
 # 0.10.0
  - Add support for transient services

@@ -13,6 +13,8 @@ import { maybeRunCleanup } from './database/cleanup.ts';
 import { handleClearDatabaseCommand } from './clear-database-command.ts';
 import { handleClearLogsCommand } from './clear-logs-command.ts';
 import { handleGetReservedPort, printGetReservedPortOutput } from './get-reserved-port-command.ts';
+import { handleGetOrReservePort, printGetOrReservePortOutput } from './get-or-reserve-port-command.ts';
+import { handleOpenBrowser, printOpenBrowserOutput } from './open-browser-command.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { handleKillAll } from './kill-all-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
@@ -43,16 +45,14 @@ function printGroupedHelp() {
 
 Process Management:
   list, ls                  List processes for this project directory
-  run [name...]             Launch process(es) and watch their output
-  run                       Launch all configured processes and watch their output
-  start [name...]           Start process(es) in background
-  start                     Start all configured processes in the background
-  restart [name]            Restart a running process
-  restart                   Restart all processes for this project directory
-  kill [name...]            Kill running process(es)
-  kill                      Kill all process(es) in this project directory
-  list-ports                List currently active ports for running services
-                            (Note: This is different than port reservations)
+  run [names...]            Launch process(es) and watch their output
+  start [names...]          Start process(es) in background
+  restart [names...]        Restart running process(es)
+  kill [names...]           Kill running process(es)
+
+Port Detection:
+  list-ports                Uses the OS to detect and list the active open ports
+  open-browser [name]       Open a web browser to the detected service's port
 
 Logs:
   logs [name...]            Show recent logs for process(es)
@@ -60,15 +60,8 @@ Logs:
   wait-for-log [name]       Wait for a specific log message
 
 Configuration:
-  add-service <name>        Add a new service to .candle.json
+  add-service [name] ...    Add a new service to .candle.json
 
-Port Reservation:
-  list-reserved-ports       List reserved ports for this current project directory
-  reserve-port [name]       Reserve a port for a service
-  release-ports [name]      Release reserved port(s)
-  release-ports             Release all port reservations for this project directory
-  get-reserved-port <name>  Get the reserved port for a service
-      
 Documentation:
   list-docs                 List available documentation
   get-doc <name>            Display a documentation file
@@ -77,16 +70,45 @@ Troubleshooting & Maintenance:
   list-all                  List all managed processes on this system
   kill-all                  Kill all managed processes on this system
   list-ports-all            List currently active ports for all managed processes
-  list-reserved-ports-all   List reserved ports for all projects
   clear-logs [name]         Clear logs for process(es)
   erase-database            Erase the Candle database
 
 Options:
-  --mcp                     Enter MCP server mode
-  --help                    Show help
+  help                      Show help (or 'help <topic>' for specific topics)
+  mcp                       Enter MCP server mode
   --version                 Show version number
 
+More details:
+  help port-reservation     Show help text for port reservation commands
+
 Run 'candle <command> --help' for more information on a command.`);
+}
+
+function printPortReservationHelp() {
+  console.log(`Port Reservation Commands
+
+This system maintains a database of reserved ports.
+
+Ports can be assigned to a specific service, or just reserved for the project.
+
+All port reservations are associated with a project directory, just like
+running services.
+
+Commands:
+  reserve-port [name]           Reserve an unused port for a service
+                                If no name given, reserves a project-level port
+  get-reserved-port <name>      Get the reserved port for a service
+  get-or-reserve-port <name>    Get existing or reserve new port for a service
+  release-ports [name]          Release reserved port(s) for a service
+  release-ports                 Release all port reservations for this project
+  list-reserved-ports           List reserved ports for this project directory
+  list-reserved-ports-all       List reserved ports for all projects
+
+Examples:
+  candle reserve-port api          Reserve a port for the 'api' service
+  candle get-reserved-port api     Show the reserved port number
+  candle get-or-reserve-port api   Get existing port or reserve a new one
+  candle release-ports api         Release the port reservation`);
 }
 
 function configureYargs() {
@@ -95,9 +117,13 @@ function configureYargs() {
     .usage('Usage: $0 <command> [options]')
     .option('mcp', {
       type: 'boolean',
-      describe: 'Enter MCP server mode',
+      hidden: true,
       default: false,
     })
+
+    // Help and MCP commands
+    .command('help [topic]', 'Show help', () => {})
+    .command('mcp', 'Enter MCP server mode', () => {})
 
     // Process Management
     .command('run [name...]', 'Launch process(es) and watch their output', (yargs: Argv) => {
@@ -150,8 +176,9 @@ function configureYargs() {
           default: 30,
         });
     })
-    .command('list-ports', 'List open ports for running services', () => {})
+    .command('list-ports [name]', 'List open ports for running services', () => {})
     .command('list-ports-all', 'List open ports for all services', () => {})
+    .command('open-browser <name>', 'Open browser to a running service', () => {})
 
     // Port Reservations
     .command('reserve-port [name]', 'Reserve an unused port', () => {})
@@ -159,6 +186,7 @@ function configureYargs() {
     .command('list-reserved-ports', 'List reserved ports for project', () => {})
     .command('list-reserved-ports-all', 'List all reserved ports', () => {})
     .command('get-reserved-port <name>', 'Get the reserved port for a service', () => {})
+    .command('get-or-reserve-port <name>', 'Get existing or reserve new port for a service', () => {})
 
     // Configuration & Maintenance
     .command('add-service <name>', 'Add a new service to .candle.json', (yargs: Argv) => {
@@ -191,6 +219,15 @@ function configureYargs() {
     .version();
 }
 
+function requireServiceName(commandNames: string[]): string {
+  const serviceName = commandNames[0];
+  if (!serviceName) {
+    console.error('Error: Service name is required');
+    process.exit(1);
+  }
+  return serviceName;
+}
+
 function parseArgs(): {
   command: string;
   commandNames: string[];
@@ -200,6 +237,7 @@ function parseArgs(): {
   enableStdin?: boolean;
   message?: string;
   timeout?: number;
+  topic?: string;
 } {
   const argv = configureYargs().parseSync();
 
@@ -215,8 +253,9 @@ function parseArgs(): {
   const enableStdin = argv['enable-stdin'] as boolean;
   const message = argv.message as string;
   const timeout = argv.timeout as number;
+  const topic = argv.topic as string;
 
-  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout };
+  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic };
 }
 
 export async function main(): Promise<void> {
@@ -243,7 +282,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout } =
+  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -252,9 +291,23 @@ export async function main(): Promise<void> {
     return;
   }
 
-  if (mcp) {
-    // Enter MCP server mode
+  // Handle 'mcp' command or --mcp flag
+  if (command === 'mcp' || mcp) {
     await serveMCP();
+    return;
+  }
+
+  // Handle 'help' command
+  if (command === 'help') {
+    if (topic === 'port-reservation') {
+      printPortReservationHelp();
+    } else if (topic) {
+      console.error(`Unknown help topic: ${topic}`);
+      console.error('Available topics: port-reservation');
+      process.exit(1);
+    } else {
+      printGroupedHelp();
+    }
     return;
   }
 
@@ -288,7 +341,8 @@ export async function main(): Promise<void> {
     }
 
     case 'list-ports': {
-      const output = await handleListPorts({});
+      const serviceName = commandNames[0];
+      const output = await handleListPorts({ serviceName });
       printListPortsOutput(output);
       break;
     }
@@ -296,6 +350,13 @@ export async function main(): Promise<void> {
     case 'list-ports-all': {
       const output = await handleListPorts({ showAll: true });
       printListPortsOutput(output);
+      break;
+    }
+
+    case 'open-browser': {
+      const serviceName = requireServiceName(commandNames);
+      const output = await handleOpenBrowser({ serviceName });
+      printOpenBrowserOutput(output);
       break;
     }
 
@@ -329,13 +390,17 @@ export async function main(): Promise<void> {
 
     case 'get-reserved-port': {
       const projectDir = findProjectDir();
-      const serviceName = commandNames[0];
-      if (!serviceName) {
-        console.error('Error: Service name is required');
-        process.exit(1);
-      }
+      const serviceName = requireServiceName(commandNames);
       const output = await handleGetReservedPort({ projectDir, serviceName });
       printGetReservedPortOutput(output);
+      break;
+    }
+
+    case 'get-or-reserve-port': {
+      const projectDir = findProjectDir();
+      const serviceName = requireServiceName(commandNames);
+      const output = await handleGetOrReservePort({ projectDir, serviceName });
+      printGetOrReservePortOutput(output);
       break;
     }
 
@@ -408,26 +473,18 @@ export async function main(): Promise<void> {
       break;
 
     case 'add-service': {
-
-      const commandName = commandNames[0];
-      if (!commandName) {
-        console.error('Error: No command name provided');
-        process.exit(1);
-      }
-
+      const commandName = requireServiceName(commandNames);
       if (commandNames.length > 1) {
         console.error('Error: Cannot use multiple command names for add-service');
         process.exit(1);
       }
-
       try {
         addServerConfig({
           name: commandName,
-          shell: shell,
-          root: root,
-          enableStdin: enableStdin,
+          shell,
+          root,
+          enableStdin,
         });
-
       } catch (error) {
         console.error(`Error adding service: ${error.message}`);
         process.exit(1);
@@ -446,7 +503,7 @@ export async function main(): Promise<void> {
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, reserve-port, release-ports, list-reserved-ports, list-reserved-ports-all, get-reserved-port, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
+        'Run "candle help" for available commands.'
       );
       process.exit(1);
   }

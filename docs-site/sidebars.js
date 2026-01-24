@@ -29,6 +29,7 @@ const sidebars = {
         {type: 'doc', id: 'commands/logs', label: 'logs'},
         {type: 'doc', id: 'commands/watch', label: 'watch'},
         {type: 'doc', id: 'commands/wait-for-log', label: 'wait-for-log'},
+        {type: 'doc', id: 'commands/open-browser', label: 'open-browser'},
       ],
     },
     {
@@ -48,6 +49,25 @@ const sidebars = {
       label: 'Configuration Commands',
       items: [
         {type: 'doc', id: 'commands/add-service', label: 'add-service'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Port Reservation',
+      items: [
+        {type: 'doc', id: 'commands/reserve-port', label: 'reserve-port'},
+        {type: 'doc', id: 'commands/release-ports', label: 'release-ports'},
+        {type: 'doc', id: 'commands/get-reserved-port', label: 'get-reserved-port'},
+        {type: 'doc', id: 'commands/get-or-reserve-port', label: 'get-or-reserve-port'},
+        {type: 'doc', id: 'commands/list-reserved-ports', label: 'list-reserved-ports'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Help & Utilities',
+      items: [
+        {type: 'doc', id: 'commands/help', label: 'help'},
+        {type: 'doc', id: 'commands/mcp', label: 'mcp'},
       ],
     },
     {type: 'doc', id: 'project-organization', label: 'Project Organization'},
