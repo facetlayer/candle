@@ -23,12 +23,17 @@ inside ./docs-site/
 
 ## Tricks for running Candle locally
 
-The Candle command uses an environment variable `CANDLE_DATABASE_DIR` which can
-override the database folder (which defaults to ~/.local/state/candle). Setting
-this var is a good way to run the command for a local test.
+Use `bin/test-candle.ts` to run Candle with custom environment settings for testing:
 
-Additionally another environment variable is `CANDLE_ENABLE_LOGS=true`. When enabled,
-the tool will write a `candle.log` file in the current directory with extra logs.
+    bin/test-candle.ts --database-dir /tmp/test-db list
+    bin/test-candle.ts --database-dir ./test-workspace start my-service
+    bin/test-candle.ts --enable-logs list
+
+Options:
+- `--database-dir <path>` - Sets `CANDLE_DATABASE_DIR` to use a custom database folder
+- `--enable-logs` - Sets `CANDLE_ENABLE_LOGS=true` to write a `candle.log` file in the current directory
+
+Without these flags, it passes through to Candle normally.
 
 ## Running the test suite
 

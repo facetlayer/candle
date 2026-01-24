@@ -3,14 +3,15 @@
 /**
  * Test runner for Candle CLI
  *
- * This script makes it easier to run Candle with a custom database directory
- * for testing purposes. It wraps the candle CLI and sets CANDLE_DATABASE_DIR
- * when --database-dir is provided.
+ * This script makes it easier to run Candle with custom environment settings
+ * for testing purposes. It wraps the candle CLI and sets environment variables
+ * based on the flags provided.
  *
  * Usage:
- *   bin/test-candle --database-dir /tmp/test-db list
- *   bin/test-candle --database-dir ./test-workspace start my-service
- *   bin/test-candle list  # Without --database-dir, passes through normally
+ *   bin/test-candle.ts --database-dir /tmp/test-db list
+ *   bin/test-candle.ts --database-dir ./test-workspace start my-service
+ *   bin/test-candle.ts --enable-logs list
+ *   bin/test-candle.ts list  # Without flags, passes through normally
  */
 
 import { runShellCommand } from '@facetlayer/subprocess-wrapper';
@@ -22,12 +23,14 @@ const __dirname = dirname(__filename);
 
 interface ParsedArgs {
   databaseDir: string | null;
+  enableLogs: boolean;
   candleArgs: string[];
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const args = argv.slice(2); // Skip node and script path
   let databaseDir: string | null = null;
+  let enableLogs = false;
   const candleArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -39,16 +42,18 @@ function parseArgs(argv: string[]): ParsedArgs {
         console.error('Error: --database-dir requires a value');
         process.exit(1);
       }
+    } else if (args[i] === '--enable-logs') {
+      enableLogs = true;
     } else {
       candleArgs.push(args[i]);
     }
   }
 
-  return { databaseDir, candleArgs };
+  return { databaseDir, enableLogs, candleArgs };
 }
 
 async function main() {
-  const { databaseDir, candleArgs } = parseArgs(process.argv);
+  const { databaseDir, enableLogs, candleArgs } = parseArgs(process.argv);
 
   const candlePath = join(__dirname, '..', 'src', 'main-cli.ts');
 
@@ -58,20 +63,24 @@ async function main() {
     env.CANDLE_DATABASE_DIR = databaseDir;
   }
 
+  if (enableLogs) {
+    env.CANDLE_ENABLE_LOGS = 'true';
+  }
+
   const result = await runShellCommand('node', [candlePath, ...candleArgs], {
     env,
     cwd: process.cwd(),
   });
 
-  // Print stdout and stderr
-  if (result.stdout) {
-    process.stdout.write(result.stdout);
+  // Print stdout and stderr (they are arrays of lines)
+  for (const line of result.stdout ?? []) {
+    console.log(line);
   }
-  if (result.stderr) {
-    process.stderr.write(result.stderr);
+  for (const line of result.stderr ?? []) {
+    console.error(line);
   }
 
-  process.exit(result.code ?? 0);
+  process.exit(result.exitCode ?? 0);
 }
 
 main().catch(error => {
