@@ -9,7 +9,7 @@ describe('CLI Help Command', () => {
         it('should display main help when --help is passed', async () => {
             const result = await workspace.runCli(['--help']);
 
-            expect(result.stdoutAsString()).toContain('Commands:');
+            expect(result.stdoutAsString()).toContain('Process Management:');
             expect(result.stdoutAsString()).toContain('run');
             expect(result.stdoutAsString()).toContain('start');
             expect(result.stdoutAsString()).toContain('kill');
@@ -52,8 +52,10 @@ describe('CLI Help Command', () => {
             // Snapshot the structure of help output (normalized)
             const normalized = normalizeOutput(result.stdoutAsString());
 
-            // Check for consistent structure
-            expect(normalized).toContain('Commands:');
+            // Check for consistent structure with sections
+            expect(normalized).toContain('Process Management:');
+            expect(normalized).toContain('Port Reservations:');
+            expect(normalized).toContain('Configuration & Maintenance:');
             expect(normalized).toContain('Options:');
         });
     });
@@ -63,7 +65,7 @@ describe('CLI Help Command', () => {
             const result = await workspace.runCli([]);
 
             const output = result.stdoutAsString() + result.stderrAsString();
-            expect(output).toContain('Commands:');
+            expect(output).toContain('Process Management:');
         });
     });
 

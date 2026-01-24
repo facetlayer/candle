@@ -12,11 +12,15 @@ import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { handleClearDatabaseCommand } from './clear-database-command.ts';
 import { handleClearLogsCommand } from './clear-logs-command.ts';
+import { handleGetReservedPort, printGetReservedPortOutput } from './get-reserved-port-command.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { handleKillAll } from './kill-all-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
 import { handleListPorts, printListPortsOutput } from './list-ports-command.ts';
+import { handleListReservedPorts, printListReservedPortsOutput } from './list-reserved-ports-command.ts';
 import { handleLogsCommand } from './logs-command.ts';
+import { handleReleasePorts, printReleasePortsOutput } from './release-ports-command.ts';
+import { handleReservePort, printReservePortOutput } from './reserve-port-command.ts';
 import { handleRestart } from './restart-command.ts';
 import { handleRunCommand } from './run-command.ts';
 import { handleStartCommand } from './start-command.ts';
@@ -34,13 +38,68 @@ const docFiles = new DocFilesHelper({
   files: [join(__packageRoot, 'README.md')],
 });
 
+function printGroupedHelp() {
+  console.log(`Usage: candle <command> [options]
+
+Process Management:
+  list, ls                  List processes for this project directory
+  run [name...]             Launch process(es) and watch their output
+  run                       Launch all configured processes and watch their output
+  start [name...]           Start process(es) in background
+  start                     Start all configured processes in the background
+  restart [name]            Restart a running process
+  restart                   Restart all processes for this project directory
+  kill [name...]            Kill running process(es)
+  kill                      Kill all process(es) in this project directory
+  list-ports                List currently active ports for running services
+                            (Note: This is different than port reservations)
+
+Logs:
+  logs [name...]            Show recent logs for process(es)
+  watch [name...]           Watch live output from process(es)
+  wait-for-log [name]       Wait for a specific log message
+
+Configuration:
+  add-service <name>        Add a new service to .candle.json
+
+Port Reservation:
+  list-reserved-ports       List reserved ports for this current project directory
+  reserve-port [name]       Reserve a port for a service
+  release-ports [name]      Release reserved port(s)
+  release-ports             Release all port reservations for this project directory
+  get-reserved-port <name>  Get the reserved port for a service
+      
+Documentation:
+  list-docs                 List available documentation
+  get-doc <name>            Display a documentation file
+
+Troubleshooting & Maintenance:
+  list-all                  List all managed processes on this system
+  kill-all                  Kill all managed processes on this system
+  list-ports-all            List currently active ports for all managed processes
+  list-reserved-ports-all   List reserved ports for all projects
+  clear-logs [name]         Clear logs for process(es)
+  erase-database            Erase the Candle database
+
+Options:
+  --mcp                     Enter MCP server mode
+  --help                    Show help
+  --version                 Show version number
+
+Run 'candle <command> --help' for more information on a command.`);
+}
+
 function configureYargs() {
   return yargs(hideBin(process.argv))
+    .scriptName('candle')
+    .usage('Usage: $0 <command> [options]')
     .option('mcp', {
       type: 'boolean',
       describe: 'Enter MCP server mode',
       default: false,
     })
+
+    // Process Management
     .command('run [name...]', 'Launch process(es) and watch their output', (yargs: Argv) => {
       yargs
         .option('shell', {
@@ -71,24 +130,14 @@ function configureYargs() {
           type: 'boolean',
         });
     })
-    .command('restart [name]', 'Restart a process service', () => {})
-    .command(
-      'kill [name...]',
-      'Kill processes started in the current working directory',
-      (yargs: Argv) => {}
-    )
-    .command(
-      'kill-all',
-      'Kill all running processes that are tracked by Candle',
-      (yargs: Argv) => {}
-    )
-    .command(['list', 'ls'], 'List active processes for current directory', (yargs: Argv) => {})
-    .command('list-all', 'List all active processes', (yargs: Argv) => {})
-    .command('list-ports', 'List open ports for running services', (yargs: Argv) => {})
-    .command('list-ports-all', 'List open ports for all running services', (yargs: Argv) => {})
+    .command('restart [name]', 'Restart a running process', () => {})
+    .command('kill [name...]', 'Kill process(es) in the current directory', () => {})
+    .command('kill-all', 'Kill all running processes', () => {})
+    .command(['list', 'ls'], 'List processes for current directory', () => {})
+    .command('list-all', 'List all processes', () => {})
     .command('logs [name...]', 'Show recent logs for process(es)', () => {})
-    .command('watch [name...]', 'Watch live output from running process(es)', () => {})
-    .command('wait-for-log [name]', 'Wait for a specific log message to appear', (yargs: Argv) => {
+    .command('watch [name...]', 'Watch live output from process(es)', () => {})
+    .command('wait-for-log [name]', 'Wait for a specific log message', (yargs: Argv) => {
       yargs
         .option('message', {
           describe: 'The log message to wait for',
@@ -101,36 +150,44 @@ function configureYargs() {
           default: 30,
         });
     })
-    .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})
-    .command('erase-database', 'Erase the database stored at ~/.local/state/candle', () => {})
-    .command('list-docs', 'List available documentation files', () => {})
-    .command('get-doc <name>', 'Display the contents of a documentation file', () => {})
-    .command(
-      'add-service <name>',
-      'Add a new service to .candle.json',
-      (yargs: Argv) => {
-        yargs
-          .positional('name', {
-            describe: 'Name of the service',
-            type: 'string',
-          })
-          .option('shell', {
-            describe: 'Shell command to run the service',
-            type: 'string',
-            demandOption: true,
-          })
-          .option('root', {
-            describe: 'Root directory for the service',
-            type: 'string',
-          })
-          .option('enable-stdin', {
-            describe: 'Enable stdin message polling from database',
-            type: 'boolean',
-          });
-      }
-    )
+    .command('list-ports', 'List open ports for running services', () => {})
+    .command('list-ports-all', 'List open ports for all services', () => {})
+
+    // Port Reservations
+    .command('reserve-port [name]', 'Reserve an unused port', () => {})
+    .command('release-ports [name]', 'Release reserved port(s)', () => {})
+    .command('list-reserved-ports', 'List reserved ports for project', () => {})
+    .command('list-reserved-ports-all', 'List all reserved ports', () => {})
+    .command('get-reserved-port <name>', 'Get the reserved port for a service', () => {})
+
+    // Configuration & Maintenance
+    .command('add-service <name>', 'Add a new service to .candle.json', (yargs: Argv) => {
+      yargs
+        .positional('name', {
+          describe: 'Name of the service',
+          type: 'string',
+        })
+        .option('shell', {
+          describe: 'Shell command to run the service',
+          type: 'string',
+          demandOption: true,
+        })
+        .option('root', {
+          describe: 'Root directory for the service',
+          type: 'string',
+        })
+        .option('enable-stdin', {
+          describe: 'Enable stdin message polling from database',
+          type: 'boolean',
+        });
+    })
+    .command('clear-logs [name]', 'Clear logs for process(es)', () => {})
+    .command('erase-database', 'Erase the Candle database', () => {})
+    .command('list-docs', 'List available documentation', () => {})
+    .command('get-doc <name>', 'Display a documentation file', () => {})
+
     .demandCommand(0, 'You need to specify a command')
-    .help()
+    .help(false)  // Disable default help, we'll handle it
     .version();
 }
 
@@ -171,12 +228,27 @@ export async function main(): Promise<void> {
     return;
   }
 
+  // Handle help flag - show grouped help
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    // If help is for a specific command, let yargs handle it
+    const hasCommand = process.argv.some(arg =>
+      !arg.startsWith('-') && arg !== process.argv[0] && arg !== process.argv[1]
+    );
+    if (hasCommand) {
+      // Let yargs show command-specific help
+      configureYargs().help(true).parse();
+      return;
+    }
+    printGroupedHelp();
+    return;
+  }
+
   const { command, commandNames, mcp, shell, root, enableStdin, message, timeout } =
     parseArgs();
 
   // Check if no arguments - print help
   if (process.argv.length === 2) {
-    configureYargs().showHelp();
+    printGroupedHelp();
     return;
   }
 
@@ -224,6 +296,46 @@ export async function main(): Promise<void> {
     case 'list-ports-all': {
       const output = await handleListPorts({ showAll: true });
       printListPortsOutput(output);
+      break;
+    }
+
+    case 'reserve-port': {
+      const projectDir = findProjectDir();
+      const serviceName = commandNames[0];
+      const output = await handleReservePort({ projectDir, serviceName });
+      printReservePortOutput(output);
+      break;
+    }
+
+    case 'release-ports': {
+      const projectDir = findProjectDir();
+      const serviceName = commandNames[0];
+      const output = await handleReleasePorts({ projectDir, serviceName });
+      printReleasePortsOutput(output);
+      break;
+    }
+
+    case 'list-reserved-ports': {
+      const output = await handleListReservedPorts({});
+      printListReservedPortsOutput(output);
+      break;
+    }
+
+    case 'list-reserved-ports-all': {
+      const output = await handleListReservedPorts({ showAll: true });
+      printListReservedPortsOutput(output);
+      break;
+    }
+
+    case 'get-reserved-port': {
+      const projectDir = findProjectDir();
+      const serviceName = commandNames[0];
+      if (!serviceName) {
+        console.error('Error: Service name is required');
+        process.exit(1);
+      }
+      const output = await handleGetReservedPort({ projectDir, serviceName });
+      printGetReservedPortOutput(output);
       break;
     }
 
@@ -334,7 +446,7 @@ export async function main(): Promise<void> {
     default:
       console.error(`Error: Unrecognized command '${command}'`);
       console.error(
-        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
+        'Available commands: run, start, list, ls, list-all, list-ports, list-ports-all, reserve-port, release-ports, list-reserved-ports, list-reserved-ports-all, get-reserved-port, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, erase-database, add-service, list-docs, get-doc'
       );
       process.exit(1);
   }

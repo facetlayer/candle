@@ -7,10 +7,14 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { addServerConfig } from '../addServerConfig.ts';
+import { handleGetReservedPort } from '../get-reserved-port-command.ts';
 import { handleKillCommand } from '../kill-command.ts';
 import { handleList } from '../list-command.ts';
 import { handleListPorts } from '../list-ports-command.ts';
+import { handleListReservedPorts } from '../list-reserved-ports-command.ts';
 import { handleLogsCommand } from '../logs-command.ts';
+import { handleReleasePorts } from '../release-ports-command.ts';
+import { handleReservePort } from '../reserve-port-command.ts';
 import { handleRestart } from '../restart-command.ts';
 import { startOneService } from '../start-command.ts';
 import { infoLog } from '../logs.ts';
@@ -279,6 +283,85 @@ const toolDefinitions: ToolDefinition[] = [
       });
 
       console.log(`Service '${name}' added successfully to .candle.json`);
+    },
+  },
+  {
+    name: 'ReservePort',
+    description: 'Reserve an unused port for a service or project. When a service with a reserved port is started, the PORT environment variable is automatically set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceName: {
+          type: 'string',
+          description: 'Name of the service to reserve the port for (optional - if omitted, reserves a project-level port)',
+        },
+      },
+    },
+    handler: async args => {
+      const serviceName = args?.serviceName as string | undefined;
+      const projectDir = findProjectDir();
+      const result = await handleReservePort({ projectDir, serviceName });
+      return result;
+    },
+  },
+  {
+    name: 'ReleasePorts',
+    description: 'Release reserved port(s) for a service or project',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceName: {
+          type: 'string',
+          description: 'Name of the service to release ports for (optional - if omitted, releases all ports for the project)',
+        },
+      },
+    },
+    handler: async args => {
+      const serviceName = args?.serviceName as string | undefined;
+      const projectDir = findProjectDir();
+      const result = await handleReleasePorts({ projectDir, serviceName });
+      return result;
+    },
+  },
+  {
+    name: 'ListReservedPorts',
+    description: 'List reserved ports',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        showAll: {
+          type: 'boolean',
+          description: 'Show all reserved ports or just current directory (optional)',
+        },
+      },
+    },
+    handler: async args => {
+      const showAll = args?.showAll as boolean | undefined;
+      const result = await handleListReservedPorts({ showAll });
+      return result;
+    },
+  },
+  {
+    name: 'GetReservedPort',
+    description: 'Get the reserved port for a specific service',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceName: {
+          type: 'string',
+          description: 'Name of the service to get the reserved port for',
+        },
+      },
+      required: ['serviceName'],
+    },
+    handler: async args => {
+      const serviceName = args?.serviceName as string;
+      if (!serviceName) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
+      const projectDir = findProjectDir();
+      const result = await handleGetReservedPort({ projectDir, serviceName });
+      return result;
     },
   },
 ];

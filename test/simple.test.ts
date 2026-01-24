@@ -19,7 +19,7 @@ describe('Simple Candle Test', () => {
             });
         });
 
-        expect(result.stdout).toContain('Commands:');
+        expect(result.stdout).toContain('Process Management:');
         expect(result.stdout).toContain('run');
         expect(result.stdout).toContain('kill');
         expect(result.code).toBe(0);

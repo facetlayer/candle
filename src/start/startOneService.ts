@@ -7,6 +7,7 @@ import { LogIterator } from '../logs/LogIterator.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';
 import { ProcessLogType } from '../logs/ProcessLogType.ts';
 import { debugLog } from '../debug.ts';
+import { getReservedPortForService } from '../port-assignment/index.ts';
 
 export interface RunOptions {
   commandName: string;
@@ -99,8 +100,12 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     log_type: ProcessLogType.process_start_initiated,
   });
 
+  // Check if there's a reserved port for this service
+  const reservedPort = getReservedPortForService(projectDir, serviceConfig.name);
+  const port = reservedPort?.port;
+
   debugLog('[startOneService] launching with log collector for name=' + serviceConfig.name + ', projectDir=' + projectDir
-    + ', timeSinceStart=' + getTimeSinceStart());
+    + ', port=' + port + ', timeSinceStart=' + getTimeSinceStart());
 
   await launchWithLogCollector({
     commandName: serviceConfig.name,
@@ -108,6 +113,7 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     shell: serviceConfig.shell,
     root: serviceConfig.root,
     enableStdin: serviceConfig.enableStdin,
+    port,
   });
 
   debugLog('[startOneService] waiting for process start logs, timeSinceStart=' + getTimeSinceStart());

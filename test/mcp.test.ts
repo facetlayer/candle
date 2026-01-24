@@ -103,12 +103,17 @@ describe('MCP Integration Tests', () => {
         // Verify all expected tools are available
         await expect(app).toHaveTools([
             'ListServices',
+            'ListPorts',
             'GetLogs',
             'StartService',
             'StartTransientService',
             'KillService',
             'RestartService',
-            'AddServerConfig'
+            'AddServerConfig',
+            'ReservePort',
+            'ReleasePorts',
+            'ListReservedPorts',
+            'GetReservedPort'
         ]);
 
         await app.close();
