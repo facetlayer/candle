@@ -54,10 +54,13 @@ describe('CLI Help Command', () => {
 
             // Check for consistent structure with sections
             expect(normalized).toContain('Process Management:');
+            expect(normalized).toContain('Port Detection:');
+            expect(normalized).toContain('Logs:');
             expect(normalized).toContain('Configuration:');
+            expect(normalized).toContain('Documentation:');
             expect(normalized).toContain('Troubleshooting & Maintenance:');
             expect(normalized).toContain('Options:');
-            expect(normalized).toContain('Topics:');
+            expect(normalized).toContain('More details:');
         });
     });
 
