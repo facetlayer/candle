@@ -52,7 +52,7 @@ Process Management:
 
 Port Detection:
   list-ports                Uses the OS to detect and list the active open ports
-  open-browser [name]       Open a web browser to the detected service's port
+  open-browser [name]       Open browser to service (auto-detects if one running)
 
 Logs:
   logs [name...]            Show recent logs for process(es)
@@ -178,7 +178,7 @@ function configureYargs() {
     })
     .command('list-ports [name]', 'List open ports for running services', () => {})
     .command('list-ports-all', 'List open ports for all services', () => {})
-    .command('open-browser <name>', 'Open browser to a running service', () => {})
+    .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', () => {})
 
     // Port Reservations
     .command('reserve-port [name]', 'Reserve an unused port', () => {})
@@ -354,7 +354,7 @@ export async function main(): Promise<void> {
     }
 
     case 'open-browser': {
-      const serviceName = requireServiceName(commandNames);
+      const serviceName = commandNames[0];
       const output = await handleOpenBrowser({ serviceName });
       printOpenBrowserOutput(output);
       break;

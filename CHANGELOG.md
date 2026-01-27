@@ -1,4 +1,7 @@
 
+# Unreleased
+ - 'open-browser' can autodetect service name
+
 # 0.11.0
  - Add port reservation system
  - Add 'open-browser' command

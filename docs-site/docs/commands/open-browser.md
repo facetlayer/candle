@@ -5,7 +5,7 @@ Open a browser window to a running service's port.
 ## Syntax
 
 ```bash
-candle open-browser <name>
+candle open-browser [name]
 ```
 
 ## Description
@@ -16,7 +16,12 @@ This command uses the same port detection as `list-ports` - it finds the actual 
 
 ## Arguments
 
-- `name` - Name of the service to open in browser (required)
+- `name` - Name of the service to open in browser (optional)
+
+If no service name is provided, the command will auto-detect the target:
+- If exactly one process is running in the project, that service is used
+- If no processes are running, an error is thrown
+- If multiple processes are running, an error is thrown (ambiguous)
 
 ## Examples
 
@@ -25,6 +30,13 @@ This command uses the same port detection as `list-ports` - it finds the actual 
 ```bash
 candle open-browser api
 # Opens http://localhost:3000 (or whatever port the service is listening on)
+```
+
+### Auto-detect with a single running service
+
+```bash
+candle open-browser
+# Automatically opens the browser to the only running service
 ```
 
 ### Start a service and open browser
@@ -38,6 +50,8 @@ candle start api && candle open-browser api
 The command will fail if:
 - The service is not running
 - The service has no open ports
+- No service name was provided and no processes are running
+- No service name was provided and multiple processes are running
 
 ## Platform Support
 

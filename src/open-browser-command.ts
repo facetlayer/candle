@@ -2,9 +2,11 @@ import { spawn } from 'child_process';
 import { platform } from 'os';
 import { handleListPorts } from './list-ports-command.ts';
 import { UsageError } from './errors.ts';
+import { findConfigFile } from './configFile.ts';
+import { findProcessesByProjectDir } from './database/processTable.ts';
 
 export interface OpenBrowserOptions {
-  serviceName: string;
+  serviceName?: string;
 }
 
 export interface OpenBrowserOutput {
@@ -13,10 +15,35 @@ export interface OpenBrowserOutput {
   url: string;
 }
 
+function resolveServiceName(providedName?: string): string {
+  if (providedName) {
+    return providedName;
+  }
+
+  // Auto-detect: find running processes in the current project
+  const { projectDir } = findConfigFile(process.cwd());
+  const runningProcesses = findProcessesByProjectDir(projectDir);
+
+  if (runningProcesses.length === 0) {
+    throw new UsageError(
+      'No service name provided and no running processes found in this project.'
+    );
+  }
+
+  if (runningProcesses.length > 1) {
+    const names = runningProcesses.map(p => p.command_name).join(', ');
+    throw new UsageError(
+      `No service name provided and multiple processes are running: ${names}. Please specify which service to open.`
+    );
+  }
+
+  return runningProcesses[0].command_name;
+}
+
 export async function handleOpenBrowser(
   options: OpenBrowserOptions
 ): Promise<OpenBrowserOutput> {
-  const { serviceName } = options;
+  const serviceName = resolveServiceName(options.serviceName);
 
   const portsOutput = await handleListPorts({ serviceName });
 
