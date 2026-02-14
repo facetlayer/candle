@@ -44,6 +44,12 @@ See [Project Organization](project-organization) for more details.
 
 ## Starting Services
 
+Start all configured services:
+
+```bash
+candle start
+```
+
 Start a specific service:
 
 ```bash

@@ -78,6 +78,15 @@ To use Candle with Claude Code, add it to your MCP configuration. Claude Code ca
 - Add new services to your configuration
 - Restart services after making changes
 
+### Initial Setup
+
+Before using MCP tools, you'll typically want to configure your services. You can do this via:
+
+- The CLI: `candle add-service api "npm run dev"`
+- The MCP `AddServerConfig` tool (see above)
+
+See [add-service](commands/add-service) for CLI usage details.
+
 ## Example MCP Workflow
 
 1. Claude Code reads your project and identifies you need a dev server
