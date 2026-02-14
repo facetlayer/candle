@@ -44,18 +44,11 @@ function hasConfigDrift(
 }
 
 export async function handleList(options?: { showAll?: boolean }): Promise<ListOutput> {
-  const { config, projectDir } = findConfigFile(process.cwd());
-
-  // Build a map of service names to config entries for drift detection
-  const configByName = new Map(
-    (config.services || []).map(s => [s.name, s] as [string, ServiceConfig])
-  );
-
   if (options?.showAll) {
+    // For list-all, we don't need a config file - just list all processes from the database
     const processEntries = findAllProcesses();
 
     const processes = processEntries.map(processEntry => {
-      const configService = configByName.get(processEntry.command_name);
       return {
         serviceName: processEntry.command_name,
         command: processEntry.command_name,
@@ -63,11 +56,18 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
         uptime: formatUptime(Date.now() - processEntry.start_time * 1000),
         pid: processEntry.pid,
         status: 'RUNNING',
-        configChanged: hasConfigDrift(processEntry, configService),
+        // Config drift detection not available without project context
+        configChanged: false,
       };
     });
     return { processes };
   } else {
+    const { config, projectDir } = findConfigFile(process.cwd());
+
+    // Build a map of service names to config entries for drift detection
+    const configByName = new Map(
+      (config.services || []).map(s => [s.name, s] as [string, ServiceConfig])
+    );
     const processEntries = findProcessesByProjectDir(projectDir);
     const runningByName = new Map(processEntries.map(p => [p.command_name, p]));
     const seenNames = new Set<string>();

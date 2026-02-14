@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import * as os from 'os';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-list-all');
@@ -7,6 +8,14 @@ describe('CLI List-All Command', () => {
     afterAll(() => workspace.cleanup());
 
     describe('basic list-all functionality', () => {
+        it('should work without a .candle.json file in the current directory', async () => {
+            // Run list-all from a directory that has no .candle.json (like home dir)
+            // This should succeed because list-all doesn't need a project config
+            const result = await workspace.runCli(['list-all'], { cwd: os.homedir() });
+            // Should not throw an error, and should show table headers
+            expect(result.stdoutAsString()).not.toContain('No .candle.json file found');
+        });
+
         it('should show empty list when no processes running anywhere', async () => {
             await workspace.runCli(['list-all']);
         });
