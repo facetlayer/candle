@@ -1,5 +1,5 @@
 
-# Unreleased
+# 0.11.1
  - 'open-browser' can autodetect service name
 
 # 0.11.0
