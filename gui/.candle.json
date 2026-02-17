@@ -1,0 +1,13 @@
+{
+  "services": [
+    {
+      "name": "api",
+      "shell": "node --watch src/api.ts"
+    },
+    {
+      "name": "web",
+      "shell": "pnpm dev",
+      "root": "web"
+    }
+  ]
+}

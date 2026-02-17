@@ -1,0 +1,359 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #e94560;
+}
+
+.app-header .subtitle {
+  font-size: 13px;
+  color: #888;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Service List */
+.service-list {
+  width: 340px;
+  min-width: 340px;
+  border-right: 1px solid #0f3460;
+  display: flex;
+  flex-direction: column;
+  background: #16213e;
+}
+
+.service-list-header {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #0f3460;
+}
+
+.service-list-header h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  font-weight: 500;
+}
+
+.refresh-btn {
+  background: none;
+  border: 1px solid #333;
+  color: #888;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.refresh-btn:hover {
+  border-color: #555;
+  color: #ccc;
+}
+
+/* Project Groups */
+.project-group {
+  border-bottom: 1px solid #0f3460;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #131b30;
+  font-size: 12px;
+  color: #7888a8;
+  user-select: none;
+}
+
+.project-icon {
+  font-size: 10px;
+  color: #556;
+}
+
+.project-name {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-count {
+  font-size: 10px;
+  background: #1a2744;
+  color: #667;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.service-items {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.service-item {
+  padding: 10px 16px 10px 28px;
+  cursor: pointer;
+  border-bottom: 1px solid #0f346020;
+  transition: background 0.15s;
+}
+
+.service-item:hover {
+  background: #1a2744;
+}
+
+.service-item.selected {
+  background: #1a2744;
+  border-left: 3px solid #e94560;
+  padding-left: 25px;
+}
+
+.service-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.service-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.service-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.service-status.running {
+  background: #0a3d24;
+  color: #4ade80;
+}
+
+.service-status.stopped {
+  background: #333;
+  color: #888;
+}
+
+.service-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: #666;
+}
+
+.service-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.action-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn:hover {
+  border-color: #555;
+  background: #222;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-btn.open {
+  border-color: #1e3a5f;
+  color: #60a5fa;
+}
+
+.action-btn.open:hover {
+  background: #172554;
+}
+
+.action-btn.start {
+  border-color: #166534;
+  color: #4ade80;
+}
+
+.action-btn.start:hover {
+  background: #0a3d24;
+}
+
+.action-btn.restart {
+  border-color: #854d0e;
+  color: #facc15;
+}
+
+.action-btn.restart:hover {
+  background: #422006;
+}
+
+.action-btn.kill {
+  border-color: #7f1d1d;
+  color: #f87171;
+}
+
+.action-btn.kill:hover {
+  background: #450a0a;
+}
+
+/* Log Viewer */
+.log-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.log-viewer-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #0f3460;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.log-viewer-header h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  font-weight: 500;
+}
+
+.log-viewer-header .service-label {
+  color: #e0e0e0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.log-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  font-size: 14px;
+}
+
+.log-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-entry {
+  padding: 1px 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-entry:hover {
+  background: #ffffff08;
+}
+
+.log-entry.stdout {
+  color: #d4d4d4;
+}
+
+.log-entry.stderr {
+  color: #f87171;
+}
+
+.log-entry.lifecycle {
+  color: #666;
+  font-style: italic;
+}
+
+.log-timestamp {
+  color: #555;
+  margin-right: 8px;
+  font-size: 11px;
+}
+
+.auto-scroll-toggle {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #888;
+  cursor: pointer;
+}
+
+.auto-scroll-toggle.active {
+  border-color: #0f3460;
+  color: #60a5fa;
+}
+
+/* Loading & Error states */
+.loading {
+  color: #666;
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.error-message {
+  color: #f87171;
+  padding: 8px 16px;
+  font-size: 12px;
+  background: #450a0a33;
+  border-bottom: 1px solid #7f1d1d33;
+}

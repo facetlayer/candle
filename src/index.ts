@@ -2,7 +2,7 @@
 // This file exports functions and types for programmatic usage (e.g., GUI apps)
 
 // Process listing
-export { handleList, printListOutput } from './list-command.ts';
+export { handleList, printListOutput, formatUptime } from './list-command.ts';
 export type { ListOutput } from './list-command.ts';
 
 // Process logs

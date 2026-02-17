@@ -121,7 +121,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
   }
 }
 
-function formatUptime(milliseconds: number): string {
+export function formatUptime(milliseconds: number): string {
   const totalSeconds = Math.floor(milliseconds / 1000);
   const days = Math.floor(totalSeconds / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);

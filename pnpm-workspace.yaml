@@ -1,3 +1,7 @@
+packages:
+  - "."
+  - "gui"
+  - "gui/web"
 
 onlyBuiltDependencies:
   - better-sqlite3

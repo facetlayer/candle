@@ -1,35 +1,19 @@
 {
   "name": "@facetlayer/candle-gui",
   "version": "0.1.0",
-  "description": "GUI app for viewing and managing Candle processes",
-  "main": "dist/main.js",
+  "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p .",
-    "dev": "tsc -p . --watch",
-    "prepare": "tsc -p .",
-    "start": "electron dist/main.js"
+    "dev": "node --watch src/api.ts"
   },
-  "keywords": [
-    "candle",
-    "process-manager",
-    "electron",
-    "gui"
-  ],
-  "author": "",
-  "license": "MIT",
-  "packageManager": "pnpm@10.15.1",
   "dependencies": {
-    "@facetlayer/candle": "*",
-    "@facetlayer/spark-framework": "link:../../scaffold/spark-framework",
-    "@facetlayer/sqlite-wrapper": "*",
-    "better-sqlite3": "^11.8.1",
-    "electron": "^33.2.0",
-    "express": "^4.21.1"
+    "@facetlayer/candle": "workspace:*",
+    "@facetlayer/prism-framework-api": "*",
+    "dotenv": "^16.4.7",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.2"
   }
 }
