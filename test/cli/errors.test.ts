@@ -22,6 +22,32 @@ describe('CLI Error Handling', () => {
         });
     });
 
+    describe('unrecognized flags (strict mode)', () => {
+        it('should error for unrecognized flag on logs command', async () => {
+            const result = await workspace.runCli(['logs', '--unknown'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            const output = result.stdoutAsString() + result.stderrAsString();
+            expect(output).toContain('Unknown argument');
+        });
+
+        it('should error for unrecognized flag on list command', async () => {
+            const result = await workspace.runCli(['list', '--bad-flag'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            const output = result.stdoutAsString() + result.stderrAsString();
+            expect(output).toContain('Unknown argument');
+        });
+
+        it('should error for unrecognized flag on start command', async () => {
+            const result = await workspace.runCli(['start', 'echo', '--nonexistent'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            const output = result.stdoutAsString() + result.stderrAsString();
+            expect(output).toContain('Unknown argument');
+        });
+    });
+
     describe('missing required arguments', () => {
         it('should error when add-service missing arguments', async () => {
             const result = await workspace.runCli(['add-service'], { ignoreExitCode: true });

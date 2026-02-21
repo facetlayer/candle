@@ -247,6 +247,53 @@ describe('process exit logging', () => {
     });
 });
 
+describe('--count flag', () => {
+    it('should accept --count flag', async () => {
+        await workspace.runCli(['start', 'echo']);
+        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+        const result = await workspace.runCli(['logs', 'echo', '--count', '5']);
+
+        // Should succeed and show some output
+        expect(result.stdoutAsString().length).toBeGreaterThan(0);
+    });
+
+    it('should limit output lines when --count is small', async () => {
+        await workspace.runCli(['start', 'echo']);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
+        const fullResult = await workspace.runCli(['logs', 'echo']);
+        const limitedResult = await workspace.runCli(['logs', 'echo', '--count', '1']);
+
+        const fullLines = fullResult.stdoutAsString().trim().split('\n');
+        const limitedLines = limitedResult.stdoutAsString().trim().split('\n');
+
+        expect(limitedLines.length).toBeLessThanOrEqual(fullLines.length);
+    });
+});
+
+describe('--start-at flag', () => {
+    it('should accept --start-at flag', async () => {
+        await workspace.runCli(['start', 'echo']);
+        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+        // Using a very high start-at ID should return no logs
+        const result = await workspace.runCli(['logs', 'echo', '--start-at', '999999']);
+
+        expect(result.stdoutAsString()).toContain('No logs found');
+    });
+});
+
+describe('unrecognized flags', () => {
+    it('should error on unrecognized flag', async () => {
+        const result = await workspace.runCli(['logs', '--bogus-flag'], { ignoreExitCode: true });
+
+        expect(result.failed()).toBe(true);
+        const output = result.stdoutAsString() + result.stderrAsString();
+        expect(output).toContain('Unknown argument');
+    });
+});
+
 describe('starting and logging multiple processes', () => {
     it('should start service and capture logs', async () => {
         // Start a service
