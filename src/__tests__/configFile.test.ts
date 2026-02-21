@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig } from '../configFile.ts';
+import { validateConfig, getLogEvictionConfig, LOG_EVICTION_DEFAULTS } from '../configFile.ts';
 import { ConfigFileError } from '../errors.ts';
 
 describe('Config File Validation', () => {
@@ -140,5 +140,172 @@ describe('Config File Validation', () => {
 
         expect(() => validateConfig(configWithInvalidRoot)).toThrow(ConfigFileError);
         expect(() => validateConfig(configWithInvalidRoot)).toThrow('invalid root path');
+    });
+});
+
+describe('logEviction config validation', () => {
+    it('should accept valid logEviction config', () => {
+        const config = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: {
+                maxLogsPerService: 500,
+                maxRetentionSeconds: 3600,
+            }
+        };
+
+        const result = validateConfig(config);
+        expect(result.logEviction).toEqual({
+            maxLogsPerService: 500,
+            maxRetentionSeconds: 3600,
+        });
+    });
+
+    it('should accept config without logEviction', () => {
+        const config = {
+            services: [{ name: 'web', shell: 'npm start' }],
+        };
+
+        const result = validateConfig(config);
+        expect(result.logEviction).toBeUndefined();
+    });
+
+    it('should accept partial logEviction config', () => {
+        const config = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: {
+                maxLogsPerService: 2000,
+            }
+        };
+
+        const result = validateConfig(config);
+        expect(result.logEviction!.maxLogsPerService).toBe(2000);
+        expect(result.logEviction!.maxRetentionSeconds).toBeUndefined();
+    });
+
+    it('should throw for non-object logEviction', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: 'invalid',
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow("Invalid value for 'logEviction'");
+    });
+
+    it('should throw for array logEviction', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: [1, 2, 3],
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow("Invalid value for 'logEviction'");
+    });
+
+    it('should throw for non-integer maxLogsPerService', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxLogsPerService: 1.5 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxLogsPerService');
+    });
+
+    it('should throw for zero maxLogsPerService', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxLogsPerService: 0 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxLogsPerService');
+    });
+
+    it('should throw for negative maxLogsPerService', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxLogsPerService: -10 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxLogsPerService');
+    });
+
+    it('should throw for string maxLogsPerService', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxLogsPerService: '1000' },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxLogsPerService');
+    });
+
+    it('should throw for non-integer maxRetentionSeconds', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxRetentionSeconds: 10.5 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxRetentionSeconds');
+    });
+
+    it('should throw for zero maxRetentionSeconds', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxRetentionSeconds: 0 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxRetentionSeconds');
+    });
+
+    it('should throw for negative maxRetentionSeconds', () => {
+        const config: any = {
+            services: [{ name: 'web', shell: 'npm start' }],
+            logEviction: { maxRetentionSeconds: -3600 },
+        };
+
+        expect(() => validateConfig(config)).toThrow(ConfigFileError);
+        expect(() => validateConfig(config)).toThrow('maxRetentionSeconds');
+    });
+});
+
+describe('getLogEvictionConfig', () => {
+    it('should return defaults when no config provided', () => {
+        const result = getLogEvictionConfig();
+        expect(result.maxLogsPerService).toBe(LOG_EVICTION_DEFAULTS.maxLogsPerService);
+        expect(result.maxRetentionSeconds).toBe(LOG_EVICTION_DEFAULTS.maxRetentionSeconds);
+    });
+
+    it('should return defaults when config has no logEviction', () => {
+        const result = getLogEvictionConfig({ services: [] });
+        expect(result.maxLogsPerService).toBe(LOG_EVICTION_DEFAULTS.maxLogsPerService);
+        expect(result.maxRetentionSeconds).toBe(LOG_EVICTION_DEFAULTS.maxRetentionSeconds);
+    });
+
+    it('should override defaults with config values', () => {
+        const result = getLogEvictionConfig({
+            services: [],
+            logEviction: {
+                maxLogsPerService: 500,
+                maxRetentionSeconds: 3600,
+            }
+        });
+        expect(result.maxLogsPerService).toBe(500);
+        expect(result.maxRetentionSeconds).toBe(3600);
+    });
+
+    it('should partially override defaults', () => {
+        const result = getLogEvictionConfig({
+            services: [],
+            logEviction: {
+                maxLogsPerService: 2000,
+            }
+        });
+        expect(result.maxLogsPerService).toBe(2000);
+        expect(result.maxRetentionSeconds).toBe(LOG_EVICTION_DEFAULTS.maxRetentionSeconds);
     });
 });

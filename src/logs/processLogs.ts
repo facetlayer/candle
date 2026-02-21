@@ -39,15 +39,36 @@ export function saveProcessLog(processLog: NewProcessLog) {
 }
 
 
+export interface ProcessLogResult {
+  logs: ProcessLog[];
+  logsWereEvicted: boolean;
+}
+
 export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
+  return getProcessLogsWithEvictionInfo(options).logs;
+}
+
+export function getProcessLogsWithEvictionInfo(options: LogSearchOptions): ProcessLogResult {
   const db = getDatabase();
   const builder = buildLogSearchQuery(options);
 
   if (VerboseLogs) {
     console.log('getProcessLogs - running SQL', builder.getSql(), builder.getParams());
   }
-  
+
   const logItems = db.list(builder.getSql(), builder.getParams());
+
+  // Check if there are more logs beyond our limit (indicating eviction/truncation)
+  let logsWereEvicted = false;
+  if (options.limit !== undefined && logItems.length >= options.limit) {
+    // We got exactly the limit - there may be more logs we didn't fetch
+    const countBuilder = buildLogSearchQuery({ ...options, limit: undefined });
+    const countSql = `select count(*) as total from (${countBuilder.getSql()})`;
+    const countResult = db.get(countSql, countBuilder.getParams());
+    if (countResult && countResult.total > logItems.length) {
+      logsWereEvicted = true;
+    }
+  }
 
   // Return list in chronological order
   const sorted = logItems.reverse();
@@ -56,5 +77,5 @@ export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
     console.log('getProcessLogs - got logs', sorted);
   }
 
-  return sorted;
+  return { logs: sorted, logsWereEvicted };
 }

@@ -1,6 +1,6 @@
 import { getDatabase } from './database.ts';
+import { findConfigFile, getLogEvictionConfig, type ResolvedLogEvictionConfig } from '../configFile.ts';
 
-const MAX_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 const CLEANUP_INTERVAL_SECONDS = 10 * 60;
 
 export function maybeRunCleanup(): void {
@@ -12,19 +12,56 @@ export function maybeRunCleanup(): void {
     return;
   }
 
-  runCleanup();
+  // Try to load config for eviction settings
+  let evictionConfig: ResolvedLogEvictionConfig;
+  try {
+    const configResult = findConfigFile(process.cwd());
+    evictionConfig = getLogEvictionConfig(configResult?.config);
+  } catch {
+    // No config file found, use defaults
+    evictionConfig = getLogEvictionConfig();
+  }
+
+  runCleanup(evictionConfig);
 }
 
-function runCleanup(): void {
+export function runCleanup(evictionConfig: ResolvedLogEvictionConfig): void {
   const db = getDatabase();
   const now = Math.floor(Date.now() / 1000);
 
-  // Keep process output logs for 24 hours
-  const logCutoff = now - MAX_LOG_RETENTION_SECONDS;
-
-  // Delete old process output logs
+  // Time-based eviction: delete logs older than maxRetentionSeconds
+  const logCutoff = now - evictionConfig.maxRetentionSeconds;
   db.run('delete from process_output where timestamp < ?', [logCutoff]);
-  db.run('vacuum');
 
+  // Per-service eviction: keep only maxLogsPerService logs per (project_dir, command_name)
+  // Find all distinct service keys that have more logs than the limit
+  const services = db.list(
+    `select project_dir, command_name, count(*) as log_count
+     from process_output
+     group by project_dir, command_name
+     having count(*) > ?`,
+    [evictionConfig.maxLogsPerService]
+  );
+
+  for (const service of services) {
+    // Find the id threshold: keep the newest maxLogsPerService logs
+    const cutoffRow = db.get(
+      `select id from process_output
+       where project_dir = ? and command_name = ?
+       order by timestamp desc, id desc
+       limit 1 offset ?`,
+      [service.project_dir, service.command_name, evictionConfig.maxLogsPerService]
+    );
+
+    if (cutoffRow) {
+      db.run(
+        `delete from process_output
+         where project_dir = ? and command_name = ? and id <= ?`,
+        [service.project_dir, service.command_name, cutoffRow.id]
+      );
+    }
+  }
+
+  db.run('vacuum');
   db.upsert('process_last_cleanup', {}, { timestamp: now });
 }

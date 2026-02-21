@@ -1,0 +1,15 @@
+{
+  "services": [
+    {
+      "name": "echo",
+      "shell": "node ../../sampleServers/echoServer.js"
+    },
+    {
+      "name": "periodic",
+      "shell": "node ../../sampleServers/periodicLogger.js"
+    }
+  ],
+  "logEviction": {
+    "maxLogsPerService": 10
+  }
+}

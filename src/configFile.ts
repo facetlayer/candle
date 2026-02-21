@@ -13,8 +13,14 @@ export interface ServiceConfig {
   enableStdin?: boolean;
 }
 
+export interface LogEvictionConfig {
+  maxLogsPerService?: number;
+  maxRetentionSeconds?: number;
+}
+
 export interface CandleSetupConfig {
   services?: ServiceConfig[];
+  logEviction?: LogEvictionConfig;
 }
 
 // Config filenames in priority order (first match wins)
@@ -139,6 +145,33 @@ export function validateConfig(config: CandleSetupConfig) {
     }
   }
 
+  // Validate logEviction config if present
+  if (config.logEviction !== undefined) {
+    if (typeof config.logEviction !== 'object' || config.logEviction === null || Array.isArray(config.logEviction)) {
+      throw new ConfigFileError(
+        `Config file error: Invalid value for 'logEviction': expected an object`
+      );
+    }
+
+    const { maxLogsPerService, maxRetentionSeconds } = config.logEviction;
+
+    if (maxLogsPerService !== undefined) {
+      if (typeof maxLogsPerService !== 'number' || !Number.isInteger(maxLogsPerService) || maxLogsPerService < 1) {
+        throw new ConfigFileError(
+          `Config file error: 'logEviction.maxLogsPerService' must be a positive integer`
+        );
+      }
+    }
+
+    if (maxRetentionSeconds !== undefined) {
+      if (typeof maxRetentionSeconds !== 'number' || !Number.isInteger(maxRetentionSeconds) || maxRetentionSeconds < 1) {
+        throw new ConfigFileError(
+          `Config file error: 'logEviction.maxRetentionSeconds' must be a positive integer`
+        );
+      }
+    }
+  }
+
   return {
     ...config,
     services,
@@ -158,6 +191,23 @@ export function isValidRelativePath(p: string): boolean {
   }
 
   return true;
+}
+
+export const LOG_EVICTION_DEFAULTS = {
+  maxLogsPerService: 1000,
+  maxRetentionSeconds: 24 * 60 * 60,
+} as const;
+
+export interface ResolvedLogEvictionConfig {
+  maxLogsPerService: number;
+  maxRetentionSeconds: number;
+}
+
+export function getLogEvictionConfig(config?: CandleSetupConfig): ResolvedLogEvictionConfig {
+  return {
+    maxLogsPerService: config?.logEviction?.maxLogsPerService ?? LOG_EVICTION_DEFAULTS.maxLogsPerService,
+    maxRetentionSeconds: config?.logEviction?.maxRetentionSeconds ?? LOG_EVICTION_DEFAULTS.maxRetentionSeconds,
+  };
 }
 
 export function getServiceCwd(service: ServiceConfig, configPath: string): string {
