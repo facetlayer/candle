@@ -6,10 +6,11 @@ interface LogsCommandOptions {
   projectDir: string;
   commandNames: string[];
   limit?: number; // Number of log lines to show
+  startAtId?: number; // Only show logs after this log ID
 }
 
 export async function handleLogsCommand(req: LogsCommandOptions): Promise<void> {
-  const { projectDir, commandNames, limit = 100 } = req;
+  const { projectDir, commandNames, limit = 100, startAtId } = req;
 
   const isBlendedMode = commandNames.length !== 1;
 
@@ -18,6 +19,7 @@ export async function handleLogsCommand(req: LogsCommandOptions): Promise<void> 
     projectDir,
     commandNames: commandNames.length > 0 ? commandNames : undefined,
     limit,
+    afterLogId: startAtId,
   });
 
   const logFilter = new LatestExecutionLogFilter({ showPastLogsBehavior: 'show_logs_from_previous_launch' });

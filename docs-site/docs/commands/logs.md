@@ -5,7 +5,7 @@ Show recent logs for service(s).
 ## Syntax
 
 ```bash
-candle logs [name...]
+candle logs [name...] [--count <number>] [--start-at <id>]
 ```
 
 ## Description
@@ -17,6 +17,11 @@ This can include logs from previous launches, or logs for services that aren't r
 ## Arguments
 
 - `name` - Name of the service(s) to view logs for. Can specify multiple services.
+
+## Options
+
+- `--count <number>` - Number of log lines to show. Default: 100.
+- `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
 
 ## Examples
 
@@ -30,6 +35,18 @@ candle logs api
 
 ```bash
 candle logs api web
+```
+
+### Show only the last 10 log lines
+
+```bash
+candle logs api --count 10
+```
+
+### Show logs after a specific log ID
+
+```bash
+candle logs api --start-at 500
 ```
 
 ## See Also

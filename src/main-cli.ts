@@ -122,12 +122,13 @@ function configureYargs() {
     })
 
     // Help and MCP commands
-    .command('help [topic]', 'Show help', () => {})
-    .command('mcp', 'Enter MCP server mode', () => {})
+    .command('help [topic]', 'Show help', (yargs: Argv) => { yargs.positional('topic', { type: 'string' }).strictOptions(); })
+    .command('mcp', 'Enter MCP server mode', (yargs: Argv) => { yargs.strictOptions(); })
 
     // Process Management
     .command('run [name...]', 'Launch process(es) and watch their output', (yargs: Argv) => {
       yargs
+        .positional('name', { type: 'string' })
         .option('shell', {
           describe: 'Shell command for transient process',
           type: 'string',
@@ -139,10 +140,12 @@ function configureYargs() {
         .option('enable-stdin', {
           describe: 'Enable stdin message polling from database',
           type: 'boolean',
-        });
+        })
+        .strictOptions();
     })
     .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
       yargs
+        .positional('name', { type: 'string' })
         .option('shell', {
           describe: 'Shell command for transient process',
           type: 'string',
@@ -154,17 +157,31 @@ function configureYargs() {
         .option('enable-stdin', {
           describe: 'Enable stdin message polling from database',
           type: 'boolean',
-        });
+        })
+        .strictOptions();
     })
-    .command('restart [name]', 'Restart a running process', () => {})
-    .command('kill [name...]', 'Kill process(es) in the current directory', () => {})
-    .command('kill-all', 'Kill all running processes', () => {})
-    .command(['list', 'ls'], 'List processes for current directory', () => {})
-    .command('list-all', 'List all processes', () => {})
-    .command('logs [name...]', 'Show recent logs for process(es)', () => {})
-    .command('watch [name...]', 'Watch live output from process(es)', () => {})
+    .command('restart [name]', 'Restart a running process', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('kill [name...]', 'Kill process(es) in the current directory', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('kill-all', 'Kill all running processes', (yargs: Argv) => { yargs.strictOptions(); })
+    .command(['list', 'ls'], 'List processes for current directory', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('list-all', 'List all processes', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('logs [name...]', 'Show recent logs for process(es)', (yargs: Argv) => {
+      yargs
+        .positional('name', { type: 'string' })
+        .option('count', {
+          describe: 'Number of log lines to show (default: 100)',
+          type: 'number',
+        })
+        .option('start-at', {
+          describe: 'Only show logs after this log ID',
+          type: 'number',
+        })
+        .strictOptions();
+    })
+    .command('watch [name...]', 'Watch live output from process(es)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command('wait-for-log [name]', 'Wait for a specific log message', (yargs: Argv) => {
       yargs
+        .positional('name', { type: 'string' })
         .option('message', {
           describe: 'The log message to wait for',
           type: 'string',
@@ -174,19 +191,20 @@ function configureYargs() {
           describe: 'Timeout in seconds (default: 30)',
           type: 'number',
           default: 30,
-        });
+        })
+        .strictOptions();
     })
-    .command('list-ports [name]', 'List open ports for running services', () => {})
-    .command('list-ports-all', 'List open ports for all services', () => {})
-    .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', () => {})
+    .command('list-ports [name]', 'List open ports for running services', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('list-ports-all', 'List open ports for all services', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
     // Port Reservations
-    .command('reserve-port [name]', 'Reserve an unused port', () => {})
-    .command('release-ports [name]', 'Release reserved port(s)', () => {})
-    .command('list-reserved-ports', 'List reserved ports for project', () => {})
-    .command('list-reserved-ports-all', 'List all reserved ports', () => {})
-    .command('get-reserved-port <name>', 'Get the reserved port for a service', () => {})
-    .command('get-or-reserve-port <name>', 'Get existing or reserve new port for a service', () => {})
+    .command('reserve-port [name]', 'Reserve an unused port', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('release-ports [name]', 'Release reserved port(s)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('list-reserved-ports', 'List reserved ports for project', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('list-reserved-ports-all', 'List all reserved ports', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('get-reserved-port <name>', 'Get the reserved port for a service', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('get-or-reserve-port <name>', 'Get existing or reserve new port for a service', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
     // Configuration & Maintenance
     .command('add-service <name>', 'Add a new service to .candle.json', (yargs: Argv) => {
@@ -207,12 +225,13 @@ function configureYargs() {
         .option('enable-stdin', {
           describe: 'Enable stdin message polling from database',
           type: 'boolean',
-        });
+        })
+        .strictOptions();
     })
-    .command('clear-logs [name]', 'Clear logs for process(es)', () => {})
-    .command('erase-database', 'Erase the Candle database', () => {})
-    .command('list-docs', 'List available documentation', () => {})
-    .command('get-doc <name>', 'Display a documentation file', () => {})
+    .command('clear-logs [name]', 'Clear logs for process(es)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('erase-database', 'Erase the Candle database', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('list-docs', 'List available documentation', (yargs: Argv) => { yargs.strictOptions(); })
+    .command('get-doc <name>', 'Display a documentation file', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
     .demandCommand(0, 'You need to specify a command')
     .help(false)  // Disable default help, we'll handle it
@@ -238,6 +257,8 @@ function parseArgs(): {
   message?: string;
   timeout?: number;
   topic?: string;
+  count?: number;
+  startAt?: number;
 } {
   const argv = configureYargs().parseSync();
 
@@ -254,8 +275,10 @@ function parseArgs(): {
   const message = argv.message as string;
   const timeout = argv.timeout as number;
   const topic = argv.topic as string;
+  const count = argv.count as number;
+  const startAt = argv['start-at'] as number;
 
-  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic };
+  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt };
 }
 
 export async function main(): Promise<void> {
@@ -282,7 +305,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic } =
+  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -434,6 +457,8 @@ export async function main(): Promise<void> {
       await handleLogsCommand({
         projectDir,
         commandNames,
+        limit: count,
+        startAtId: startAt,
       });
       break;
     }
