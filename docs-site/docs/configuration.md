@@ -21,7 +21,11 @@ The configuration file should be placed in your project root. Candle will search
       "shell": "string",
       "root": "string (optional)"
     }
-  ]
+  ],
+  "logEviction": {
+    "maxLogsPerService": "number (optional, default: 1000)",
+    "maxRetentionSeconds": "number (optional, default: 86400)"
+  }
 }
 ```
 
@@ -61,6 +65,29 @@ A relative directory path where the command will run. Must be relative to the co
 }
 ```
 
+## Log Eviction
+
+The `logEviction` field controls how Candle manages stored log data. By default, Candle keeps up to 1000 log entries per service and deletes logs older than 24 hours.
+
+### maxLogsPerService (optional)
+
+Maximum number of log entries to keep per service. When a service exceeds this limit, the oldest logs are removed during cleanup. Default: `1000`.
+
+### maxRetentionSeconds (optional)
+
+Maximum age of log entries in seconds. Logs older than this are deleted during cleanup. Default: `86400` (24 hours).
+
+```json
+{
+  "logEviction": {
+    "maxLogsPerService": 5000,
+    "maxRetentionSeconds": 172800
+  }
+}
+```
+
+When viewing logs, Candle displays a `-- older logs have been removed --` indicator if some log entries were evicted and are no longer available.
+
 ## Complete Example
 
 ```json
@@ -84,7 +111,11 @@ A relative directory path where the command will run. Must be relative to the co
       "name": "database",
       "shell": "docker-compose up postgres"
     }
-  ]
+  ],
+  "logEviction": {
+    "maxLogsPerService": 5000,
+    "maxRetentionSeconds": 172800
+  }
 }
 ```
 

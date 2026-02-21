@@ -1,9 +1,8 @@
 import { getDatabase } from './database.ts';
 import { cleanupStaleProcesses } from './staleProcessCleanup.ts';
+import { findConfigFile, getLogEvictionConfig, type ResolvedLogEvictionConfig } from '../configFile.ts';
 
-const MAX_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 const CLEANUP_INTERVAL_SECONDS = 10 * 60;
-const MAX_LOG_LINES_PER_SERVICE = 10000;
 
 export function maybeRunCleanup(): void {
   const db = getDatabase();
@@ -14,64 +13,59 @@ export function maybeRunCleanup(): void {
     return;
   }
 
-  runCleanup();
+  // Try to load config for eviction settings
+  let evictionConfig: ResolvedLogEvictionConfig;
+  try {
+    const configResult = findConfigFile(process.cwd());
+    evictionConfig = getLogEvictionConfig(configResult?.config);
+  } catch {
+    // No config file found, use defaults
+    evictionConfig = getLogEvictionConfig();
+  }
+
+  runCleanup(evictionConfig);
 }
 
-function runCleanup(): void {
+export function runCleanup(evictionConfig: ResolvedLogEvictionConfig): void {
   const db = getDatabase();
   const now = Math.floor(Date.now() / 1000);
 
-  // Keep process output logs for 24 hours
-  const logCutoff = now - MAX_LOG_RETENTION_SECONDS;
-
-  // Delete old process output logs
+  // Time-based eviction: delete logs older than maxRetentionSeconds
+  const logCutoff = now - evictionConfig.maxRetentionSeconds;
   db.run('delete from process_output where timestamp < ?', [logCutoff]);
-
-  // Enforce per-service log limits
-  evictExcessLogs();
 
   // Remove database entries for processes that are no longer alive
   cleanupStaleProcesses();
 
-  db.run('vacuum');
-
-  db.upsert('process_last_cleanup', {}, { timestamp: now });
-}
-
-function evictExcessLogs(): void {
-  const db = getDatabase();
-
-  // Get all unique (command_name, project_dir) combinations
+  // Per-service eviction: keep only maxLogsPerService logs per (project_dir, command_name)
+  // Find all distinct service keys that have more logs than the limit
   const services = db.list(
-    'select distinct command_name, project_dir from process_output'
+    `select project_dir, command_name, count(*) as log_count
+     from process_output
+     group by project_dir, command_name
+     having count(*) > ?`,
+    [evictionConfig.maxLogsPerService]
   );
 
   for (const service of services) {
-    const { command_name, project_dir } = service;
-
-    // Count logs for this service
-    const countResult = db.get(
-      'select count(*) as count from process_output where command_name = ? and project_dir = ?',
-      [command_name, project_dir]
+    // Find the id threshold: keep the newest maxLogsPerService logs
+    const cutoffRow = db.get(
+      `select id from process_output
+       where project_dir = ? and command_name = ?
+       order by timestamp desc, id desc
+       limit 1 offset ?`,
+      [service.project_dir, service.command_name, evictionConfig.maxLogsPerService]
     );
 
-    const logCount = countResult?.count || 0;
-
-    if (logCount > MAX_LOG_LINES_PER_SERVICE) {
-      const excessCount = logCount - MAX_LOG_LINES_PER_SERVICE;
-
-      // Delete the oldest logs (lowest id means oldest)
+    if (cutoffRow) {
       db.run(
         `delete from process_output
-         where command_name = ? and project_dir = ?
-         and id in (
-           select id from process_output
-           where command_name = ? and project_dir = ?
-           order by id asc
-           limit ?
-         )`,
-        [command_name, project_dir, command_name, project_dir, excessCount]
+         where project_dir = ? and command_name = ? and id <= ?`,
+        [service.project_dir, service.command_name, cutoffRow.id]
       );
     }
   }
+
+  db.run('vacuum');
+  db.upsert('process_last_cleanup', {}, { timestamp: now });
 }
