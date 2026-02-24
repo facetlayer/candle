@@ -130,6 +130,8 @@ describe('CLI Help Command', () => {
             const result = await workspace.runCli(['logs', '--help']);
 
             expect(result.stdoutAsString()).toContain('logs');
+            expect(result.stdoutAsString()).toContain('--count');
+            expect(result.stdoutAsString()).toContain('--start-at');
         });
 
         it('should show help for wait-for-log command', async () => {
