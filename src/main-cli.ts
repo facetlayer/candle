@@ -25,6 +25,7 @@ import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
 import { assertValidCommandNames } from './cli/assertValidCommandName.ts';
+import { isRunByAgent } from './runContext.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -36,11 +37,15 @@ const docFiles = new DocFilesHelper({
 });
 
 function printGroupedHelp() {
+  const runLines = isRunByAgent ? '' : `
+  run [names...]            Launch process(es) and watch their output`;
+  const watchLines = isRunByAgent ? '' : `
+  watch [name...]           Watch live output from process(es)`;
+
   console.log(`Usage: candle <command> [options]
 
 Process Management:
-  list, ls                  List processes for this project directory
-  run [names...]            Launch process(es) and watch their output
+  list, ls                  List processes for this project directory${runLines}
   start [names...]          Start process(es) in background
   restart [names...]        Restart running process(es)
   kill [names...]           Kill running process(es)
@@ -50,8 +55,7 @@ Port Detection:
   open-browser [name]       Open browser to service (auto-detects if one running)
 
 Logs:
-  logs [name...]            Show recent logs for process(es)
-  watch [name...]           Watch live output from process(es)
+  logs [name...]            Show recent logs for process(es)${watchLines}
   wait-for-log [name]       Wait for a specific log message
 
 Configuration:
@@ -292,6 +296,10 @@ export async function main(): Promise<void> {
 
   switch (command) {
     case 'run': {
+      if (isRunByAgent) {
+        console.error("Error: 'run' is not available in agent mode. Use 'candle start' to start processes and 'candle logs' to view their output.");
+        process.exit(1);
+      }
       const projectDir = findProjectDir();
       await handleRunCommand({ projectDir, commandNames, shell, root, enableStdin });
       break;
@@ -374,6 +382,10 @@ export async function main(): Promise<void> {
     }
 
     case 'watch': {
+      if (isRunByAgent) {
+        console.error("Error: 'watch' is not available in agent mode. Use 'candle logs' to view process output.");
+        process.exit(1);
+      }
       // Don't validate command names - allow watching transient processes
       await handleWatch({ commandNames });
       break;

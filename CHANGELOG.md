@@ -1,4 +1,8 @@
 
+# Unreleased
+ - Block 'run' and 'watch' commands when running inside an AI agent (CLAUDECODE env var)
+ - Remove port reservation system
+
 # 0.11.1
  - 'open-browser' can autodetect service name
 
