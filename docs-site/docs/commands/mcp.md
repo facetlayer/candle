@@ -25,10 +25,6 @@ When running as an MCP server, the following tools are available:
 - `RestartService` - Restart a service
 - `GetLogs` - Get recent logs for a service
 - `ListPorts` - List open ports for running services
-- `ReservePort` - Reserve a port for a service
-- `ReleasePorts` - Release reserved ports
-- `ListReservedPorts` - List reserved ports
-- `GetReservedPort` - Get the reserved port for a service
 - `AddServerConfig` - Add a service to configuration
 
 ## Examples

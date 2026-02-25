@@ -12,17 +12,12 @@ import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { handleClearDatabaseCommand } from './clear-database-command.ts';
 import { handleClearLogsCommand } from './clear-logs-command.ts';
-import { handleGetReservedPort, printGetReservedPortOutput } from './get-reserved-port-command.ts';
-import { handleGetOrReservePort, printGetOrReservePortOutput } from './get-or-reserve-port-command.ts';
 import { handleOpenBrowser, printOpenBrowserOutput } from './open-browser-command.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { handleKillAll } from './kill-all-command.ts';
 import { handleList, printListOutput } from './list-command.ts';
 import { handleListPorts, printListPortsOutput } from './list-ports-command.ts';
-import { handleListReservedPorts, printListReservedPortsOutput } from './list-reserved-ports-command.ts';
 import { handleLogsCommand } from './logs-command.ts';
-import { handleReleasePorts, printReleasePortsOutput } from './release-ports-command.ts';
-import { handleReservePort, printReservePortOutput } from './reserve-port-command.ts';
 import { handleRestart } from './restart-command.ts';
 import { handleRunCommand } from './run-command.ts';
 import { handleStartCommand } from './start-command.ts';
@@ -74,41 +69,11 @@ Troubleshooting & Maintenance:
   erase-database            Erase the Candle database
 
 Options:
-  help                      Show help (or 'help <topic>' for specific topics)
+  help                      Show help
   mcp                       Enter MCP server mode
   --version                 Show version number
 
-More details:
-  help port-reservation     Show help text for port reservation commands
-
 Run 'candle <command> --help' for more information on a command.`);
-}
-
-function printPortReservationHelp() {
-  console.log(`Port Reservation Commands
-
-This system maintains a database of reserved ports.
-
-Ports can be assigned to a specific service, or just reserved for the project.
-
-All port reservations are associated with a project directory, just like
-running services.
-
-Commands:
-  reserve-port [name]           Reserve an unused port for a service
-                                If no name given, reserves a project-level port
-  get-reserved-port <name>      Get the reserved port for a service
-  get-or-reserve-port <name>    Get existing or reserve new port for a service
-  release-ports [name]          Release reserved port(s) for a service
-  release-ports                 Release all port reservations for this project
-  list-reserved-ports           List reserved ports for this project directory
-  list-reserved-ports-all       List reserved ports for all projects
-
-Examples:
-  candle reserve-port api          Reserve a port for the 'api' service
-  candle get-reserved-port api     Show the reserved port number
-  candle get-or-reserve-port api   Get existing port or reserve a new one
-  candle release-ports api         Release the port reservation`);
 }
 
 function configureYargs() {
@@ -197,14 +162,6 @@ function configureYargs() {
     .command('list-ports [name]', 'List open ports for running services', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command('list-ports-all', 'List open ports for all services', (yargs: Argv) => { yargs.strictOptions(); })
     .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
-
-    // Port Reservations
-    .command('reserve-port [name]', 'Reserve an unused port', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
-    .command('release-ports [name]', 'Release reserved port(s)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
-    .command('list-reserved-ports', 'List reserved ports for project', (yargs: Argv) => { yargs.strictOptions(); })
-    .command('list-reserved-ports-all', 'List all reserved ports', (yargs: Argv) => { yargs.strictOptions(); })
-    .command('get-reserved-port <name>', 'Get the reserved port for a service', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
-    .command('get-or-reserve-port <name>', 'Get existing or reserve new port for a service', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
     // Configuration & Maintenance
     .command('add-service <name>', 'Add a new service to .candle.json', (yargs: Argv) => {
@@ -322,11 +279,8 @@ export async function main(): Promise<void> {
 
   // Handle 'help' command
   if (command === 'help') {
-    if (topic === 'port-reservation') {
-      printPortReservationHelp();
-    } else if (topic) {
+    if (topic) {
       console.error(`Unknown help topic: ${topic}`);
-      console.error('Available topics: port-reservation');
       process.exit(1);
     } else {
       printGroupedHelp();
@@ -380,50 +334,6 @@ export async function main(): Promise<void> {
       const serviceName = commandNames[0];
       const output = await handleOpenBrowser({ serviceName });
       printOpenBrowserOutput(output);
-      break;
-    }
-
-    case 'reserve-port': {
-      const projectDir = findProjectDir();
-      const serviceName = commandNames[0];
-      const output = await handleReservePort({ projectDir, serviceName });
-      printReservePortOutput(output);
-      break;
-    }
-
-    case 'release-ports': {
-      const projectDir = findProjectDir();
-      const serviceName = commandNames[0];
-      const output = await handleReleasePorts({ projectDir, serviceName });
-      printReleasePortsOutput(output);
-      break;
-    }
-
-    case 'list-reserved-ports': {
-      const output = await handleListReservedPorts({});
-      printListReservedPortsOutput(output);
-      break;
-    }
-
-    case 'list-reserved-ports-all': {
-      const output = await handleListReservedPorts({ showAll: true });
-      printListReservedPortsOutput(output);
-      break;
-    }
-
-    case 'get-reserved-port': {
-      const projectDir = findProjectDir();
-      const serviceName = requireServiceName(commandNames);
-      const output = await handleGetReservedPort({ projectDir, serviceName });
-      printGetReservedPortOutput(output);
-      break;
-    }
-
-    case 'get-or-reserve-port': {
-      const projectDir = findProjectDir();
-      const serviceName = requireServiceName(commandNames);
-      const output = await handleGetOrReservePort({ projectDir, serviceName });
-      printGetOrReservePortOutput(output);
       break;
     }
 

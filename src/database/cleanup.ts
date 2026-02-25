@@ -2,6 +2,7 @@ import { getDatabase } from './database.ts';
 
 const MAX_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 const CLEANUP_INTERVAL_SECONDS = 10 * 60;
+const MAX_LOG_LINES_PER_SERVICE = 10000;
 
 export function maybeRunCleanup(): void {
   const db = getDatabase();
@@ -24,7 +25,49 @@ function runCleanup(): void {
 
   // Delete old process output logs
   db.run('delete from process_output where timestamp < ?', [logCutoff]);
+
+  // Enforce per-service log limits
+  evictExcessLogs();
+
   db.run('vacuum');
 
   db.upsert('process_last_cleanup', {}, { timestamp: now });
+}
+
+function evictExcessLogs(): void {
+  const db = getDatabase();
+
+  // Get all unique (command_name, project_dir) combinations
+  const services = db.list(
+    'select distinct command_name, project_dir from process_output'
+  );
+
+  for (const service of services) {
+    const { command_name, project_dir } = service;
+
+    // Count logs for this service
+    const countResult = db.get(
+      'select count(*) as count from process_output where command_name = ? and project_dir = ?',
+      [command_name, project_dir]
+    );
+
+    const logCount = countResult?.count || 0;
+
+    if (logCount > MAX_LOG_LINES_PER_SERVICE) {
+      const excessCount = logCount - MAX_LOG_LINES_PER_SERVICE;
+
+      // Delete the oldest logs (lowest id means oldest)
+      db.run(
+        `delete from process_output
+         where command_name = ? and project_dir = ?
+         and id in (
+           select id from process_output
+           where command_name = ? and project_dir = ?
+           order by id asc
+           limit ?
+         )`,
+        [command_name, project_dir, command_name, project_dir, excessCount]
+      );
+    }
+  }
 }

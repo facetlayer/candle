@@ -110,10 +110,6 @@ describe('MCP Integration Tests', () => {
             'KillService',
             'RestartService',
             'AddServerConfig',
-            'ReservePort',
-            'ReleasePorts',
-            'ListReservedPorts',
-            'GetReservedPort'
         ]);
 
         await app.close();

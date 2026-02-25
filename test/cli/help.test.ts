@@ -60,7 +60,6 @@ describe('CLI Help Command', () => {
             expect(normalized).toContain('Documentation:');
             expect(normalized).toContain('Troubleshooting & Maintenance:');
             expect(normalized).toContain('Options:');
-            expect(normalized).toContain('More details:');
         });
     });
 
@@ -80,16 +79,6 @@ describe('CLI Help Command', () => {
             expect(result.stdoutAsString()).toContain('Process Management:');
             expect(result.stdoutAsString()).toContain('run');
             expect(result.stdoutAsString()).toContain('start');
-        });
-
-        it('should display port-reservation help topic', async () => {
-            const result = await workspace.runCli(['help', 'port-reservation']);
-
-            expect(result.stdoutAsString()).toContain('Port Reservation Commands');
-            expect(result.stdoutAsString()).toContain('reserve-port');
-            expect(result.stdoutAsString()).toContain('release-ports');
-            expect(result.stdoutAsString()).toContain('get-reserved-port');
-            expect(result.stdoutAsString()).toContain('list-reserved-ports');
         });
 
         it('should error for unknown help topic', async () => {

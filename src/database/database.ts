@@ -49,18 +49,6 @@ const schema = {
     `create index idx_process_output_project_dir on process_output(project_dir)`,
     `create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`,
     `create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id)`,
-    `create table reserved_ports(
-            port integer primary key,
-            project_dir text not null,
-            service_name text,
-            assigned_at integer not null default (strftime('%s', 'now'))
-        )`,
-    `create table next_port_to_try(
-            id integer primary key check (id = 1),
-            port integer not null
-        )`,
-    `create index idx_reserved_ports_project_dir on reserved_ports(project_dir)`,
-    `create index idx_reserved_ports_service on reserved_ports(project_dir, service_name)`,
   ],
 };
 

@@ -12,7 +12,7 @@ candle open-browser [name]
 
 The `open-browser` command finds the open port for a running service and opens a browser window to `http://localhost:<port>`.
 
-This command uses the same port detection as `list-ports` - it finds the actual listening port of the running process, not a reserved port.
+This command uses the same port detection as `list-ports` - it finds the actual listening port of the running process.
 
 ## Arguments
 

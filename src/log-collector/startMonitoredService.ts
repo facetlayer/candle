@@ -11,24 +11,20 @@ const VERY_VERBOSE_LOGS = true;
 const STDIN_POLL_INTERVAL_MS = 500;
 
 export function startMonitoredService(message: LogCollectorLaunchInfo): Subprocess {
-  const { commandName, projectDir, shell, root, enableStdin, port } = message;
+  const { commandName, projectDir, shell, root, enableStdin } = message;
 
   let launchDir = projectDir;
   if (root) {
     launchDir = Path.join(projectDir, root);
   }
 
-  // Build environment with PORT if a reserved port is assigned
-  const env = port !== undefined ? { ...process.env, PORT: String(port) } : undefined;
-
   if (VERY_VERBOSE_LOGS) {
-    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' enableStdin=' + enableStdin + ' port=' + port);
+    debugLog('[startService] starting shell command ' + JSON.stringify(shell, null, 2) + ' enableStdin=' + enableStdin);
   }
 
   const subprocess = startShellCommand(shell, [], {
     shell: true,
     cwd: launchDir,
-    env,
     onStdout: line => {
       saveProcessLog({
         command_name: commandName,

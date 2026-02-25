@@ -53,17 +53,6 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Port Reservation',
-      items: [
-        {type: 'doc', id: 'commands/reserve-port', label: 'reserve-port'},
-        {type: 'doc', id: 'commands/release-ports', label: 'release-ports'},
-        {type: 'doc', id: 'commands/get-reserved-port', label: 'get-reserved-port'},
-        {type: 'doc', id: 'commands/get-or-reserve-port', label: 'get-or-reserve-port'},
-        {type: 'doc', id: 'commands/list-reserved-ports', label: 'list-reserved-ports'},
-      ],
-    },
-    {
-      type: 'category',
       label: 'Help & Utilities',
       items: [
         {type: 'doc', id: 'commands/help', label: 'help'},
