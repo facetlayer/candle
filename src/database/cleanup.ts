@@ -1,4 +1,5 @@
 import { getDatabase } from './database.ts';
+import { cleanupStaleProcesses } from './staleProcessCleanup.ts';
 
 const MAX_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 const CLEANUP_INTERVAL_SECONDS = 10 * 60;
@@ -28,6 +29,9 @@ function runCleanup(): void {
 
   // Enforce per-service log limits
   evictExcessLogs();
+
+  // Remove database entries for processes that are no longer alive
+  cleanupStaleProcesses();
 
   db.run('vacuum');
 
