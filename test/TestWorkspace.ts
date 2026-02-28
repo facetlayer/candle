@@ -63,6 +63,7 @@ export class TestWorkspace {
             ...process.env,
             CANDLE_DATABASE_DIR: cwd,
             FORCE_COLOR: '0',
+            CLAUDECODE: '',
             ...(options.env || {}),
         };
 
@@ -93,6 +94,7 @@ export class TestWorkspace {
             env: {
                 ...process.env,
                 CANDLE_DATABASE_DIR: this.dbDir,
+                CLAUDECODE: '',
             },
         });
     }
