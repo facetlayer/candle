@@ -15,8 +15,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       '@facetlayer/sqlite-wrapper':
-        specifier: ^0.9.1
-        version: 0.9.1
+        specifier: ^1.2.1
+        version: 1.2.1
       '@facetlayer/streams':
         specifier: ^1.0.0
         version: 1.0.0
@@ -36,6 +36,9 @@ importers:
       '@facetlayer/build-config-nodejs':
         specifier: ^0.3.1
         version: 0.3.1(typescript@5.9.2)
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/node':
         specifier: ^20.19.0
         version: 20.19.0
@@ -578,9 +581,6 @@ packages:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@facetlayer/sqlite-wrapper@0.9.1':
-    resolution: {integrity: sha512-2qNERT+tuN8tr72N+iBGau9jGjntjQ40oPNdgfcDPaQYAr6ZSvKK8b7Ffl2vLp/7MBWiK++SraeMpl0KDoDaOQ==}
-
   '@facetlayer/sqlite-wrapper@1.2.1':
     resolution: {integrity: sha512-v9DVnv8pNoIEfIEFkfy90GgUbD/uXPgZrzMGEKC9oQ9fhBEcn67IanTSCVdyBENtrktzxm9Wf1E8cWH9tvFFBw==}
 
@@ -963,6 +963,9 @@ packages:
 
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
+
+  '@types/better-sqlite3@7.6.13':
+    resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
 
   '@types/chai@5.2.2':
     resolution: {integrity: sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==}
@@ -1579,6 +1582,7 @@ packages:
   glob@11.1.0:
     resolution: {integrity: sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw==}
     engines: {node: 20 || >=22}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   globals@14.0.0:
@@ -2819,12 +2823,6 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  '@facetlayer/sqlite-wrapper@0.9.1':
-    dependencies:
-      '@facetlayer/generic-lexer': 1.0.0
-      '@facetlayer/streams': 1.0.0
-      better-sqlite3: 11.8.1
-
   '@facetlayer/sqlite-wrapper@1.2.1':
     dependencies:
       '@facetlayer/generic-lexer': 1.0.0
@@ -3154,6 +3152,10 @@ snapshots:
   '@types/babel__traverse@7.28.0':
     dependencies:
       '@babel/types': 7.29.0
+
+  '@types/better-sqlite3@7.6.13':
+    dependencies:
+      '@types/node': 20.19.0
 
   '@types/chai@5.2.2':
     dependencies:

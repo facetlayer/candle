@@ -1,5 +1,6 @@
 import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
 import { Stream } from '@facetlayer/streams';
+import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as Path from 'path';
 import { getStateDirectory } from '../dirs.ts';
@@ -69,6 +70,8 @@ export function getDatabase({
       filename: dbPath,
       schema,
       logs: new Stream().logToConsole(),
+      loadDatabase: (filename: string) => new Database(filename),
+      migrationBehavior: 'safe-upgrades',
     });
     _db = loader.load();
 

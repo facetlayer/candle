@@ -36,7 +36,7 @@
   "dependencies": {
     "@facetlayer/doc-files-helper": "^0.1.2",
     "@facetlayer/parse-stdout-lines": "^1.1.0",
-    "@facetlayer/sqlite-wrapper": "^0.9.1",
+    "@facetlayer/sqlite-wrapper": "^1.2.1",
     "@facetlayer/streams": "^1.0.0",
     "@facetlayer/subprocess-wrapper": "^1.1.0",
     "@modelcontextprotocol/sdk": "1.12.1",
@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@facetlayer/build-config-nodejs": "^0.3.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.19.0",
     "@types/yargs": "17.0.33",
     "expect-mcp": "0.8.0",
