@@ -21,7 +21,7 @@
     "prepublishOnly": "node build.mts validate && node build.mts build",
     "dev": "node --watch src/main-cli.ts",
     "tsc": "tsc",
-    "test": "vitest run",
+    "test": "pnpm build && vitest run",
     "test:watch": "vitest",
     "format": "prettier --write 'src/**/*.{ts,js,json}'",
     "local:install": "pnpm build && npm i -g ."
