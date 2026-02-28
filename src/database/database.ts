@@ -1,5 +1,4 @@
 import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
-import { Stream } from '@facetlayer/streams';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as Path from 'path';
@@ -69,7 +68,11 @@ export function getDatabase({
     const loader = new DatabaseLoader({
       filename: dbPath,
       schema,
-      logs: new Stream().logToConsole(),
+      logs: {
+        info: (msg) => console.log(msg),
+        warn: (msg) => console.warn(msg),
+        error: (err) => console.error(err.errorMessage),
+      },
       loadDatabase: (filename: string) => new Database(filename),
       migrationBehavior: 'safe-upgrades',
     });
