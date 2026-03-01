@@ -20,17 +20,10 @@ It's a good fit for locally running services as part of the development process.
 
 ## Features & Design Decisions ##
 
-### Simple interface ###
+### Simple command interface ###
 
 Compared to other process managers like pm2, Candle is a lot simpler, and it doesn't include
 a lot of the complexity that's needed when running a service in the cloud.
-
-Basic commands include:
- * `candle run`
- * `candle logs`
- * `candle restart`
- * `candle watch`
- * `candle ls`
 
 ### One instance per service ###
 
@@ -55,6 +48,13 @@ set of Candle services. You can run local services in both worktrees simultaneou
 
 Note that when doing this, you'll probably need to assign unique network ports to each worktree,
 so that your services don't conflict when trying to listen on the same port.
+
+### Convenience commands ###
+
+Candle includes a few convenience commands for local development, including:
+
+ * `candle list-ports` - Use the operating system to check what ports are used by running services.
+ * `candle open-browser` - Open a web browser to `http://localhost:xxxx` after detecting the service's port.
 
 ### Optimized for coding agents ###
 
@@ -111,23 +111,29 @@ Some commands accept multiple services at once:
 
 List all CLI commands.
 
-### `candle start [...names]`
+### `candle start [names]`
+
+```
+$ candle start
+$ candle start backend
+```
 
 Launch the service(s).
 
-If no `[...names]` are provided, then launch all services in the project.
+If no `[names]` are provided, then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
 
-### `candle check-start [...names]`
+### `candle check-start [names]`
 
-Start the service(s) only if they are not already running.
+Like `start` but only starts the service(s) if they are not already running.
 
-If a service is already running, it is left alone (no restart). If it is not running, it is started
-just like `candle start`. This is useful in scripts where you want to ensure a service is running
-without disrupting it if it already is.
+### `candle run [names]`
 
-### `candle run [...names]`
+```
+$ candle run
+$ candle run backend
+```
 
 Launches the service(s) just like `candle start`, and then enters watch mode.
 During watch mode, the service logs are printed as they happen.
@@ -139,16 +145,20 @@ will keep running in the background until `candle kill` is called.
 
 ### `candle list` or `candle ls`
 
+```
+$ candle ls
+```
+
 List the services for this project directory, including active and inactive services.
 
-### `candle watch [...names]`
+### `candle watch [names]`
 
 Enter watch mode for the running service(s).
 
 This will interactively print any log messages from the service
 as they happen.
 
-If no `[...names]` are provided: Watch all running services.
+If no `[names]` are provided: Watch all running services.
 
 If multiple services are being watched, then each log message will have a prefix that looks like
 `[<service name>]`
@@ -160,32 +170,28 @@ Example:
     [frontend] Web server available at http://localhost:8080
 
 
-### `candle logs [...names] [--count <number>] [--start-at <id>]`
+### `candle logs [names] [--count <number>] [--start-at <id>]`
 
-Show the recent logs for the given service. This is non-interactive, it will just print the recent
-logs and then exit. (unlike `watch` which will continue to print new logs).
+Show the recent logs for the given service.
 
-This command works even if the service is not running, it will show the logs that occurred
-before the exit.
-
-If `[name]` is not provided: Show logs for all services in the project directory.
+If `[name]` is not provided: Show recent logs across all services in the project directory.
 
 Options:
 
  - `--count <number>` - Number of log lines to show (default: 100).
  - `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
 
-### `candle kill [...names]`
+### `candle kill [names]`
 
 Kill named service(s)
 
-If no `[...names]` are provided: Kill all services for this project directory.
+If no `[names]` are provided: Kill all services for this project directory.
 
-### `candle restart [...names]`
+### `candle restart [names]`
 
 Restart running service(s) for this current directory.
 
-If no `[...names]` are provided: Restart all running services for this project directory
+If no `[names]` are provided: Restart all running services for this project directory
 
 ### `candle wait-for-log [name] --message [message]`
 
@@ -212,12 +218,45 @@ set on the command line as `--timeout [seconds]`.
 
 ### `candle setup-project`
 
-Create a new `.candle.json` config file in the current directory. If a config file already exists
-in the current or a parent directory, it will report its location without making changes.
+Create a new `.candle.json` config file in the current directory.
 
 ### `candle add-service <name> --shell <command>`
 
-Add a new service to the `.candle.json` config file. If the file doesn't exist, it will be created.
+Add a new service to the nearest `.candle.json` config file.
+
+If the config file doesn't exist yet, it will be created.
+
+### `candle list-ports [names...]`
+
+```
+$ candle list-ports
+$ candle list-ports backend
+$ candle list-ports backend frontend
+```
+
+Uses the operating system to detect and list the active open ports for running services.
+
+This queries `lsof` to find TCP ports that are in a LISTEN state, filtering to processes
+managed by Candle. It also detects ports opened by child processes of a service.
+
+If no `[names]` are provided: Show ports for all running services in the current project.
+
+### `candle open-browser [name]`
+
+```
+$ candle open-browser
+$ candle open-browser frontend
+```
+
+Open a web browser to `http://localhost:<port>` for a running service.
+
+The port is auto-detected using the same logic as `list-ports`.
+
+#### Disambiguation Logic
+
+If a service has multiple ports open, then `open-browser` will use the lowest port number.
+
+If the command finds multiple running services, then it will give an error.
 
 ### `candle mcp` or `candle --mcp`
 
@@ -240,6 +279,11 @@ Kill all processes (across the entire system) that were launched by Candle.
 
 Similar to `list` vs `list-all`. The `kill-all` command affects
 everything on the system.
+
+### `candle list-ports-all`
+
+Like `list-ports` but shows open ports for all Candle-managed processes across the entire system,
+not just the current project directory.
 
 ### `candle erase-database`
 

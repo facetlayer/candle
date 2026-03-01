@@ -3,6 +3,7 @@
  - Change log eviction strategy to a per-service limit instead of a global limit.
  - Better support for stale process cleanup after a reboot.
  - Add `candle setup-project` and `candle check-start` commands.
+ - Add `stop` as an alias for `kill`.
  - Upgrade @facetlayer/sqlite-wrapper to 1.2.2, remove @facetlayer/streams dependency
  - Block 'run' and 'watch' commands when running inside an AI agent (CLAUDECODE env var)
  - Remove port reservation system

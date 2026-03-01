@@ -124,7 +124,7 @@ const getServiceUrl = createEndpoint({
     const originalCwd = process.cwd();
     try {
       process.chdir(input.projectDir);
-      const result = await handleListPorts({ serviceName: input.name });
+      const result = await handleListPorts({ commandNames: [input.name] });
       if (result.ports.length === 0) {
         return { url: null };
       }

@@ -45,7 +45,7 @@ export async function handleOpenBrowser(
 ): Promise<OpenBrowserOutput> {
   const serviceName = resolveServiceName(options.serviceName);
 
-  const portsOutput = await handleListPorts({ serviceName });
+  const portsOutput = await handleListPorts({ commandNames: [serviceName] });
 
   if (portsOutput.ports.length === 0) {
     throw new UsageError(

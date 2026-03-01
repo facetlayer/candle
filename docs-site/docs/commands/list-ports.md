@@ -5,12 +5,14 @@ List open ports for running services in the current project directory.
 ## Syntax
 
 ```bash
-candle list-ports
+candle list-ports [names...]
 ```
 
 ## Description
 
 The `list-ports` command displays all open (listening) ports used by running services that were started from the current project directory. It also shows ports opened by child processes spawned by those services.
+
+If `[names]` are provided, only show ports for those services. Otherwise, show ports for all running services in the current project.
 
 ## Output Format
 
@@ -30,6 +32,13 @@ The command outputs a table with the following columns:
 
 ```bash
 candle list-ports
+```
+
+### List ports for specific services
+
+```bash
+candle list-ports api
+candle list-ports api web
 ```
 
 Example output:

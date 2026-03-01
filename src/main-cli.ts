@@ -53,7 +53,7 @@ Process Management:
   kill [names...]           Kill running process(es)
 
 Port Detection:
-  list-ports                Uses the OS to detect and list the active open ports
+  list-ports [names...]     Uses the OS to detect and list the active open ports
   open-browser [name]       Open browser to service (auto-detects if one running)
 
 Logs:
@@ -150,7 +150,7 @@ function configureYargs() {
         .strictOptions();
     })
     .command('restart [name]', 'Restart a running process', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
-    .command('kill [name...]', 'Kill process(es) in the current directory', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command(['kill [name...]', 'stop [name...]'], 'Kill process(es) in the current directory', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command('kill-all', 'Kill all running processes', (yargs: Argv) => { yargs.strictOptions(); })
     .command(['list', 'ls'], 'List processes for current directory', (yargs: Argv) => { yargs.strictOptions(); })
     .command('list-all', 'List all processes', (yargs: Argv) => { yargs.strictOptions(); })
@@ -183,7 +183,7 @@ function configureYargs() {
         })
         .strictOptions();
     })
-    .command('list-ports [name]', 'List open ports for running services', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('list-ports [names...]', 'List open ports for running services', (yargs: Argv) => { yargs.positional('names', { type: 'string' }).strictOptions(); })
     .command('list-ports-all', 'List open ports for all services', (yargs: Argv) => { yargs.strictOptions(); })
     .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
@@ -354,8 +354,7 @@ export async function main(): Promise<void> {
     }
 
     case 'list-ports': {
-      const serviceName = commandNames[0];
-      const output = await handleListPorts({ serviceName });
+      const output = await handleListPorts({ commandNames });
       printListPortsOutput(output);
       break;
     }

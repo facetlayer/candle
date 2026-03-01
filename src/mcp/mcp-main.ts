@@ -100,7 +100,7 @@ const toolDefinitions: ToolDefinition[] = [
     handler: async args => {
       const showAll = args?.showAll as boolean | undefined;
       const serviceName = args?.serviceName as string | undefined;
-      const portsOutput = await handleListPorts({ showAll, serviceName });
+      const portsOutput = await handleListPorts({ showAll, commandNames: serviceName ? [serviceName] : [] });
       return portsOutput;
     },
   },

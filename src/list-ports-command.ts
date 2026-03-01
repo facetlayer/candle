@@ -20,47 +20,61 @@ export interface ListPortsOutput {
   ports: PortInfo[];
 }
 
-export async function handleListPorts(options?: { showAll?: boolean; serviceName?: string }): Promise<ListPortsOutput> {
+export async function handleListPorts(options?: { showAll?: boolean; commandNames?: string[] }): Promise<ListPortsOutput> {
   const { projectDir } = findConfigFile(process.cwd());
 
   let processEntries = options?.showAll
     ? findAllProcesses()
     : findProcessesByProjectDir(projectDir);
 
-  if (options?.serviceName) {
+  if (options?.commandNames && options.commandNames.length > 0) {
     processEntries = processEntries.filter(
-      (entry) => entry.command_name === options.serviceName
+      (entry) => options.commandNames!.includes(entry.command_name)
     );
   }
 
-  const allPorts: PortInfo[] = [];
+  // Gather all process trees in parallel
+  const treeLookups = processEntries.map(async (entry) => ({
+    entry,
+    pids: await getProcessTree(entry.pid),
+  }));
+  const trees = await Promise.all(treeLookups);
 
-  for (const processEntry of processEntries) {
-    const ports = await getPortsForService(processEntry);
-    allPorts.push(...ports);
+  // Collect all PIDs across all services for a single lsof call
+  const allPids: number[] = [];
+  for (const { pids } of trees) {
+    allPids.push(...pids);
+  }
+
+  if (allPids.length === 0) {
+    return { ports: [] };
+  }
+
+  const rawPorts = await getListeningPorts(allPids);
+
+  // Map raw port results back to their services
+  const pidToService = new Map<number, { serviceName: string; rootPid: number }>();
+  for (const { entry, pids } of trees) {
+    for (const pid of pids) {
+      pidToService.set(pid, { serviceName: entry.command_name, rootPid: entry.pid });
+    }
+  }
+
+  const allPorts: PortInfo[] = [];
+  for (const raw of rawPorts) {
+    const service = pidToService.get(raw.pid);
+    if (!service) continue;
+    allPorts.push({
+      serviceName: service.serviceName,
+      pid: raw.pid,
+      port: raw.port,
+      address: raw.address,
+      protocol: raw.protocol,
+      isChildProcess: raw.pid !== service.rootPid,
+    });
   }
 
   return { ports: allPorts };
-}
-
-async function getPortsForService(processEntry: ProcessEntry): Promise<PortInfo[]> {
-  const rootPid = processEntry.pid;
-  const serviceName = processEntry.command_name;
-  const allPids = await getProcessTree(rootPid);
-
-  if (allPids.length === 0) {
-    return [];
-  }
-
-  const portInfos = await getListeningPorts(allPids);
-  return portInfos.map((info) => ({
-    serviceName,
-    pid: info.pid,
-    port: info.port,
-    address: info.address,
-    protocol: info.protocol,
-    isChildProcess: info.pid !== rootPid,
-  }));
 }
 
 interface RawPortInfo {
