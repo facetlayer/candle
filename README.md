@@ -152,7 +152,7 @@ Example:
     [frontend] Web server available at http://localhost:8080
 
 
-### `candle logs [...names]`
+### `candle logs [...names] [--count <number>] [--start-at <id>]`
 
 Show the recent logs for the given service. This is non-interactive, it will just print the recent
 logs and then exit. (unlike `watch` which will continue to print new logs).
@@ -161,6 +161,11 @@ This command works even if the service is not running, it will show the logs tha
 before the exit.
 
 If `[name]` is not provided: Show logs for all services in the project directory.
+
+Options:
+
+ - `--count <number>` - Number of log lines to show (default: 100).
+ - `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
 
 ### `candle kill [...names]`
 
