@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DatabaseLoader, type SqliteDatabase } from '@facetlayer/sqlite-wrapper';
-import { Stream } from '@facetlayer/streams';
+import Database from 'better-sqlite3';
 import { LOG_EVICTION_DEFAULTS } from '../../configFile.ts';
 
 // Mock the database module before importing cleanup
@@ -12,8 +12,13 @@ vi.mock('../database.ts', () => ({
   getDatabase: () => mockDb,
 }));
 
-// Import after mock setup
-const { runCleanup } = await import('../cleanup.ts');
+// Mock stale process cleanup to avoid side effects in unit tests
+vi.mock('../staleProcessCleanup.ts', () => ({
+  cleanupStaleProcesses: () => {},
+}));
+
+// Import after mock setup - use require-style to avoid top-level await
+import { runCleanup } from '../cleanup.ts';
 
 // Create a standalone test database
 function createTestDatabase(dir: string): SqliteDatabase {
@@ -62,21 +67,15 @@ function createTestDatabase(dir: string): SqliteDatabase {
         `create index idx_process_output_project_dir on process_output(project_dir)`,
         `create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`,
         `create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id)`,
-        `create table reserved_ports(
-            port integer primary key,
-            project_dir text not null,
-            service_name text,
-            assigned_at integer not null default (strftime('%s', 'now'))
-        )`,
-        `create table next_port_to_try(
-            id integer primary key check (id = 1),
-            port integer not null
-        )`,
-        `create index idx_reserved_ports_project_dir on reserved_ports(project_dir)`,
-        `create index idx_reserved_ports_service on reserved_ports(project_dir, service_name)`,
       ],
     },
-    logs: new Stream().logToConsole(),
+    logs: {
+      info: () => {},
+      warn: (msg) => console.warn(msg),
+      error: (err) => console.error(err.errorMessage),
+    },
+    loadDatabase: (filename: string) => new Database(filename),
+    migrationBehavior: 'safe-upgrades',
   });
   const db = loader.load();
   db.run('PRAGMA journal_mode=WAL');
