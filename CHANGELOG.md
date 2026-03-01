@@ -1,5 +1,6 @@
 
 # Unreleased
+ - Add 'candle setup-project' command.
  - Upgrade @facetlayer/sqlite-wrapper to 1.2.2, remove @facetlayer/streams dependency
  - Block 'run' and 'watch' commands when running inside an AI agent (CLAUDECODE env var)
  - Remove port reservation system

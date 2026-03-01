@@ -22,6 +22,7 @@ import { handleRestart } from './restart-command.ts';
 import { handleRunCommand } from './run-command.ts';
 import { handleStartCommand } from './start-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
+import { handleSetupProject } from './setup-project-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
 import { assertValidCommandNames } from './cli/assertValidCommandName.ts';
@@ -59,6 +60,7 @@ Logs:
   wait-for-log [name]       Wait for a specific log message
 
 Configuration:
+  setup-project             Create a new .candle.json in the current directory
   add-service [name] ...    Add a new service to .candle.json
 
 Documentation:
@@ -168,6 +170,7 @@ function configureYargs() {
     .command('open-browser [name]', 'Open browser to a running service (auto-detects if only one running)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
 
     // Configuration & Maintenance
+    .command('setup-project', 'Create a new .candle.json in the current directory', (yargs: Argv) => { yargs.strictOptions(); })
     .command('add-service <name>', 'Add a new service to .candle.json', (yargs: Argv) => {
       yargs
         .positional('name', {
@@ -418,6 +421,11 @@ export async function main(): Promise<void> {
     case 'erase-database':
       await handleClearDatabaseCommand();
       break;
+
+    case 'setup-project': {
+      handleSetupProject();
+      break;
+    }
 
     case 'add-service': {
       const commandName = requireServiceName(commandNames);

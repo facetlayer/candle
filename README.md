@@ -1,158 +1,158 @@
 # candle
 
-Candle is a process manager optimized for local development and AI agents.
+Candle is a process manager optimized for local development, worktrees, and AI agents.
 
-# Motivation / Features #
+It's a good fit for locally running services as part of the development process.
 
-### Local development ###
+## Quick Start ##
 
-Most process managers like `pm2` are designed to manage services in production,
-so they present you with a lot of configuration options to be able to handle
-production demands. This comes at the expense of usability.
+| task | command |
+| ---- | ------- |
+| Install the tool from NPM | `npm i -g @facetlayer/candle` |
+| Or run the tool using NPX | `npx @facetlayer/candle ...` |
+| Set up a project config | `candle setup-project` |
+| Add a service to the config | `candle add-service main --shell <shell command>` |
+| Start a service and watch logs | `candle run` |
+| Start a service in the background | `candle start` |
+| Fetch recent logs | `candle logs` |
+| Watch logs as they happen | `candle watch` |
+| List services | `candle ls` |
 
-Candle is instead optimized for easy local development instead of production.
+## Features & Design Decisions ##
 
-This affects a few design decisions:
+### Simple interface ###
 
- - Candle will only have one instance of a given service at a time.
- - Has convenient commands like `candle wait-for-log` which helps when running a service in a CI job.
- - The configuration and commands are local to the current project directory.
-   - For example, `candle ls` only lists processes related to the current directory, not any processes
-     for other project directories on the system.
+Compared to other process managers like pm2, Candle is a lot simpler, and it doesn't include
+a lot of the complexity that's needed when running a service in the cloud.
 
-### Optimized for AI agents ###
+Basic commands include:
+ * `candle run`
+ * `candle logs`
+ * `candle restart`
+ * `candle watch`
+ * `candle ls`
 
-Candle comes with an MCP integration, so agents like Claude Code can use it
-to launch and restart services, and check their logs.
-This helps make the agent more productive, compared to having the agent
-run the service as a subprocess inside their chat.
+### One instance per service ###
 
-Whenever you're using AI agents, you generally want to give them tools that are
-as simple and foolproof as possible, so this tool presents a very simple way
-to interact with locally running services.
+For simplicity, Candle won't launch the same service twice in one project.
 
-# Installation #
+If you launch the service with `candle start`/`candle run` and that service is already running, the
+existing instance will be killed first.
 
-## Installing as a command line tool ##
+### Organized by project directory ###
 
-The NPM package name is: `@facetlayer/candle`.
+A running Candle process is associated with the project directory that it's launched from.
 
-Running directly with `npx`:
+Most Candle commands like `candle ls` will only show you services for your current directory.
+This keeps things simpler for coding agents.
 
-    $ npx @facetlayer/candle
+#### Worktrees ####
 
-Installing globally with `npm`:
+This approach works extremely well if you use Git worktrees.
 
-    $ npm i -g @facetlayer/candle
+Since each worktree uses a different directory, each worktree will also have a seperate
+set of Candle services. You can run local services in both worktrees simultaneously.
 
-## Installing as an MCP integration ##
+Note that when doing this, you'll probably need to assign unique network ports to each worktree,
+so that your services don't conflict when trying to listen on the same port.
 
+### Optimized for coding agents ###
 
-### Example: Installing with Claude Code ###
+Candle was built and tuned to be used successfully by coding agents like Claude Code.
 
-Using `npx`:
+#### Non-interactive commands ####
 
-    $ claude mcp add candle -s user npx -- @facetlayer/candle --mcp
+One major decision that helps with coding agents is emphasizing **non-interactive commands**. A
+non-interactive command is one that exits immediately, instead of commands that continue to run until killed.
 
-Or installing the tool first:
+This includes:
 
-    $ npm i -g @facetlayer/candle
-    $ claude mcp add candle -s user candle -- --mcp
+ - `candle start` launches a service and then exits immediately (compared to `candle run` which launches and watches logs)
+ - `candle logs` can fetch recent log messages (compared to `candle watch` which interactively prints logs as they happen)
 
-For other agents: Install as a stdin command using either `npx @facetlayer/candle --mcp` or `candle --mcp`,
-depending on whether you've installed the tool using `npm -g`.
+Additionally the `candle --help` command detects if it's being used by Claude Code, and if so,
+it will hide the interactive commands so the agent is not aware of them.
 
-# Setting Up #
+Coding agents do have the *ability* to run interactive/backgrounded commands, but in our experience,
+they are much more successful with non-interactive commands.
 
-The main setup file is stored in `.candle.json`. This file should be in the root directory of your project.
+#### MCP server ####
 
-Note: The filename `.candle-setup.json` is deprecated but still supported for backwards compatibility. New projects should use `.candle.json`.
+Candle does ship with an MCP server integration, although these days, most users just use the Bash CLI.
 
-When you trigger `candle`, it will find the nearest config file (checking `.candle.json` first, then `.candle-setup.json`), which can either be in the current directory or a parent directory. Triggering `candle` inside a subdirectory in your project will work fine.
+# Documentation #
 
-Example .candle.json file:
+### The config file ###
 
-```
-{
-    "services": [{
-        "name": "periodic",
-        "shell": "node periodicLogger.js",
-        "root": "test/sampleServers"
-    }]
-}
-```
+In order to use Candle, your project should have a `.candle.json` file at the project's top level.
+A new config can be created with `candle setup-project`.
 
-Details for one 'services' entry:
+Candle will look for this file when working with local services. You can run `candle` in a subdirectory
+of your project and it will find the nearest `.candle.json` in a parent directory.
 
-| field     | description      |
-| --------- | ---------------- |
-| `name`    | The name of the service, this will be used when interacting with the service. |
-| `shell`   | The shell command to run when launching the service. |
-| `root`    | (Optional) The current working directory to use when launching the service. |
+### Named services ###
 
-Tip: The MCP integration provides a command `AddServerConfig` which will update or create the config file.
-So, you can tell your coding agent (such as Claude Code) to set up this configuration file.
+You can add multiple services in your project. With multiple services, each command supports a `[name]` parameter
+to pick the target.
 
-# MCP Usage #
+`candle run backend` - Run the service named 'backend'
 
-Details on the MCP integration
+Some commands have a default behavior if no service is named:
 
-General notes:
+`candle run` - Run all services.
 
-With coding agents, you will sometimes need to direct the agent to
-use this tool. This can be done in your prompts, or in your setup .md files.
-For example, telling the agent to "Start the server using Candle" should work.
+Some commands accept multiple services at once:
 
-Here are the MCP tools available:
+`candle run backend frontend` - Run the 'backend' and 'frontend' services.
 
-| name | description |
-| -------------- | ------------------------------------------------- |
-| AddServerConfig     | Saves a new server configuration to .candle.json |
-| StartService   | Start the service for the current directory. |
-| GetLogs        | List the recent stdout & stderr logs for the locally running service |
-| KillService    | Kill the running service process.    |
-| RestartService | Restart the running service process. |
-| ListServices   | List the currently running services. |
-
-# CLI Usage #
-
-The `candle` tool can also be used on the command line:
+# Commands #
 
 ### `candle --help`
 
 List all CLI commands.
 
-### `candle run [name]`
+### `candle start [...names]`
 
-Launch the process and start watching logs.
+Launch the service(s).
 
-If `[name]` is not provided: Run the first command listed in the config file
+If no `[...names]` are provided, then launch all services in the project.
 
-Candle does not run the same service more than once. If this command is already running,
-then `run` will first perform `restart` to kill the current process and restart it.
+If the service(s) are already running then the existing instances are killed first.
 
-Watch mode can be exited with control-C. Note that this does not kill the process, it
-will still run in the background until `candle kill` is called on it.
+### `candle run [...names]`
 
-### `candle start [name]`
+Launches the service(s) just like `candle start`, and then enters watch mode.
+During watch mode, the service logs are printed as they happen.
 
-`start` is similar to `run` but it does not enter watch mode.
-The service will be launched in the background and logs will not be printed.
+Watch mode can be exited with control-C.
+
+Note that exiting `candle run` does not kill the process - the process
+will keep running in the background until `candle kill` is called.
 
 ### `candle list` or `candle ls`
 
-List the active processes for this project directory.
+List the services for this project directory, including active and inactive services.
 
-### `candle watch [name]`
+### `candle watch [...names]`
 
-Enter watch mode for the given running service. This will interactively print any log messages from the service
+Enter watch mode for the running service(s).
+
+This will interactively print any log messages from the service
 as they happen.
 
-If `[name]` is not provided: Watch the first command listed in the config file
+If no `[...names]` are provided: Watch all running services.
 
-If the service is not currently running then `watch` will show an error.
+If multiple services are being watched, then each log message will have a prefix that looks like
+`[<service name>]`
 
-### `candle logs [name]`
+Example:
+
+    $ candle watch frontend backend
+    [backend] Backend server now listening on port 3000
+    [frontend] Web server available at http://localhost:8080
+
+
+### `candle logs [...names]`
 
 Show the recent logs for the given service. This is non-interactive, it will just print the recent
 logs and then exit. (unlike `watch` which will continue to print new logs).
@@ -160,80 +160,59 @@ logs and then exit. (unlike `watch` which will continue to print new logs).
 This command works even if the service is not running, it will show the logs that occurred
 before the exit.
 
-If `[name]` is not provided: Show logs for the first command listed in the config file
+If `[name]` is not provided: Show logs for all services in the project directory.
 
-### `candle kill [name]`
+### `candle kill [...names]`
 
-Kill a process.
+Kill named service(s)
 
-If `[name]` is not provided: Kill all the processes for this project directory.
+If no `[...names]` are provided: Kill all services for this project directory.
 
-### `candle restart [name]`
+### `candle restart [...names]`
 
-Restart the process for this current directory.
+Restart running service(s) for this current directory.
 
-If `[name]` is not provided: Restart the first command listed in the config file
+If no `[...names]` are provided: Restart all running services for this project directory
 
-### `candle wait-for-log [name] --message [message]
+### `candle wait-for-log [name] --message [message]`
 
-Waits until the given process has printed a message to stdout or stderr that includes `[message]` as a substring.
+Waits until the service has printed text to stdout or stderr that includes `[message]`.
 
-This command is designed for CI jobs, which need to wait until a service has fully started up before
-they can use or test that service.
+This command is meant especially for CI jobs. In the CI context you often need to wait until
+a service has fully launched before moving on to the next step.
 
 Example usage:
 
 ```
+    # Start the api server
     candle start api
+
+    # Wait until it is ready
     candle wait-for-log api --message "server now listening"
+
+    # Now run tests
+    npm run test
 ```
 
-These two commands will launch the `api` service in the background, and then
-wait until the service has printed a console log that includes `"server now listening"`.
-
-The command will continue to wait until a certain timeout. The timeout defaults to 60 seconds and can be
+The command will continue to wait until a certain timeout. The timeout defaults to 30 seconds and can be
 set on the command line as `--timeout [seconds]`.
 
-#### Handling startup race conditions 
+### `candle setup-project`
 
-The `wait-for-log` command is safe against race conditions - it will immediately return successfully if the given log
-line has already been printed, as long as that log message was for the latest 'run' of the service.
+Create a new `.candle.json` config file in the current directory. If a config file already exists
+in the current or a parent directory, it will report its location without making changes.
 
-Here are more details explaining what this means:
+### `candle add-service <name> --shell <command>`
 
-Lets say that the `candle logs` for a certain process look like this:
+Add a new service to the `.candle.json` config file. If the file doesn't exist, it will be created.
 
-```
-    > yarn dev
-    [info] API server now listening on port 3444
-```
-
-If you run `candle wait-for-log api --message "server now listening"` at this point, the command will
-immediately return successfully, because the target log message is already there.
-
-But, let's say `candle logs` looks like this:
-
-```
-    > yarn dev
-    [info] API server now listening on port 3444
-    [Process exited with code 1]
-    > yarn dev
-```
-
-In this situation, `wait-for-log` will not return immediately, instead it will start waiting
-for the message show up. This is because the existing "server now listening" log message was for
-the previous process run (before the "Process exited" event), so those old logs are ignored.
-
-The short version of all this is: If you follow the above pattern of calling `candle start` and then `candle wait-for-log`,
-then it will correctly do what you expect.
-
-### `candle-mcp` or `candle --mcp`
+### `candle mcp` or `candle --mcp`
 
 Run Candle in MCP mode, using stdin as the transport.
 
-# Infrequently used commands #
+# More commands #
 
-More CLI commands that are not typically used:
+Other CLI commands that are not typically used:
 
 ### `candle list-all`
 
@@ -249,23 +228,19 @@ Kill all processes (across the entire system) that were launched by Candle.
 Similar to `list` vs `list-all`. The `kill-all` command affects
 everything on the system.
 
-### `candle clear-database`
+### `candle erase-database`
 
 Delete the database stored in `~/.local/state/candle`.
 
 This command can help if the database is corrupted or it needs a full SQL schema rebuild.
 
-If there are any existing processes then running `clear-database` will leave those processes 'orphaned'
-(you won't be able to interact with them using `candle` after that), and you'll need to manually find and delete
-those processes yourself.
+If there are any existing processes then running `erase-database` will leave those processes 'orphaned'
+(they will still be running but they won't be tracked by Candle). If you do need to run this command
+then run `candle kill-all` first.
 
-# Technical Details
+# Technical Details #
 
 When running, Candle will create an SQLite database located at `~/.local/state/candle/candle.db`. This database
 stores a table of actively running processes, and another table of all the observed log events (from
 stdout / stderr and subprocess related events).
 
-# Debugging
-
-Setting the `CANDLE_ENABLE_LOGS` environment variable to `1` will enable writing to a local `candle.log` file,
-this will show logs for all MCP requests and responses.

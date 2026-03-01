@@ -48,6 +48,7 @@ const sidebars = {
       type: 'category',
       label: 'Configuration Commands',
       items: [
+        {type: 'doc', id: 'commands/setup-project', label: 'setup-project'},
         {type: 'doc', id: 'commands/add-service', label: 'add-service'},
       ],
     },
