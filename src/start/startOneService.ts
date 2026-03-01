@@ -1,5 +1,6 @@
 import * as Path from 'node:path';
 import { findProjectDir, getServiceConfigByName, type ServiceConfig } from '../configFile.ts';
+import { findProcessesByCommandNameAndProjectDir } from '../database/processTable.ts';
 import { ProcessStartFailedError, UsageError } from '../errors.ts';
 import { handleKillCommand } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
@@ -15,6 +16,7 @@ export interface RunOptions {
   shell?: string;
   root?: string;
   enableStdin?: boolean;
+  checkStart?: boolean;
 }
 
 export interface StartResult {
@@ -77,6 +79,16 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     // Config-based process
     const found = getServiceConfigByName(req.commandName);
     serviceConfig = found.serviceConfig;
+  }
+
+  // If checkStart is true, skip starting if already running
+  if (req.checkStart) {
+    const existingProcesses = findProcessesByCommandNameAndProjectDir(serviceConfig.name, projectDir);
+    const runningProcesses = existingProcesses.filter(p => p.killed_at === null);
+    if (runningProcesses.length > 0) {
+      console.log(`[Service '${serviceConfig.name}' is already running]`);
+      return { projectDir, serviceName: serviceConfig.name };
+    }
   }
 
   // Kill any existing processes for this service

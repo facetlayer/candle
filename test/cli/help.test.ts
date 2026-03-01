@@ -25,6 +25,7 @@ describe('CLI Help Command', () => {
             const commands = [
                 'run',
                 'start',
+                'check-start',
                 'restart',
                 'kill',
                 'kill-all',

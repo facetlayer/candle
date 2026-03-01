@@ -119,6 +119,14 @@ If no `[...names]` are provided, then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
 
+### `candle check-start [...names]`
+
+Start the service(s) only if they are not already running.
+
+If a service is already running, it is left alone (no restart). If it is not running, it is started
+just like `candle start`. This is useful in scripts where you want to ensure a service is running
+without disrupting it if it already is.
+
 ### `candle run [...names]`
 
 Launches the service(s) just like `candle start`, and then enters watch mode.

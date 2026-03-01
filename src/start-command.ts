@@ -11,6 +11,7 @@ interface StartOptions {
   shell?: string;
   root?: string;
   enableStdin?: boolean;
+  checkStart?: boolean;
 }
 
 /*
@@ -50,6 +51,7 @@ export async function handleStartCommand(req: StartOptions) {
       shell: req.shell,
       root: req.root,
       enableStdin: req.enableStdin,
+      checkStart: req.checkStart,
     });
     return;
   }
@@ -59,6 +61,7 @@ export async function handleStartCommand(req: StartOptions) {
       projectDir: req.projectDir,
       commandName: commandName,
       consoleOutputFormat: req.consoleOutputFormat,
+      checkStart: req.checkStart,
     });
   }
 }

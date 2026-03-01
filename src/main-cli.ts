@@ -48,6 +48,7 @@ function printGroupedHelp() {
 Process Management:
   list, ls                  List processes for this project directory${runLines}
   start [names...]          Start process(es) in background
+  check-start [names...]    Start process(es) only if not already running
   restart [names...]        Restart running process(es)
   kill [names...]           Kill running process(es)
 
@@ -115,6 +116,23 @@ function configureYargs() {
         .strictOptions();
     })
     .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
+      yargs
+        .positional('name', { type: 'string' })
+        .option('shell', {
+          describe: 'Shell command for transient process',
+          type: 'string',
+        })
+        .option('root', {
+          describe: 'Root directory for transient process',
+          type: 'string',
+        })
+        .option('enable-stdin', {
+          describe: 'Enable stdin message polling from database',
+          type: 'boolean',
+        })
+        .strictOptions();
+    })
+    .command('check-start [name...]', 'Start process(es) only if not already running', (yargs: Argv) => {
       yargs
         .positional('name', { type: 'string' })
         .option('shell', {
@@ -311,6 +329,13 @@ export async function main(): Promise<void> {
     case 'start': {
       const projectDir = findProjectDir();
       await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, enableStdin });
+      process.exit(0);
+      break;
+    }
+
+    case 'check-start': {
+      const projectDir = findProjectDir();
+      await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, enableStdin, checkStart: true });
       process.exit(0);
       break;
     }
