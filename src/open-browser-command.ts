@@ -2,10 +2,10 @@ import { spawn } from 'child_process';
 import { platform } from 'os';
 import { handleListPorts } from './list-ports-command.ts';
 import { UsageError } from './errors.ts';
-import { findConfigFile } from './configFile.ts';
-import { findProcessesByProjectDir } from './database/processTable.ts';
+import { findProcessesByCommandNameAndProjectDir, findProcessesByProjectDir } from './database/processTable.ts';
 
 export interface OpenBrowserOptions {
+  projectDir: string;
   serviceName?: string;
 }
 
@@ -15,13 +15,11 @@ export interface OpenBrowserOutput {
   url: string;
 }
 
-function resolveServiceName(providedName?: string): string {
+function resolveServiceName(projectDir: string, providedName?: string): string {
   if (providedName) {
     return providedName;
   }
 
-  // Auto-detect: find running processes in the current project
-  const { projectDir } = findConfigFile(process.cwd());
   const runningProcesses = findProcessesByProjectDir(projectDir);
 
   if (runningProcesses.length === 0) {
@@ -43,14 +41,24 @@ function resolveServiceName(providedName?: string): string {
 export async function handleOpenBrowser(
   options: OpenBrowserOptions
 ): Promise<OpenBrowserOutput> {
-  const serviceName = resolveServiceName(options.serviceName);
+  const { projectDir } = options;
+  const serviceName = resolveServiceName(projectDir, options.serviceName);
 
   const portsOutput = await handleListPorts({ commandNames: [serviceName] });
 
   if (portsOutput.ports.length === 0) {
-    throw new UsageError(
-      `No open ports found for service '${serviceName}'. Is the service running?`
-    );
+    const processes = findProcessesByCommandNameAndProjectDir(serviceName, projectDir);
+    const isRunning = processes.some(p => p.killed_at === null);
+
+    if (isRunning) {
+      throw new UsageError(
+        `No open ports found for service '${serviceName}'.`
+      );
+    } else {
+      throw new UsageError(
+        `No open ports found for service '${serviceName}'. Start the service with: candle start`
+      );
+    }
   }
 
   const sortedPorts = [...portsOutput.ports].sort((a, b) => a.port - b.port);

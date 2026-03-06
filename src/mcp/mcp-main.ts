@@ -122,7 +122,8 @@ const toolDefinitions: ToolDefinition[] = [
       if (!serviceName) {
         throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
       }
-      const result = await handleOpenBrowser({ serviceName });
+      const projectDir = findProjectDir();
+      const result = await handleOpenBrowser({ projectDir, serviceName });
       return result;
     },
   },

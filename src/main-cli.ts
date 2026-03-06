@@ -366,8 +366,9 @@ export async function main(): Promise<void> {
     }
 
     case 'open-browser': {
+      const projectDir = findProjectDir();
       const serviceName = commandNames[0];
-      const output = await handleOpenBrowser({ serviceName });
+      const output = await handleOpenBrowser({ projectDir, serviceName });
       printOpenBrowserOutput(output);
       break;
     }
