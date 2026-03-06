@@ -5,6 +5,7 @@
  ./test/ - Automated tests
  ./test/sampleServers/ - Sample implementations of test services.
  ./test/workspaces/ - Directories used to run Candle during tests.
+ ./test/cli/ - Tests related to each CLI command
  ./docs/ - Internal docs, aimed at tools and developers
  ./docs-site/ - Public documentation website
  ./docs-site/docs/ - Contents for the public documentation site.
@@ -35,12 +36,13 @@ Options:
 
 Without these flags, it passes through to Candle normally.
 
-## Running the test suite
+# Testing
 
-When running the test suite, prefer to use `candle` itself to manage the
-test suite. Use `candle logs test:watch` (or the MCP GetLogs action for 'test:watch')
+We have an extensive test suite in ./test using Vitest.
 
-If the local runner is broken then you may need to run `pnpm test` separately.
+Many tests follow a pattern of using the TestWorkspace helper, which
+creates an isolated project directory and isolated SQLite database that
+is specific to that test suite.
 
 ## Helpful development tools
 
