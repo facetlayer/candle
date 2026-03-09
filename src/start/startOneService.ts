@@ -59,7 +59,7 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
   if (req.shell) {
     // Transient process - use provided shell/root
     if (!req.commandName) {
-      throw new UsageError('Commad name is required');
+      throw new UsageError('Command name is required');
     }
 
     // Validate root if provided

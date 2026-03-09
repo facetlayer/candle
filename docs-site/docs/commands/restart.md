@@ -1,20 +1,20 @@
 # restart
 
-Restart a running service.
+Restart running service(s).
 
 ## Syntax
 
 ```bash
-candle restart [name]
+candle restart [name...]
 ```
 
 ## Description
 
-The `restart` command stops a running service and starts it again.
+The `restart` command stops running service(s) and starts them again.
 
 ## Arguments
 
-- `name` - Name of the service to restart. If omitted, restarts all running services in the current project directory.
+- `name` - Name of the service(s) to restart. If omitted, restarts all running services in the current project directory.
 
 ## Examples
 

@@ -22,6 +22,7 @@ Compared to `start`, which always kills and restarts a running service, `check-s
 
 - `--shell <command>` - Start a transient service with the specified shell command
 - `--root <directory>` - Set the working directory for a transient service
+- `--enable-stdin` - Enable stdin message polling from database
 
 ## Examples
 

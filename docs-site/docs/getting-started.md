@@ -7,13 +7,13 @@ This guide will help you install Candle and set up your first project.
 Install Candle globally using npm:
 
 ```bash
-npm install -g candle
+npm install -g @facetlayer/candle
 ```
 
 Or using pnpm:
 
 ```bash
-pnpm add -g candle
+pnpm add -g @facetlayer/candle
 ```
 
 ## Configure a service
@@ -21,7 +21,7 @@ pnpm add -g candle
 Use the `add-service` command to add a new configured service:
 
 ```bash
-candle add-service api "npm run dev"
+candle add-service api --shell "npm run dev"
 ```
 
 This will create a `.candle.json` file in the current directory.

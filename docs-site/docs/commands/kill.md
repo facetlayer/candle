@@ -10,7 +10,7 @@ candle kill [name...]
 
 ## Description
 
-The `kill` command stops running services.
+The `kill` command stops running services. `candle stop` is an alias for this command.
 
 When called without arguments, it kills all services in the current project directory.
 

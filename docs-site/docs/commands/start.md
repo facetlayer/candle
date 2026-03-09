@@ -29,6 +29,7 @@ After running `start` you can check on the service using the `watch` or `logs` c
 
 - `--shell <command>` - Start a transient service with the specified shell command
 - `--root <directory>` - Set the working directory for a transient service
+- `--enable-stdin` - Enable stdin message polling from database
 
 ## Examples
 

@@ -274,7 +274,7 @@ const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'AddServerConfig',
-    description: 'Add a new server configuration to .candle-setup.json',
+    description: 'Add a new server configuration to .candle.json',
     inputSchema: {
       type: 'object',
       properties: {

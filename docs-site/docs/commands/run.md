@@ -28,6 +28,7 @@ The `run` and `start` commands are similar, the main differences are:
 
 - `--shell <command>` - Override the shell command. Can be used for transient services.
 - `--root <directory>` - Override the working directory. Can be used for transient services.
+- `--enable-stdin` - Enable stdin message polling from database
 
 ## Examples
 
