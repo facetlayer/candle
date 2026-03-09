@@ -1,5 +1,5 @@
 
-# Unreleased
+# 1.0.0
  - Change log eviction strategy to a per-service limit instead of a global limit.
  - Better support for stale process cleanup after a reboot.
  - Add `candle setup-project` and `candle check-start` commands.
