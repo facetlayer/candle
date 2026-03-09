@@ -27,7 +27,7 @@ export async function killOneRunningProcess(process: ServiceInfo, options: KillP
       // If the killed_at date is over 5 minutes old, delete the stale entry.
       // This can happen if the entry fails to get cleaned up.
 
-      if (process.killed_at && process.killed_at < Date.now() - 5 * 60 * 1000) {
+      if (process.killed_at && process.killed_at < Math.floor(Date.now() / 1000) - 5 * 60) {
         if (!options.quiet) {
           console.warn(
             `[Cleaning up stale process entry for '${process.command_name}' with PID: ${process.pid}]`

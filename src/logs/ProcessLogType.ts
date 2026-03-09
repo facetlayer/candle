@@ -2,7 +2,7 @@ export const ProcessLogType = {
   stdout: 1,
   stderr: 2,
 
-  // process_start_initiated - Saved immediately when we being launching a subprocess
+  // process_start_initiated - Saved immediately when we begin launching a subprocess
   process_start_initiated: 3,
 
   // process_start_failed - Saved when the subprocess fails to start.

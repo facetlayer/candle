@@ -15,7 +15,7 @@ Candle is a lightweight process manager designed for local development. It allow
 
 ```bash
 # Install globally
-npm install -g candle
+npm install -g @facetlayer/candle
 
 # Create a config file
 echo '{"services": [{"name": "api", "shell": "npm run dev"}]}' > .candle.json

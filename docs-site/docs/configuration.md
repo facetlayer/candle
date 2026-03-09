@@ -124,7 +124,7 @@ When viewing logs, Candle displays a `-- older logs have been removed --` indica
 You can add services without manually editing the config file:
 
 ```bash
-candle add-service api "npm run dev" --root packages/api
+candle add-service api --shell "npm run dev" --root packages/api
 ```
 
 This will create or update `.candle.json` with the new service.

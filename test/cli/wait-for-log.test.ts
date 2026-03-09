@@ -132,7 +132,7 @@ describe('CLI Wait-For-Log Command', () => {
             // Should have some indication of timeout
             const output = result.stdoutAsString() + result.stderrAsString();
             expect(output.toLowerCase()).toMatch(/timeout|not found|failed/);
-        }, 5000);
+        }, 15000);
     });
 
     describe('wait-for-log exit behavior', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { TestWorkspace } from './utils';
 
-const workspace = new TestWorkspace('cli-start');
+const workspace = new TestWorkspace('cli-check-start');
 
 describe('CLI Check-Start Command', () => {
     beforeAll(() => workspace.ensureSubdir('test'));

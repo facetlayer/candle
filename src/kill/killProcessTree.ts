@@ -4,7 +4,7 @@ type KillProcessTreeResult = 'success' | 'process_not_found' | 'error';
 
 export async function killProcessTree(pid: number): Promise<KillProcessTreeResult> {
   if (pid == null || pid == 0) {
-    throw new Error(`internal error: tryKillProcessTree called with invalid PID: ${pid}`);
+    throw new Error(`internal error: killProcessTree called with invalid PID: ${pid}`);
   }
 
   const pids = await getProcessTree(pid);
