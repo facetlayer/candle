@@ -100,3 +100,8 @@ export function findAllRunningProcesses(): ProcessEntry[] {
   const db = getDatabase();
   return db.list('select * from processes where killed_at is null');
 }
+
+export function findAllKilledProcesses(): ProcessEntry[] {
+  const db = getDatabase();
+  return db.list('select * from processes where killed_at is not null');
+}

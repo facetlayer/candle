@@ -1,5 +1,5 @@
 import { isProcessAlive } from '../process-alive.ts';
-import { deleteProcessEntry, findAllRunningProcesses } from './processTable.ts';
+import { deleteProcessEntry, findAllRunningProcesses, findAllKilledProcesses } from './processTable.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';
 import { ProcessLogType } from '../logs/ProcessLogType.ts';
 
@@ -8,8 +8,12 @@ import { ProcessLogType } from '../logs/ProcessLogType.ts';
  * are actually dead. This handles the case where the system was rebooted (or
  * processes were killed externally) and the log collector never got a chance to
  * clean up.
+ *
+ * Also cleans up entries that were marked as killed (killed_at set) but not yet
+ * deleted — this happens when the log collector dies before it can clean up.
  */
 export function cleanupStaleProcesses(): void {
+  // Clean up entries with no killed_at where both PIDs are dead
   const runningProcesses = findAllRunningProcesses();
 
   for (const proc of runningProcesses) {
@@ -31,6 +35,17 @@ export function cleanupStaleProcesses(): void {
       content: 'Process cleaned up (stale entry after restart or crash)',
     });
 
+    deleteProcessEntry({
+      commandName: proc.command_name,
+      projectDir: proc.project_dir,
+      pid: proc.pid,
+    });
+  }
+
+  // Clean up entries that were marked as killed but the log collector never deleted.
+  // The log collector deletes entries on process exit, but if it died first, these linger.
+  const killedProcesses = findAllKilledProcesses();
+  for (const proc of killedProcesses) {
     deleteProcessEntry({
       commandName: proc.command_name,
       projectDir: proc.project_dir,

@@ -1,7 +1,7 @@
 import { findConfigFile, type ServiceConfig } from './configFile.ts';
 import {
   findAllProcesses,
-  findProcessesByProjectDir,
+  findRunningProcessesByProjectDir,
   type ProcessEntry,
 } from './database/processTable.ts';
 
@@ -68,7 +68,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
     const configByName = new Map(
       (config.services || []).map(s => [s.name, s] as [string, ServiceConfig])
     );
-    const processEntries = findProcessesByProjectDir(projectDir);
+    const processEntries = findRunningProcessesByProjectDir(projectDir);
     const runningByName = new Map(processEntries.map(p => [p.command_name, p]));
     const seenNames = new Set<string>();
 

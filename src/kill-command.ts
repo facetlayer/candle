@@ -1,4 +1,4 @@
-import { findProcessesByCommandNameAndProjectDir, findProcessesByProjectDir } from './database/processTable.ts';
+import { findProcessesByCommandNameAndProjectDir, findRunningProcessesByProjectDir } from './database/processTable.ts';
 import { killOneRunningProcess, type KillProcessOptions } from './kill/killOneRunningProcess.ts';
 
 interface KillCommandOptions extends KillProcessOptions {
@@ -20,7 +20,7 @@ export async function handleKillCommand(req: KillCommandOptions) {
   }
 
   // No names provided - kill all running processes in the project
-  const runningProcesses = findProcessesByProjectDir(req.projectDir);
+  const runningProcesses = findRunningProcessesByProjectDir(req.projectDir);
 
   let killedProcessCount = 0;
 
