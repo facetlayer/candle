@@ -138,7 +138,7 @@ export function validateConfig(config: CandleSetupConfig) {
     }
     names.add(service.name);
 
-    if (service.root && !isValidRelativePath(service.root)) {
+    if (service.root && !isValidRootPath(service.root)) {
       throw new ConfigFileError(
         `Service "${service.name}" has invalid root path: "${service.root}"`
       );
@@ -178,6 +178,21 @@ export function validateConfig(config: CandleSetupConfig) {
   };
 }
 
+
+export function isValidRootPath(p: string): boolean {
+  // Allow absolute paths (e.g. services in different directories on a server)
+  if (path.isAbsolute(p)) {
+    return true;
+  }
+
+  // For relative paths, don't allow escaping the config directory
+  const normalized = path.normalize(p);
+  if (normalized.startsWith('..')) {
+    return false;
+  }
+
+  return true;
+}
 
 export function isValidRelativePath(p: string): boolean {
   // Don't allow absolute paths or paths that escape the config directory

@@ -24,9 +24,9 @@ export interface StartResult {
   serviceName: string;
 }
 
-function isValidRelativePath(p: string): boolean {
+function isValidRootPath(p: string): boolean {
   if (Path.isAbsolute(p)) {
-    return false;
+    return true;
   }
   const normalized = Path.normalize(p);
   if (normalized.startsWith('..')) {
@@ -63,9 +63,9 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     }
 
     // Validate root if provided
-    if (req.root && !isValidRelativePath(req.root)) {
+    if (req.root && !isValidRootPath(req.root)) {
       throw new UsageError(
-        `Invalid root path: "${req.root}". Root must be a relative path within the project.`
+        `Invalid root path: "${req.root}". Root must be an absolute path or a relative path within the project.`
       );
     }
 
@@ -155,7 +155,9 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
 
   let launchDir = projectDir;
   if (serviceConfig.root) {
-    launchDir = Path.join(projectDir, serviceConfig.root);
+    launchDir = Path.isAbsolute(serviceConfig.root)
+      ? serviceConfig.root
+      : Path.join(projectDir, serviceConfig.root);
   }
   console.log(
     `[Started process '${serviceConfig.name}' (\`${serviceConfig.shell}\`) in directory: '${launchDir}']`
