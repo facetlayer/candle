@@ -373,7 +373,8 @@ export async function main(): Promise<void> {
       break;
     }
 
-    case 'kill': {
+    case 'kill':
+    case 'stop': {
       const projectDir = findProjectDir();
       assertValidCommandNames(commandNames);
       await handleKillCommand({ projectDir, commandNames });
