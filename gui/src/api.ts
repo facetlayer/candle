@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 config({ path: new URL('../.env', import.meta.url).pathname });
 
-import { App, startServer } from '@facetlayer/prism-framework-api';
+import { App, startServer } from '@facetlayer/prism-framework';
 import { candleService } from './services/candle-service.ts';
 
 const PORT = parseInt(process.env.PRISM_API_PORT || '4800', 10);
@@ -17,7 +17,7 @@ async function main() {
     port: PORT,
     app,
     corsConfig: {
-      enableTestEndpoints: true,
+      allowLocalhost: true,
     },
   });
 

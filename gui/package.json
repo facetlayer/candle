@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@facetlayer/candle": "workspace:*",
-    "@facetlayer/prism-framework-api": "*",
+    "@facetlayer/prism-framework": "*",
     "dotenv": "^16.4.7",
     "zod": "^4.1.12"
   },

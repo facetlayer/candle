@@ -1,5 +1,5 @@
-import { createEndpoint } from '@facetlayer/prism-framework-api';
-import type { ServiceDefinition } from '@facetlayer/prism-framework-api';
+import { createEndpoint } from '@facetlayer/prism-framework';
+import type { ServiceDefinition } from '@facetlayer/prism-framework';
 import { z } from 'zod';
 import {
   findAllProcesses,

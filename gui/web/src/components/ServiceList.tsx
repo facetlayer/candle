@@ -62,7 +62,7 @@ export function ServiceList({ selected, onSelect }: ServiceListProps) {
 
   const fetchServices = useCallback(async () => {
     try {
-      const data: ListResponse = await webFetch('/services');
+      const data: ListResponse = await webFetch('/api/services');
       setServices(data.processes);
       setError(null);
     } catch {
@@ -78,7 +78,7 @@ export function ServiceList({ selected, onSelect }: ServiceListProps) {
     const key = `${projectDir}:${serviceName}:${action}`;
     setActionInProgress(key);
     try {
-      await webFetch(`POST /services/:name/${action}`, {
+      await webFetch(`POST /api/services/:name/${action}`, {
         params: { name: serviceName, projectDir },
       });
       await fetchServices();
@@ -93,7 +93,7 @@ export function ServiceList({ selected, onSelect }: ServiceListProps) {
     const key = `${projectDir}:${serviceName}:open`;
     setActionInProgress(key);
     try {
-      const data = await webFetch('GET /services/:name/url', {
+      const data = await webFetch('GET /api/services/:name/url', {
         params: { name: serviceName, projectDir },
       });
       if (data.url) {

@@ -78,7 +78,7 @@ export function LogViewer({ serviceName, projectDir }: LogViewerProps) {
         params.limit = 200;
       }
 
-      const data = await webFetch('GET /services/:name/logs', { params });
+      const data = await webFetch('GET /api/services/:name/logs', { params });
       const newLogs: LogEntry[] = data.logs || [];
 
       if (newLogs.length > 0) {

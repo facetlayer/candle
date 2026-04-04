@@ -66,9 +66,9 @@ importers:
       '@facetlayer/candle':
         specifier: workspace:*
         version: link:..
-      '@facetlayer/prism-framework-api':
+      '@facetlayer/prism-framework':
         specifier: '*'
-        version: 0.2.5
+        version: 0.4.1(vite@6.4.1(@types/node@20.19.0)(tsx@4.21.0)(yaml@2.8.2))(zod@4.3.6)
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -554,10 +554,6 @@ packages:
   '@facetlayer/build-config-nodejs@0.3.1':
     resolution: {integrity: sha512-Cph1fKx6Xw3NGDmN3m2/gP7xzHdhrWrDHb9prYzsUWd9H8uzmUSAwdMfaoNWVumXNASzVFN1MLl1xC6672VXiw==}
 
-  '@facetlayer/doc-files-helper@0.1.1':
-    resolution: {integrity: sha512-T7MXxXxYYDhhNfGt0NGws/7/Y4IgG5dwT0eQHh5S7KHzORaY2v00kCKPSjEV4ab8GdC5VnXIGqQKXyPuSGXWlw==}
-    hasBin: true
-
   '@facetlayer/doc-files-helper@0.1.2':
     resolution: {integrity: sha512-GbIblmIHF9epp3s/PXYqa3Nq5kiAdUHMRHScy9CWnUBU/xEvy9UHqgZPM82kCJQ6U43VAxFJVRr3rNTyER1lCw==}
     hasBin: true
@@ -568,15 +564,25 @@ packages:
   '@facetlayer/parse-stdout-lines@1.1.0':
     resolution: {integrity: sha512-FjoSb3VDDoWAymXtfrRAGKaHMVHTx+4f8Jf58NUEFItmZ3qpOvrMl4MQM7cz9gyoI579iaKKRRQjfnsmzdXRbg==}
 
-  '@facetlayer/prism-framework-api@0.2.5':
-    resolution: {integrity: sha512-QPrR1PsDbfkKq5f0/adQtx63/pMIXWSv90cvkNYChKnO/h8OCUxDrQoiTUcp7pH73BBlwLo18+h6cnlbNqmWlA==}
-    hasBin: true
-
   '@facetlayer/prism-framework-ui@0.2.2':
     resolution: {integrity: sha512-2d5kJ8O4RP1uI8uL0vvhP6Ve+BwRxdf4OwAUoSYr14y7IPfCewyQ6lZ9n4XM4bOBcQj2WhXTyNaQqg06ZaVOTg==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
+
+  '@facetlayer/prism-framework@0.4.1':
+    resolution: {integrity: sha512-cgNHvD+Rsd0ruKM5BPPYjJ/t04RQB+3OA9BeVQsZRanLksd6J6WxAqhR1zqZY35nbmLiM+8ELW5iAbvcIipWvQ==}
+    hasBin: true
+    peerDependencies:
+      vite: ^6.0.0
+      zod: ^4.0.5
+    peerDependenciesMeta:
+      vite:
+        optional: true
+
+  '@facetlayer/qc@0.1.0':
+    resolution: {integrity: sha512-zJ7dfWepReatNzwaTizhzeD5l5xsjmr8YU19cPEq6rTylrZOKSm+fAUGVC+0CVpNDmf/jdP4kwfnConDwmKsvw==}
+    hasBin: true
 
   '@facetlayer/sqlite-wrapper@1.2.2':
     resolution: {integrity: sha512-i14gNJOaAPGEu/43XdFo/qjKik93q5OSM5Ys88FSqeA9jL3dWBbucf/YGYIyZ8gwD4E5kPpvpETLvDi9JPPe9A==}
@@ -2782,10 +2788,6 @@ snapshots:
       - supports-color
       - typescript
 
-  '@facetlayer/doc-files-helper@0.1.1':
-    dependencies:
-      yargs: 18.0.0
-
   '@facetlayer/doc-files-helper@0.1.2':
     dependencies:
       yargs: 18.0.0
@@ -2793,24 +2795,6 @@ snapshots:
   '@facetlayer/generic-lexer@1.0.0': {}
 
   '@facetlayer/parse-stdout-lines@1.1.0': {}
-
-  '@facetlayer/prism-framework-api@0.2.5':
-    dependencies:
-      '@asteasolutions/zod-to-openapi': 8.4.0(zod@4.3.6)
-      '@facetlayer/doc-files-helper': 0.1.1
-      '@facetlayer/sqlite-wrapper': 1.2.2
-      '@facetlayer/streams': 1.0.0
-      cookie-parser: 1.4.7
-      dotenv: 16.6.1
-      express: 4.22.1
-      openapi3-ts: 4.5.0
-      prom-client: 15.1.3
-      swagger-ui-express: 5.0.1(express@4.22.1)
-      uuid: 11.1.0
-      yargs: 18.0.0
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - supports-color
 
   '@facetlayer/prism-framework-ui@0.2.2(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
@@ -2830,6 +2814,29 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
       - '@types/react-dom'
+
+  '@facetlayer/prism-framework@0.4.1(vite@6.4.1(@types/node@20.19.0)(tsx@4.21.0)(yaml@2.8.2))(zod@4.3.6)':
+    dependencies:
+      '@asteasolutions/zod-to-openapi': 8.4.0(zod@4.3.6)
+      '@facetlayer/doc-files-helper': 0.1.2
+      '@facetlayer/qc': 0.1.0
+      '@facetlayer/sqlite-wrapper': 1.2.2
+      '@facetlayer/streams': 1.0.0
+      cookie-parser: 1.4.7
+      dotenv: 16.6.1
+      express: 4.22.1
+      openapi3-ts: 4.5.0
+      prom-client: 15.1.3
+      swagger-ui-express: 5.0.1(express@4.22.1)
+      uuid: 11.1.0
+      yargs: 18.0.0
+      zod: 4.3.6
+    optionalDependencies:
+      vite: 6.4.1(@types/node@20.19.0)(tsx@4.21.0)(yaml@2.8.2)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@facetlayer/qc@0.1.0': {}
 
   '@facetlayer/sqlite-wrapper@1.2.2':
     dependencies:
@@ -3757,7 +3764,7 @@ snapshots:
       etag: 1.8.1
       finalhandler: 1.3.2
       fresh: 0.5.2
-      http-errors: 2.0.0
+      http-errors: 2.0.1
       merge-descriptors: 1.0.3
       methods: 1.1.2
       on-finished: 2.4.1
