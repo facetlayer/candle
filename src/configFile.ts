@@ -21,6 +21,7 @@ export interface LogEvictionConfig {
 export interface CandleSetupConfig {
   services?: ServiceConfig[];
   logEviction?: LogEvictionConfig;
+  logCollector?: 'node' | 'rust';
 }
 
 // Config filenames in priority order (first match wins)
@@ -169,6 +170,15 @@ export function validateConfig(config: CandleSetupConfig) {
           `Config file error: 'logEviction.maxRetentionSeconds' must be a positive integer`
         );
       }
+    }
+  }
+
+  // Validate logCollector config if present
+  if (config.logCollector !== undefined) {
+    if (config.logCollector !== 'node' && config.logCollector !== 'rust') {
+      throw new ConfigFileError(
+        `Config file error: Invalid value for 'logCollector': expected 'node' or 'rust', got '${config.logCollector}'`
+      );
     }
   }
 

@@ -25,7 +25,8 @@ The configuration file should be placed in your project root. Candle will search
   "logEviction": {
     "maxLogsPerService": "number (optional, default: 1000)",
     "maxRetentionSeconds": "number (optional, default: 86400)"
-  }
+  },
+  "logCollector": "'node' | 'rust' (optional, default: 'node')"
 }
 ```
 
@@ -87,6 +88,27 @@ Maximum age of log entries in seconds. Logs older than this are deleted during c
 ```
 
 When viewing logs, Candle displays a `-- older logs have been removed --` indicator if some log entries were evicted and are no longer available.
+
+## Log Collector (experimental)
+
+The `logCollector` field selects which log collector implementation to use. Each service launched by Candle runs a log collector process that captures stdout/stderr and writes it to the database.
+
+- `"node"` (default) - Uses the standard Node.js-based log collector.
+- `"rust"` - Uses an experimental Rust-based log collector. This is significantly more memory-efficient (~3MB vs ~60MB per collector process), which matters on memory-constrained servers running many services.
+
+```json
+{
+  "logCollector": "rust"
+}
+```
+
+The Rust collector must be built before use:
+
+```bash
+cd rust && cargo build --release
+```
+
+The Rust collector is functionally equivalent to the Node.js version. It supports the same database schema, log types, cleanup behavior, and stdin polling.
 
 ## Complete Example
 

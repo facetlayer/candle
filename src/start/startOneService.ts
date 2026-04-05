@@ -1,6 +1,7 @@
 import * as Path from 'node:path';
-import { findProjectDir, getServiceConfigByName, type ServiceConfig } from '../configFile.ts';
+import { findConfigFile, findProjectDir, getServiceConfigByName, type ServiceConfig } from '../configFile.ts';
 import { findProcessesByCommandNameAndProjectDir } from '../database/processTable.ts';
+import { getStateDirectory } from '../dirs.ts';
 import { ProcessStartFailedError, UsageError } from '../errors.ts';
 import { handleKillCommand } from '../kill-command.ts';
 import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.ts';
@@ -114,13 +115,25 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
   debugLog('[startOneService] launching with log collector for name=' + serviceConfig.name + ', projectDir=' + projectDir
     + ', timeSinceStart=' + getTimeSinceStart());
 
+  // Check if the project is configured to use the Rust log collector
+  let logCollector: 'node' | 'rust' | undefined;
+  try {
+    const configResult = findConfigFile(projectDir);
+    logCollector = configResult?.config?.logCollector;
+  } catch {
+    // No config file, use default
+  }
+
+  const databasePath = Path.join(getStateDirectory(), 'candle.db');
+
   await launchWithLogCollector({
     commandName: serviceConfig.name,
     projectDir,
     shell: serviceConfig.shell,
     root: serviceConfig.root,
     enableStdin: serviceConfig.enableStdin,
-  });
+    databasePath,
+  }, { logCollector });
 
   debugLog('[startOneService] waiting for process start logs, timeSinceStart=' + getTimeSinceStart());
 

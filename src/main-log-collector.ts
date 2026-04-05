@@ -10,6 +10,7 @@ import { startMonitoredService } from './log-collector/startMonitoredService.ts'
 import { saveProcessLog } from './logs/processLogs.ts';
 import { ProcessLogType } from './logs/ProcessLogType.ts';
 import { debugLog } from './debug.ts';
+import { getStateDirectory } from './dirs.ts';
 import * as Path from 'node:path';
 
 const DEFAULT_GRACE_PERIOD_WAIT_MS = 500;
@@ -46,6 +47,10 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
       default: false,
       description: 'Enable stdin message polling from database',
     })
+    .option('databasePath', {
+      type: 'string',
+      description: 'Path to the SQLite database file',
+    })
     .parse();
 
   return {
@@ -54,6 +59,7 @@ async function getLaunchInfo(): Promise<LogCollectorLaunchInfo> {
     shell: parsed.shell,
     root: parsed.root,
     enableStdin: parsed.enableStdin,
+    databasePath: parsed.databasePath ?? Path.join(getStateDirectory(), 'candle.db'),
   };
 }
 
