@@ -1,4 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import Database from 'better-sqlite3';
+import * as path from 'path';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-list');
@@ -89,24 +91,19 @@ describe('CLI List Command', () => {
             await freshWorkspace.runCli(['list']);
         });
 
-        it('should detect externally-killed process as not running', async () => {
-            await workspace.runCli(['start', 'echo']);
-            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+        it('should not show stale process entry as RUNNING after reboot', async () => {
+            // Simulate a post-reboot scenario: insert a DB entry with a PID that
+            // doesn't exist (as would happen after a reboot kills all processes).
+            const dbPath = path.join(workspace.dbDir, 'candle.db');
+            const db = new Database(dbPath);
+            const fakePid = 2147483000; // PID that almost certainly doesn't exist
+            db.exec(`insert into processes (command_name, project_dir, pid, log_collector_pid, start_time, shell)
+                      values ('echo', '${workspace.dbDir}', ${fakePid}, ${fakePid + 1}, strftime('%s','now'), 'node test.js')`);
+            db.close();
 
-            // Get the PID from list output
-            const listResult = await workspace.runCli(['list']);
-            const pidMatch = listResult.stdoutAsString().match(/echo\s+RUNNING\s+(\d+)/);
-            expect(pidMatch).toBeTruthy();
-            const pid = parseInt(pidMatch![1], 10);
-
-            // Kill externally with SIGKILL (simulates reboot — log collector can't clean up)
-            try { process.kill(pid, 'SIGKILL'); } catch { /* may already be dead */ }
-            // Wait a moment for the process to die
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // candle ls should detect the dead PID and NOT show RUNNING
-            const afterResult = await workspace.runCli(['list']);
-            const echoRunning = afterResult.stdoutAsString().split('\n').find(
+            // candle ls should detect the dead PIDs and NOT show the stale entry as RUNNING
+            const result = await workspace.runCli(['list']);
+            const echoRunning = result.stdoutAsString().split('\n').find(
                 line => line.includes('echo') && !line.includes('echo-test') && line.includes('RUNNING')
             );
             expect(echoRunning).toBeUndefined();
