@@ -92,21 +92,27 @@ describe('CLI List Command', () => {
         });
 
         it('should not show stale process entry as RUNNING after reboot', async () => {
+            // Use a fresh workspace to avoid interference from other tests
+            const staleWorkspace = new TestWorkspace('cli-list-stale');
+
             // Simulate a post-reboot scenario: insert a DB entry with a PID that
             // doesn't exist (as would happen after a reboot kills all processes).
-            const dbPath = path.join(workspace.dbDir, 'candle.db');
+            // First, run any command to initialize the database.
+            await staleWorkspace.runCli(['list-all']);
+
+            const dbPath = path.join(staleWorkspace.dbDir, 'candle.db');
             const db = new Database(dbPath);
             const fakePid = 2147483000; // PID that almost certainly doesn't exist
             db.exec(`insert into processes (command_name, project_dir, pid, log_collector_pid, start_time, shell)
-                      values ('echo', '${workspace.dbDir}', ${fakePid}, ${fakePid + 1}, strftime('%s','now'), 'node test.js')`);
+                      values ('echo', '${staleWorkspace.dbDir}', ${fakePid}, ${fakePid + 1}, strftime('%s','now'), 'node test.js')`);
             db.close();
 
-            // candle ls should detect the dead PIDs and NOT show the stale entry as RUNNING
-            const result = await workspace.runCli(['list']);
-            const echoRunning = result.stdoutAsString().split('\n').find(
-                line => line.includes('echo') && !line.includes('echo-test') && line.includes('RUNNING')
+            // candle ls --all should detect the dead PIDs and NOT show the stale entry
+            const result = await staleWorkspace.runCli(['list-all']);
+            const staleRunning = result.stdoutAsString().split('\n').find(
+                line => line.includes('echo') && line.includes('RUNNING')
             );
-            expect(echoRunning).toBeUndefined();
+            expect(staleRunning).toBeUndefined();
         });
 
         it('should not show killed process as RUNNING', async () => {
