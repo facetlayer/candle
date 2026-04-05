@@ -89,6 +89,29 @@ describe('CLI List Command', () => {
             await freshWorkspace.runCli(['list']);
         });
 
+        it('should detect externally-killed process as not running', async () => {
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            // Get the PID from list output
+            const listResult = await workspace.runCli(['list']);
+            const pidMatch = listResult.stdoutAsString().match(/echo\s+RUNNING\s+(\d+)/);
+            expect(pidMatch).toBeTruthy();
+            const pid = parseInt(pidMatch![1], 10);
+
+            // Kill externally with SIGKILL (simulates reboot — log collector can't clean up)
+            try { process.kill(pid, 'SIGKILL'); } catch { /* may already be dead */ }
+            // Wait a moment for the process to die
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // candle ls should detect the dead PID and NOT show RUNNING
+            const afterResult = await workspace.runCli(['list']);
+            const echoRunning = afterResult.stdoutAsString().split('\n').find(
+                line => line.includes('echo') && !line.includes('echo-test') && line.includes('RUNNING')
+            );
+            expect(echoRunning).toBeUndefined();
+        });
+
         it('should not show killed process as RUNNING', async () => {
             await workspace.runCli(['start', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);

@@ -1,9 +1,11 @@
 import { findConfigFile, type ServiceConfig } from './configFile.ts';
 import {
+  deleteProcessEntry,
   findAllProcesses,
   findRunningProcessesByProjectDir,
   type ProcessEntry,
 } from './database/processTable.ts';
+import { isProcessAlive } from './process-alive.ts';
 
 export interface ListOutput {
   processes: {
@@ -43,10 +45,32 @@ function hasConfigDrift(
   return false;
 }
 
+/**
+ * Filter out processes whose PIDs are no longer alive, removing stale
+ * entries from the database. This handles the case where a reboot or
+ * external kill left behind DB records with no matching OS process.
+ */
+function filterAliveProcesses(entries: ProcessEntry[]): ProcessEntry[] {
+  return entries.filter(entry => {
+    if (entry.log_collector_pid && isProcessAlive(entry.log_collector_pid)) {
+      return true;
+    }
+    if (isProcessAlive(entry.pid)) {
+      return true;
+    }
+    deleteProcessEntry({
+      commandName: entry.command_name,
+      projectDir: entry.project_dir,
+      pid: entry.pid,
+    });
+    return false;
+  });
+}
+
 export async function handleList(options?: { showAll?: boolean }): Promise<ListOutput> {
   if (options?.showAll) {
     // For list-all, we don't need a config file - just list all processes from the database
-    const processEntries = findAllProcesses();
+    const processEntries = filterAliveProcesses(findAllProcesses());
 
     const processes = processEntries.map(processEntry => {
       return {
@@ -68,7 +92,7 @@ export async function handleList(options?: { showAll?: boolean }): Promise<ListO
     const configByName = new Map(
       (config.services || []).map(s => [s.name, s] as [string, ServiceConfig])
     );
-    const processEntries = findRunningProcessesByProjectDir(projectDir);
+    const processEntries = filterAliveProcesses(findRunningProcessesByProjectDir(projectDir));
     const runningByName = new Map(processEntries.map(p => [p.command_name, p]));
     const seenNames = new Set<string>();
 
