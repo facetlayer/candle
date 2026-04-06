@@ -1,5 +1,6 @@
 
-# Unreleased
+# 0.12.0
+ - Switch from better-sqlite3 to node:sqlite (Node.js built-in)
  - Change log eviction strategy to a per-service limit instead of a global limit.
  - Better support for stale process cleanup after a reboot.
  - Add `candle setup-project` and `candle check-start` commands.
@@ -7,6 +8,7 @@
  - Upgrade @facetlayer/sqlite-wrapper to 1.2.2, remove @facetlayer/streams dependency
  - Block 'run' and 'watch' commands when running inside an AI agent (CLAUDECODE env var)
  - Remove port reservation system
+ - Add experimental rust-based log collector
 
 # 0.11.1
  - 'open-browser' can autodetect service name
