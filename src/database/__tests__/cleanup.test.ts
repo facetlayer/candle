@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DatabaseLoader, type SqliteDatabase } from '@facetlayer/sqlite-wrapper';
-import Database from 'better-sqlite3';
 import { LOG_EVICTION_DEFAULTS } from '../../configFile.ts';
 
 // Mock the database module before importing cleanup
@@ -74,7 +73,6 @@ function createTestDatabase(dir: string): SqliteDatabase {
       warn: (msg) => console.warn(msg),
       error: (err) => console.error(err.errorMessage),
     },
-    loadDatabase: (filename: string) => new Database(filename),
     migrationBehavior: 'safe-upgrades',
   });
   const db = loader.load();

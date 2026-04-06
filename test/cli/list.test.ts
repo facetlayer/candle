@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import * as path from 'path';
 import { TestWorkspace } from './utils';
 
@@ -101,7 +101,7 @@ describe('CLI List Command', () => {
             await staleWorkspace.runCli(['list-all']);
 
             const dbPath = path.join(staleWorkspace.dbDir, 'candle.db');
-            const db = new Database(dbPath);
+            const db = new DatabaseSync(dbPath);
             const fakePid = 2147483000; // PID that almost certainly doesn't exist
             db.exec(`insert into processes (command_name, project_dir, pid, log_collector_pid, start_time, shell)
                       values ('echo', '${staleWorkspace.dbDir}', ${fakePid}, ${fakePid + 1}, strftime('%s','now'), 'node test.js')`);

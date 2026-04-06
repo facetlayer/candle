@@ -1,5 +1,4 @@
 import { DatabaseLoader, SqliteDatabase } from '@facetlayer/sqlite-wrapper';
-import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as Path from 'path';
 import { getStateDirectory } from '../dirs.ts';
@@ -73,7 +72,6 @@ export function getDatabase({
         warn: (msg) => console.warn(msg),
         error: (err) => console.error(err.errorMessage),
       },
-      loadDatabase: (filename: string) => new Database(filename),
       migrationBehavior: 'safe-upgrades',
     });
     _db = loader.load();
