@@ -378,12 +378,12 @@ describe('starting and logging multiple processes', () => {
 
     it('should error when using --shell with multiple service names', async () => {
         const result = await workspace.runCli([
-            'run', 'service1', 'service2',
+            'start', 'service1', 'service2',
             '--shell', 'node somescript.js'
         ], { ignoreExitCode: true });
 
         expect(result.failed()).toBe(true);
-        expect(result.stderrAsString()).toContain('--shell can only be used with a single service name');
+        expect(result.stderrAsString()).toContain('Exactly one service name is required when using --shell');
     });
 
     it('should start transient service and capture output', async () => {

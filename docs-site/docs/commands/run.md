@@ -1,6 +1,6 @@
 # run
 
-Launch service(s) and watch their output in interactive mode.
+Alias for [start](start). Launches service(s) in the background and exits.
 
 ## Syntax
 
@@ -10,75 +10,18 @@ candle run [name...] [options]
 
 ## Description
 
-The `run` command starts one or more services and then enters watch mode, displaying their output in real-time. Press `Ctrl+C` to exit watch mode - the service will continue running in the background.
+`candle run` is an alias for `candle start`. Both commands launch one or more services in the background and exit as soon as the services are running. Neither command enters watch mode.
 
-If a service is already running, it will be restarted first.
-
-## Difference in run vs start
-
-The `run` and `start` commands are similar, the main differences are:
- - `run` - Watches the logs after launch.
- - `start` - Exits as soon as the service is running, does not watch logs.
-
-## Arguments
-
-- `name` - Name of the service(s) to run. If omitted, runs all services defined in the configuration file.
-
-## Options
-
-- `--shell <command>` - Override the shell command. Can be used for transient services.
-- `--root <directory>` - Override the working directory. Can be used for transient services.
-- `--enable-stdin` - Enable stdin message polling from database
-
-## Examples
-
-### Run all configured services
+To watch the output of services you've launched, use [watch](watch) or [logs](logs):
 
 ```bash
-candle run
+candle run api && candle watch api
 ```
 
-### Run a configured service
-
-```bash
-candle run api
-```
-
-### Run multiple services
-
-```bash
-candle run api web worker
-```
-
-## Exit Codes
-
-- `0` - Command executed successfully
-- `1` - Service not found or error occurred
-
-
-## Transient Services
-
-A "transient" service is when you launch a service without defining it in the `.candle.json` config file.
-
-This can be done with the `--shell` option (and optionally `--root` to change the directory). You'll still need to provide a unique name for the service.
-
-### Run a transient service
-
-This example starts a Python server with a name of `server`:
-
-```bash
-candle run server --shell "python -m http.server 8080"
-candle kill server
-```
-
-### Run a transient service in a subdirectory
-
-```bash
-candle run server --shell "npm run dev" --root ./packages/api
-```
+See the [start](start) command documentation for the full list of arguments, options, and examples.
 
 ## See Also
 
-- [start](start) - Start services without watching
-- [watch](watch) - Watch output of already running services
-- [logs](logs) - View recent logs without watching
+- [start](start) - Start services in the background (the command this aliases)
+- [watch](watch) - Launch (if needed) and watch output from services
+- [logs](logs) - View recent logs from running services

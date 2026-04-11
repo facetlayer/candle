@@ -16,7 +16,7 @@ of the nearest `.candle.json` file).
 # Basic commands:
 
  - See what services are available: `candle ls`
- - Start a service in the background: `candle run <service-name>`
+ - Start a service in the background: `candle start <service-name>`
  - Browse logs: `candle logs` or `candle logs <service-name>`
  - Configure a new service: `candle add-service <service-name> --shell <shell>`
  - Kill a service: `candle kill <service-name>`
@@ -29,6 +29,5 @@ Candle can also help with localhost port reservations, see: `candle help port-re
 
 # Commands to avoid
 
-Do NOT use these commands: `candle run` or `candle watch`. These are interactive commands
-and they will block your execution until killed. Use other commands like `candle start`
-or `candle logs` instead.
+Do NOT use `candle watch`. It is an interactive command and will block your execution
+until killed. Use `candle logs` instead.

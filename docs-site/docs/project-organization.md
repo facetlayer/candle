@@ -5,7 +5,7 @@ that has a .candle.json file.
 
 For example, let's say you have a `.candle.json` file in `~/projects/my-project-1`, and you have
 another `.candle.json` file in `~/projects/my-project-2`. You can then use the standard Candle
-commands (like `candle run`, `candle ls`, `candle logs`) in `~/projects/my-project-1`, and it
+commands (like `candle start`, `candle ls`, `candle logs`) in `~/projects/my-project-1`, and it
 will only show services that were started from that directory. And running similar commands in
 `~/projects/my-project-2` will show services from *that* directory.
 

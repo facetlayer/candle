@@ -20,7 +20,6 @@ import { handleList, printListOutput } from './list-command.ts';
 import { handleListPorts, printListPortsOutput } from './list-ports-command.ts';
 import { handleLogsCommand } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
-import { handleRunCommand } from './run-command.ts';
 import { handleStartCommand } from './start-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
 import { handleSetupProject } from './setup-project-command.ts';
@@ -39,16 +38,14 @@ const docFiles = new DocFilesHelper({
 });
 
 function printGroupedHelp() {
-  const runLines = isRunByAgent ? '' : `
-  run [names...]            Launch process(es) and watch their output`;
   const watchLines = isRunByAgent ? '' : `
   watch [name...]           Watch live output from process(es)`;
 
   console.log(`Usage: candle <command> [options]
 
 Process Management:
-  list, ls                  List processes for this project directory${runLines}
-  start [names...]          Start process(es) in background
+  list, ls                  List processes for this project directory
+  start, run [names...]     Start process(es) in background
   check-start [names...]    Start process(es) only if not already running
   restart [names...]        Restart running process(es)
   kill [names...]           Kill running process(es)
@@ -100,24 +97,7 @@ function configureYargs() {
     .command('mcp', 'Enter MCP server mode', (yargs: Argv) => { yargs.strictOptions(); })
 
     // Process Management
-    .command('run [name...]', 'Launch process(es) and watch their output', (yargs: Argv) => {
-      yargs
-        .positional('name', { type: 'string' })
-        .option('shell', {
-          describe: 'Shell command for transient process',
-          type: 'string',
-        })
-        .option('root', {
-          describe: 'Root directory for transient process',
-          type: 'string',
-        })
-        .option('enable-stdin', {
-          describe: 'Enable stdin message polling from database',
-          type: 'boolean',
-        })
-        .strictOptions();
-    })
-    .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => {
+    .command(['start [name...]', 'run [name...]'], 'Start process(es) in background and exit', (yargs: Argv) => {
       yargs
         .positional('name', { type: 'string' })
         .option('shell', {
@@ -326,16 +306,7 @@ export async function main(): Promise<void> {
   maybeRunCleanup();
 
   switch (command) {
-    case 'run': {
-      if (isRunByAgent) {
-        console.error("Error: 'run' is not available in agent mode. Use 'candle start' to start processes and 'candle logs' to view their output.");
-        process.exit(1);
-      }
-      const projectDir = findProjectDir();
-      await handleRunCommand({ projectDir, commandNames, shell, root, enableStdin });
-      break;
-    }
-
+    case 'run':
     case 'start': {
       const projectDir = findProjectDir();
       await handleStartCommand({ projectDir, commandNames, consoleOutputFormat: 'pretty', shell, root, enableStdin });

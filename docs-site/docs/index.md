@@ -45,15 +45,15 @@ Candle tracks services by project directory. When you run commands like `list` o
 You can also run services without defining them in a config file using the `--shell` flag:
 
 ```bash
-candle run server --shell "python -m http.server 8080"
+candle start server --shell "python -m http.server 8080"
 ```
 
 ## Commands Overview
 
 | Command | Description |
 |---------|-------------|
-| [`run`](commands/run) | Start service(s) and watch their output |
 | [`start`](commands/start) | Start service(s) in the background |
+| [`run`](commands/run) | Alias for `start` |
 | [`restart`](commands/restart) | Restart running service(s) |
 | [`kill`](commands/kill) | Stop running service(s) |
 | [`list`](commands/list) | List active services |

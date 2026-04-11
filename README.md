@@ -12,8 +12,7 @@ It's a good fit for locally running services as part of the development process.
 | Or run the tool using NPX | `npx @facetlayer/candle ...` |
 | Set up a project config | `candle setup-project` |
 | Add a service to the config | `candle add-service main --shell <shell command>` |
-| Start a service and watch logs | `candle run` |
-| Start a service in the background | `candle start` |
+| Start a service in the background | `candle start` (or `candle run`) |
 | Fetch recent logs | `candle logs` |
 | Watch logs as they happen | `candle watch` |
 | List services | `candle ls` |
@@ -29,8 +28,8 @@ a lot of the complexity that's needed when running a service in the cloud.
 
 For simplicity, Candle won't launch the same service twice in one project.
 
-If you launch the service with `candle start`/`candle run` and that service is already running, the
-existing instance will be killed first.
+If you launch the service with `candle start` (or its alias `candle run`) and that service is
+already running, the existing instance will be killed first.
 
 ### Organized by project directory ###
 
@@ -67,11 +66,11 @@ non-interactive command is one that exits immediately, instead of commands that 
 
 This includes:
 
- - `candle start` launches a service and then exits immediately (compared to `candle run` which launches and watches logs)
+ - `candle start` (aliased as `candle run`) launches a service and then exits immediately
  - `candle logs` can fetch recent log messages (compared to `candle watch` which interactively prints logs as they happen)
 
 Additionally the `candle --help` command detects if it's being used by Claude Code, and if so,
-it will hide the interactive commands so the agent is not aware of them.
+it will hide the `watch` command so the agent is not aware of it.
 
 Coding agents do have the *ability* to run interactive/backgrounded commands, but in our experience,
 they are much more successful with non-interactive commands.
@@ -95,15 +94,15 @@ of your project and it will find the nearest `.candle.json` in a parent director
 You can add multiple services in your project. With multiple services, each command supports a `[name]` parameter
 to pick the target.
 
-`candle run backend` - Run the service named 'backend'
+`candle start backend` - Start the service named 'backend'
 
 Some commands have a default behavior if no service is named:
 
-`candle run` - Run all services.
+`candle start` - Start all services.
 
 Some commands accept multiple services at once:
 
-`candle run backend frontend` - Run the 'backend' and 'frontend' services.
+`candle start backend frontend` - Start the 'backend' and 'frontend' services.
 
 # Commands #
 
@@ -130,18 +129,7 @@ Like `start` but only starts the service(s) if they are not already running.
 
 ### `candle run [names]`
 
-```
-$ candle run
-$ candle run backend
-```
-
-Launches the service(s) just like `candle start`, and then enters watch mode.
-During watch mode, the service logs are printed as they happen.
-
-Watch mode can be exited with control-C.
-
-Note that exiting `candle run` does not kill the process - the process
-will keep running in the background until `candle kill` is called.
+Alias for `candle start`. Both commands do exactly the same thing.
 
 ### `candle list` or `candle ls`
 

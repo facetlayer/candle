@@ -2,10 +2,13 @@
 
 Start service(s) in the background.
 
+`candle run` is an alias for this command — both do exactly the same thing.
+
 ## Syntax
 
 ```bash
 candle start [name...] [options]
+candle run [name...] [options]
 ```
 
 ## Description
@@ -78,6 +81,6 @@ candle start server --shell "npm run dev" --root ./packages/api
 
 ## See Also
 
-- [run](run) - Start and watch services interactively
+- [run](run) - Alias for `start`
 - [logs](logs) - View logs from started services
-- [watch](watch) - Watch live output from running services
+- [watch](watch) - Launch (if needed) and watch live output from running services

@@ -12,10 +12,7 @@ Candle is a process manager for local development. It helps you run, monitor, an
 ### Running a Service
 
 ```bash
-# Run a service in the foreground (with live logs)
-candle run my-service
-
-# Start services in the background
+# Start a service in the background
 candle start my-service
 candle start service1 service2
 ```

@@ -62,12 +62,6 @@ Start multiple services:
 candle start api web
 ```
 
-Start and watch output interactively:
-
-```bash
-candle run api
-```
-
 ## Viewing Logs
 
 View recent logs from a service:
