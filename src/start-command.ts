@@ -1,4 +1,4 @@
-import { findConfigFile, getAllServiceNames } from './configFile.ts';
+import { resolveCommandNamesOrAll } from './configFile.ts';
 import { UsageError } from './errors.ts';
 import { startOneService, type StartResult } from './start/startOneService.ts';
 
@@ -30,12 +30,8 @@ export async function handleStartCommand(req: StartOptions) {
   let commandNames = req.commandNames || [];
 
   // If no service names provided and no --shell flag, start all configured services
-  if (commandNames.length === 0 && !req.shell) {
-    const { config } = findConfigFile(req.projectDir);
-    commandNames = getAllServiceNames(config);
-    if (commandNames.length === 0) {
-      throw new UsageError('No services configured in .candle.json');
-    }
+  if (!req.shell) {
+    commandNames = resolveCommandNamesOrAll(req.projectDir, commandNames);
   }
 
   // If shell is provided, we're starting a transient process

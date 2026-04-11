@@ -2,6 +2,7 @@
 # Unreleased
  - Add `candle remove-service` command to remove a service from .candle.json
  - `candle watch` now launches services that aren't running before watching them
+ - `candle watch` trims initial output to a 10-second window, so long-running services don't spam history on attach
 
 # 0.12.0
  - Switch from better-sqlite3 to node:sqlite (Node.js built-in)

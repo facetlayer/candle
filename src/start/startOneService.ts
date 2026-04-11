@@ -57,6 +57,21 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
 
   debugLog('[startOneService] starting: ' + JSON.stringify(req));
 
+  // If checkStart is true, skip starting if already running. Done before config
+  // resolution so that checkStart works even for transient process names that
+  // aren't in the config file.
+  if (req.checkStart) {
+    if (!req.commandName) {
+      throw new UsageError('Command name is required');
+    }
+    const existingProcesses = findProcessesByCommandNameAndProjectDir(req.commandName, projectDir);
+    const runningProcesses = existingProcesses.filter(p => p.killed_at === null);
+    if (runningProcesses.length > 0) {
+      console.log(`[Service '${req.commandName}' is already running]`);
+      return { projectDir, serviceName: req.commandName };
+    }
+  }
+
   if (req.shell) {
     // Transient process - use provided shell/root
     if (!req.commandName) {
@@ -80,16 +95,6 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
     // Config-based process
     const found = getServiceConfigByName(req.commandName);
     serviceConfig = found.serviceConfig;
-  }
-
-  // If checkStart is true, skip starting if already running
-  if (req.checkStart) {
-    const existingProcesses = findProcessesByCommandNameAndProjectDir(serviceConfig.name, projectDir);
-    const runningProcesses = existingProcesses.filter(p => p.killed_at === null);
-    if (runningProcesses.length > 0) {
-      console.log(`[Service '${serviceConfig.name}' is already running]`);
-      return { projectDir, serviceName: serviceConfig.name };
-    }
   }
 
   // Kill any existing processes for this service

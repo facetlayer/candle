@@ -1,5 +1,4 @@
-import { findConfigFile, findProjectDir, getAllServiceNames } from './configFile.ts';
-import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
+import { findProjectDir, resolveCommandNamesOrAll } from './configFile.ts';
 import { startOneService } from './start/startOneService.ts';
 import { watchProcess } from './watchProcess.ts';
 
@@ -9,30 +8,16 @@ interface WatchCommandOptions {
 
 export async function handleWatch(options: WatchCommandOptions): Promise<void> {
   const projectDir = findProjectDir();
-  let commandNames = options.commandNames;
+  const commandNames = resolveCommandNamesOrAll(projectDir, options.commandNames);
 
-  if (commandNames.length === 0) {
-    // No names provided - treat like `start`: launch all configured services.
-    const { config } = findConfigFile(projectDir);
-    commandNames = getAllServiceNames(config);
-    if (commandNames.length === 0) {
-      console.log('No services configured in .candle.json');
-      return;
-    }
-  }
-
-  // Ensure each service is running. Skip those already running; start the rest.
+  // Ensure each service is running. startOneService with checkStart:true is a no-op
+  // for services that are already running (including transient processes not in config).
   for (const name of commandNames) {
-    const existing = findProcessesByCommandNameAndProjectDir(name, projectDir)
-      .filter(p => p.killed_at === null);
-    if (existing.length > 0) {
-      console.log(`[Service '${name}' is already running]`);
-      continue;
-    }
     await startOneService({
       projectDir,
       commandName: name,
       consoleOutputFormat: 'pretty',
+      checkStart: true,
     });
   }
 

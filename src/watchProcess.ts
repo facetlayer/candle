@@ -6,6 +6,7 @@ import { type ProcessLog } from './logs/processLogs.ts';
 
 const INITIAL_LOG_COUNT = 100;
 const POLL_INTERVAL = 200;
+const RECENT_LOG_WINDOW_MS = 10_000;
 
 type ShowPastLogsBehavior = 'show_logs_from_previous_launch' | 'only_show_after_recent_launch';
 
@@ -37,9 +38,12 @@ export async function watchProcess(options: WatchOptions): Promise<void> {
     commandNames,
   });
 
-  // Use filter to only show logs from the most recent process launch for each command
+  // Use filter to only show logs from the most recent process launch for each command,
+  // additionally pruning to a recent time window so we don't spam history from long-running
+  // services when `watch` is invoked.
   const logFilter = new LatestExecutionLogFilter({
     showPastLogsBehavior,
+    recentWindowMs: RECENT_LOG_WINDOW_MS,
   });
   const initialLogs = logIterator.getNextLogs({ limit: INITIAL_LOG_COUNT });
   logFilter.checkLatestLaunchStatus(initialLogs);

@@ -4,7 +4,7 @@ import {
   findProcessesByCommandNameAndProjectDir,
   type ProcessEntry,
 } from './database/processTable.ts';
-import { ConfigFileError, MissingServiceWithNameError, MissingSetupFileError } from './errors.ts';
+import { ConfigFileError, MissingServiceWithNameError, MissingSetupFileError, UsageError } from './errors.ts';
 
 export interface ServiceConfig {
   name: string;
@@ -249,6 +249,23 @@ export function findServiceByName(config: CandleSetupConfig, name: string): Serv
 
 export function getAllServiceNames(config: CandleSetupConfig): string[] {
   return config.services.map(s => s.name);
+}
+
+/**
+ * If commandNames is non-empty, return it unchanged.
+ * Otherwise, load all service names from the project's .candle.json config.
+ * Throws UsageError if the config has no services configured.
+ */
+export function resolveCommandNamesOrAll(projectDir: string, commandNames: string[]): string[] {
+  if (commandNames.length > 0) {
+    return commandNames;
+  }
+  const { config } = findConfigFile(projectDir);
+  const names = getAllServiceNames(config);
+  if (names.length === 0) {
+    throw new UsageError('No services configured in .candle.json');
+  }
+  return names;
 }
 
 interface FoundServiceConfig {
