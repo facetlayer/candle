@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { DocFilesHelper } from '@facetlayer/doc-files-helper';
 import { addServerConfig } from './addServerConfig.ts';
+import { removeServerConfig } from './removeServerConfig.ts';
 import { findProjectDir } from './configFile.ts';
 import { maybeRunCleanup } from './database/cleanup.ts';
 import { handleClearDatabaseCommand } from './clear-database-command.ts';
@@ -63,6 +64,7 @@ Logs:
 Configuration:
   setup-project             Create a new .candle.json in the current directory
   add-service [name] ...    Add a new service to .candle.json
+  remove-service [name]     Remove a service from .candle.json
 
 Documentation:
   list-docs                 List available documentation
@@ -207,6 +209,14 @@ function configureYargs() {
         .option('enable-stdin', {
           describe: 'Enable stdin message polling from database',
           type: 'boolean',
+        })
+        .strictOptions();
+    })
+    .command('remove-service <name>', 'Remove a service from .candle.json', (yargs: Argv) => {
+      yargs
+        .positional('name', {
+          describe: 'Name of the service to remove',
+          type: 'string',
         })
         .strictOptions();
     })
@@ -468,6 +478,21 @@ export async function main(): Promise<void> {
         });
       } catch (error) {
         console.error(`Error adding service: ${error.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'remove-service': {
+      const commandName = requireServiceName(commandNames);
+      if (commandNames.length > 1) {
+        console.error('Error: Cannot use multiple command names for remove-service');
+        process.exit(1);
+      }
+      try {
+        removeServerConfig(commandName);
+      } catch (error) {
+        console.error(`Error removing service: ${error.message}`);
         process.exit(1);
       }
       break;
