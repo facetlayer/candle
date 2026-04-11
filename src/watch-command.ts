@@ -1,8 +1,6 @@
-import { findProjectDir } from './configFile.ts';
-import {
-  findProcessesByCommandNameAndProjectDir,
-  findProcessesByProjectDir,
-} from './database/processTable.ts';
+import { findConfigFile, findProjectDir, getAllServiceNames } from './configFile.ts';
+import { findProcessesByCommandNameAndProjectDir } from './database/processTable.ts';
+import { startOneService } from './start/startOneService.ts';
 import { watchProcess } from './watchProcess.ts';
 
 interface WatchCommandOptions {
@@ -11,63 +9,48 @@ interface WatchCommandOptions {
 
 export async function handleWatch(options: WatchCommandOptions): Promise<void> {
   const projectDir = findProjectDir();
-  const commandNames = options.commandNames;
+  let commandNames = options.commandNames;
 
-  const foundProcesses: { serviceName: string; pid: number; projectDir: string }[] = [];
-
-  if (commandNames.length > 0) {
-    // Watch specific command names
-    for (const name of commandNames) {
-      const runningProcesses = findProcessesByCommandNameAndProjectDir(name, projectDir);
-
-      if (runningProcesses.length === 0) {
-        console.log(`No running process found for command '${name}' in project '${projectDir}'.`);
-        continue;
-      }
-
-      foundProcesses.push({
-        serviceName: name,
-        pid: runningProcesses[0].pid,
-        projectDir,
-      });
-    }
-  } else {
-    // No names provided - watch all running processes in the project
-    const runningProcesses = findProcessesByProjectDir(projectDir);
-
-    for (const process of runningProcesses) {
-      foundProcesses.push({
-        serviceName: process.command_name,
-        pid: process.pid,
-        projectDir,
-      });
+  if (commandNames.length === 0) {
+    // No names provided - treat like `start`: launch all configured services.
+    const { config } = findConfigFile(projectDir);
+    commandNames = getAllServiceNames(config);
+    if (commandNames.length === 0) {
+      console.log('No services configured in .candle.json');
+      return;
     }
   }
 
-  if (foundProcesses.length === 0) {
-    console.log('No running processes found to watch.');
-    console.log('');
-    return;
+  // Ensure each service is running. Skip those already running; start the rest.
+  for (const name of commandNames) {
+    const existing = findProcessesByCommandNameAndProjectDir(name, projectDir)
+      .filter(p => p.killed_at === null);
+    if (existing.length > 0) {
+      console.log(`[Service '${name}' is already running]`);
+      continue;
+    }
+    await startOneService({
+      projectDir,
+      commandName: name,
+      consoleOutputFormat: 'pretty',
+    });
   }
 
   // Print what we're watching
-  if (foundProcesses.length === 1) {
-    console.log(`Watching process '${foundProcesses[0].serviceName}' (PID: ${foundProcesses[0].pid})`);
+  if (commandNames.length === 1) {
+    console.log(`Watching process '${commandNames[0]}'`);
   } else {
-    console.log(`Watching ${foundProcesses.length} processes:`);
-    for (const proc of foundProcesses) {
-      console.log(`  - '${proc.serviceName}' (PID: ${proc.pid})`);
+    console.log(`Watching ${commandNames.length} processes:`);
+    for (const name of commandNames) {
+      console.log(`  - '${name}'`);
     }
   }
   console.log('Press Ctrl+C to stop watching.');
   console.log('');
 
-  const serviceNames = foundProcesses.map(p => p.serviceName);
-
-  // Start watching the processes
   await watchProcess({
     projectDir,
-    commandNames: serviceNames,
+    commandNames,
     consoleOutputFormat: 'pretty',
   });
 }
