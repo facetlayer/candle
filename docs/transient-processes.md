@@ -52,7 +52,7 @@ candle start web --shell "node other-server.js"
 ### Visibility in `ls`
 
 - Transient processes appear in `candle ls` while running
-- When killed, they disappear from the list (unlike config-defined services which show as "NOT LAUNCHED")
+- When killed, they disappear from the list (unlike config-defined services, which continue to appear with a "not running" status)
 - If a transient process shadows a config-defined service, `ls` will show a `[config changed]` warning
 
 ### Restart Behavior

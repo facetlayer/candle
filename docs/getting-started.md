@@ -43,15 +43,17 @@ Services are defined in a `.candle.json` file in your project directory:
 
 ```json
 {
-  "services": {
-    "api": {
+  "services": [
+    {
+      "name": "api",
       "shell": "npm run dev"
     },
-    "worker": {
+    {
+      "name": "worker",
       "shell": "npm run worker",
       "root": "./packages/worker"
     }
-  }
+  ]
 }
 ```
 

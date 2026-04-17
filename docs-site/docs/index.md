@@ -54,12 +54,15 @@ candle run server --shell "python -m http.server 8080"
 |---------|-------------|
 | [`run`](commands/run) | Start service(s) and watch their output |
 | [`start`](commands/start) | Start service(s) in the background |
+| [`check-start`](commands/check-start) | Start service(s) only if not already running |
 | [`restart`](commands/restart) | Restart running service(s) |
 | [`kill`](commands/kill) | Stop running service(s) |
 | [`list`](commands/list) | List active services |
 | [`logs`](commands/logs) | View recent logs |
 | [`watch`](commands/watch) | Watch live service output |
 | [`wait-for-log`](commands/wait-for-log) | Wait for a specific log message |
+| [`list-ports`](commands/list-ports) | List open ports for running services |
+| [`open-browser`](commands/open-browser) | Open a browser to a running service |
 
 ## See Also
 

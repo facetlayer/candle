@@ -60,6 +60,21 @@ Restart a running service.
 **Parameters:**
 - `name` (string, optional) - Name of the service to restart. If not provided, restarts all running services.
 
+### ListPorts
+
+List open (listening) ports for running services.
+
+**Parameters:**
+- `showAll` (boolean, optional) - Show ports for all services globally, not just current directory
+- `serviceName` (string, optional) - Filter to a specific service name
+
+### OpenBrowser
+
+Open a browser window to a running service's listening port.
+
+**Parameters:**
+- `serviceName` (string, required) - Name of the service to open in the browser
+
 ### AddServerConfig
 
 Add a new server configuration to the config file.
@@ -82,7 +97,7 @@ To use Candle with Claude Code, add it to your MCP configuration. Claude Code ca
 
 Before using MCP tools, you'll typically want to configure your services. You can do this via:
 
-- The CLI: `candle add-service api "npm run dev"`
+- The CLI: `candle add-service api --shell "npm run dev"`
 - The MCP `AddServerConfig` tool (see above)
 
 See [add-service](commands/add-service) for CLI usage details.

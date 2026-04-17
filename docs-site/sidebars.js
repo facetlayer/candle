@@ -23,6 +23,7 @@ const sidebars = {
       items: [
         {type: 'doc', id: 'commands/run', label: 'run'},
         {type: 'doc', id: 'commands/start', label: 'start'},
+        {type: 'doc', id: 'commands/check-start', label: 'check-start'},
         {type: 'doc', id: 'commands/restart', label: 'restart'},
         {type: 'doc', id: 'commands/kill', label: 'kill'},
         {type: 'doc', id: 'commands/list', label: 'list / ls'},

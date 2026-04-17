@@ -25,6 +25,7 @@ When running as an MCP server, the following tools are available:
 - `RestartService` - Restart a service
 - `GetLogs` - Get recent logs for a service
 - `ListPorts` - List open ports for running services
+- `OpenBrowser` - Open a browser window to a running service's port
 - `AddServerConfig` - Add a service to configuration
 
 ## Examples

@@ -54,11 +54,10 @@ The shell command to execute when starting the service.
 
 ### root (optional)
 
-A relative directory path where the command will run. Must be relative to the config file location.
+A directory path where the command will run. Relative paths are resolved against the config file location. Absolute paths are also supported.
 
 **Constraints:**
-- Cannot be an absolute path
-- Cannot use `..` to escape the project directory
+- If relative, cannot use `..` to escape the project directory
 
 ```json
 {

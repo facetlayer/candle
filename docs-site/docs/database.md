@@ -9,7 +9,12 @@ Usually you don't need to interact with this database directly, but it's there f
 
 ## Location
 
-By default the database is stored at `~/.local/state/candle/candle.db`. This location can change based on your `XDG_STATE_HOME` environment variable.
+By default the database is stored at `~/.local/state/candle/candle.db`.
+
+The location can be changed via environment variables:
+
+- `CANDLE_DATABASE_DIR` - Overrides the database directory entirely. This is useful for testing or running isolated instances.
+- `XDG_STATE_HOME` - If set (and `CANDLE_DATABASE_DIR` is not), the database is stored at `$XDG_STATE_HOME/candle/candle.db`.
 
 ## Commands
 
