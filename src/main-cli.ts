@@ -6,7 +6,7 @@ import { hideBin } from 'yargs/helpers';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
-import { DocFilesHelper } from '@facetlayer/doc-files-helper';
+import { DocFilesHelper } from '@facetlayer/docs-tool';
 import { addServerConfig } from './addServerConfig.ts';
 import { removeServerConfig } from './removeServerConfig.ts';
 import { findProjectDir } from './configFile.ts';

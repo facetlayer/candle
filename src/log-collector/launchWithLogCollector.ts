@@ -1,4 +1,4 @@
-import { startShellCommand } from '@facetlayer/subprocess-wrapper';
+import { startShellCommand } from '@facetlayer/subprocess';
 import * as Path from 'node:path';
 import * as fs from 'node:fs';
 import { ProjectRootDir } from '../dirs.ts';

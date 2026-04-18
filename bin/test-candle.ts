@@ -14,7 +14,7 @@
  *   bin/test-candle.ts list  # Without flags, passes through normally
  */
 
-import { runShellCommand } from '@facetlayer/subprocess-wrapper';
+import { runShellCommand } from '@facetlayer/subprocess';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 

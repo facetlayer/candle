@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { runShellCommand, SubprocessResult } from '@facetlayer/subprocess-wrapper';
+import { runShellCommand, SubprocessResult } from '@facetlayer/subprocess';
 import { mcpShell, MCPStdinSubprocess } from 'expect-mcp';
 
 // DEPRECATED: CommandResult is the old response object. This will be deleted. Use SubprocessResult instead.

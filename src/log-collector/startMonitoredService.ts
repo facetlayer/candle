@@ -1,4 +1,4 @@
-import { startShellCommand, Subprocess } from '@facetlayer/subprocess-wrapper';
+import { startShellCommand, Subprocess } from '@facetlayer/subprocess';
 import * as Path from 'node:path';
 import type { LogCollectorLaunchInfo } from './LogCollectorLaunchInfo.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';

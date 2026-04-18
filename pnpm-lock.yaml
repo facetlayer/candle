@@ -8,18 +8,18 @@ importers:
 
   .:
     dependencies:
-      '@facetlayer/doc-files-helper':
-        specifier: ^0.1.2
-        version: 0.1.2
+      '@facetlayer/docs-tool':
+        specifier: ^0.2.0
+        version: 0.2.0
       '@facetlayer/parse-stdout-lines':
         specifier: ^1.1.0
         version: 1.1.0
       '@facetlayer/sqlite-wrapper':
         specifier: ^1.3.0
         version: 1.3.0
-      '@facetlayer/subprocess-wrapper':
-        specifier: ^1.1.0
-        version: 1.1.0
+      '@facetlayer/subprocess':
+        specifier: ^1.1.1
+        version: 1.1.1
       '@modelcontextprotocol/sdk':
         specifier: 1.12.1
         version: 1.12.1
@@ -556,6 +556,10 @@ packages:
     resolution: {integrity: sha512-GbIblmIHF9epp3s/PXYqa3Nq5kiAdUHMRHScy9CWnUBU/xEvy9UHqgZPM82kCJQ6U43VAxFJVRr3rNTyER1lCw==}
     hasBin: true
 
+  '@facetlayer/docs-tool@0.2.0':
+    resolution: {integrity: sha512-77dF5FwpuH65BXFHAOEDQFZynwQD6r4gu1cRXHo8wcv3ioV/Yx6GZGi1QQhjzkPFVOcABPzlBI1aJTpYKQAjQw==, tarball: https://npm.pkg.github.com/download/@facetlayer/docs-tool/0.2.0/6b58955793dec7a39a4fe9016e3e7f3305a79e96}
+    hasBin: true
+
   '@facetlayer/generic-lexer@1.0.0':
     resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
 
@@ -592,8 +596,8 @@ packages:
   '@facetlayer/streams@1.0.1':
     resolution: {integrity: sha512-eRGjR4FgtfB42doHs9H5p7rDzX9lvl6TPoNkH8v9UZhakI4lPdEgIkTYDgHncXsYPsCoj1M94vMSYQzaGyuZhg==}
 
-  '@facetlayer/subprocess-wrapper@1.1.0':
-    resolution: {integrity: sha512-WPqR7AwVluyvgFMPYKXjg5S7tORCDZGXWEivJIOoHBfSXJoBafC0rb8+YTboxSpNfvuCaGMEVaXv0rZHQFRRqg==}
+  '@facetlayer/subprocess@1.1.1':
+    resolution: {integrity: sha512-eg+RTBKQC3+a9VZg4/gfO+6T8/47lW7PdoC6VwLslD6DcsDsK8k4dmhuYmZUGi4yLS2rqvPo9yY4PFQcjYqHJg==, tarball: https://npm.pkg.github.com/download/@facetlayer/subprocess/1.1.1/e67eae09c0136c124ae76f2ed7c3bd83fa4fff2f}
 
   '@facetlayer/userdata-db@0.1.1':
     resolution: {integrity: sha512-EZYjSyStiIBeKJ19FTuXQ7KpETUZA7gmx9pUaHL0/KAyZ1wNVbk2VEF/E7gewkECp/yxrdz3DXPoKnkyWZ7WTw==}
@@ -2761,6 +2765,11 @@ snapshots:
     dependencies:
       yargs: 18.0.0
 
+  '@facetlayer/docs-tool@0.2.0':
+    dependencies:
+      '@facetlayer/subprocess': 1.1.1
+      yargs: 18.0.0
+
   '@facetlayer/generic-lexer@1.0.0': {}
 
   '@facetlayer/parse-stdout-lines@1.1.0': {}
@@ -2821,7 +2830,7 @@ snapshots:
 
   '@facetlayer/streams@1.0.1': {}
 
-  '@facetlayer/subprocess-wrapper@1.1.0':
+  '@facetlayer/subprocess@1.1.1':
     dependencies:
       '@facetlayer/parse-stdout-lines': 1.1.0
       '@facetlayer/streams': 1.0.1
