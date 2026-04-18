@@ -134,8 +134,8 @@ function configureYargs() {
     .command('restart [name]', 'Restart a running process', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command(['kill [name...]', 'stop [name...]'], 'Kill process(es) in the current directory', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command('kill-all', 'Kill all running processes', (yargs: Argv) => { yargs.strictOptions(); })
-    .command(['list', 'ls'], 'List processes for current directory', (yargs: Argv) => { yargs.strictOptions(); })
-    .command('list-all', 'List all processes', (yargs: Argv) => { yargs.strictOptions(); })
+    .command(['list', 'ls'], 'List processes for current directory', (yargs: Argv) => { yargs.option('json', { type: 'boolean', describe: 'Output as JSON' }).strictOptions(); })
+    .command('list-all', 'List all processes', (yargs: Argv) => { yargs.option('json', { type: 'boolean', describe: 'Output as JSON' }).strictOptions(); })
     .command('logs [name...]', 'Show recent logs for process(es)', (yargs: Argv) => {
       yargs
         .positional('name', { type: 'string' })
@@ -231,6 +231,7 @@ function parseArgs(): {
   topic?: string;
   count?: number;
   startAt?: number;
+  json?: boolean;
 } {
   const argv = configureYargs().parseSync();
 
@@ -249,8 +250,9 @@ function parseArgs(): {
   const topic = argv.topic as string;
   const count = argv.count as number;
   const startAt = argv['start-at'] as number;
+  const json = argv.json as boolean;
 
-  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt };
+  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json };
 }
 
 export async function main(): Promise<void> {
@@ -277,7 +279,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt } =
+  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -324,13 +326,21 @@ export async function main(): Promise<void> {
     case 'list':
     case 'ls': {
       const output = await handleList({});
-      printListOutput(output);
+      if (json) {
+        console.log(JSON.stringify(output.processes, null, 2));
+      } else {
+        printListOutput(output);
+      }
       break;
     }
 
     case 'list-all': {
       const output = await handleList({ showAll: true });
-      printListOutput(output);
+      if (json) {
+        console.log(JSON.stringify(output.processes, null, 2));
+      } else {
+        printListOutput(output);
+      }
       break;
     }
 
