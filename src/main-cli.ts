@@ -22,6 +22,7 @@ import { handleLogsCommand } from './logs-command.ts';
 import { handleRestart } from './restart-command.ts';
 import { handleStartCommand } from './start-command.ts';
 import { handleWaitForLog } from './wait-for-log-command.ts';
+import { handleSetConfig } from './set-config-command.ts';
 import { handleSetupProject } from './setup-project-command.ts';
 import { handleWatch } from './watch-command.ts';
 import { serveMCP } from './mcp/mcp-main.ts';
@@ -62,6 +63,7 @@ Configuration:
   setup-project             Create a new .candle.json in the current directory
   add-service [name] ...    Add a new service to .candle.json
   remove-service [name]     Remove a service from .candle.json
+  set-config <key> <value>  Set a configuration option in .candle.json
 
 Documentation:
   list-docs                 List available documentation
@@ -200,6 +202,18 @@ function configureYargs() {
         })
         .strictOptions();
     })
+    .command('set-config <key> <value>', 'Set a configuration option in .candle.json', (yargs: Argv) => {
+      yargs
+        .positional('key', {
+          describe: 'Config key (e.g. logCollector, logEviction.maxLogsPerService)',
+          type: 'string',
+        })
+        .positional('value', {
+          describe: 'Value to set',
+          type: 'string',
+        })
+        .strictOptions();
+    })
     .command('clear-logs [name]', 'Clear logs for process(es)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
     .command('erase-database', 'Erase the Candle database', (yargs: Argv) => { yargs.strictOptions(); })
     .command('list-docs', 'List available documentation', (yargs: Argv) => { yargs.strictOptions(); })
@@ -232,6 +246,8 @@ function parseArgs(): {
   count?: number;
   startAt?: number;
   json?: boolean;
+  key?: string;
+  value?: string;
 } {
   const argv = configureYargs().parseSync();
 
@@ -251,8 +267,10 @@ function parseArgs(): {
   const count = argv.count as number;
   const startAt = argv['start-at'] as number;
   const json = argv.json as boolean;
+  const key = argv.key as string;
+  const value = argv.value as string;
 
-  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json };
+  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value };
 }
 
 export async function main(): Promise<void> {
@@ -279,7 +297,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json } =
+  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -459,6 +477,16 @@ export async function main(): Promise<void> {
         });
       } catch (error) {
         console.error(`Error adding service: ${error.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'set-config': {
+      try {
+        handleSetConfig(key, value);
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
         process.exit(1);
       }
       break;
