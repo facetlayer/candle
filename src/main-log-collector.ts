@@ -67,7 +67,7 @@ async function main() {
   const launchInfo = await getLaunchInfo();
 
   // Check for cleanup on an interval.
-  setInterval(maybeRunCleanup, 60 * 1000);
+  const cleanupInterval = setInterval(maybeRunCleanup, 60 * 1000);
 
   debugLog('[main-log-collector] Got launchInfo: ' + JSON.stringify(launchInfo));
 
@@ -114,7 +114,8 @@ async function main() {
       projectDir: launchInfo.projectDir,
       pid,
     });
-    return;
+    clearInterval(cleanupInterval);
+    process.exit(1);
   }
 
   debugLog('[main-log-collector] Process started, pid=' + pid);
@@ -141,6 +142,9 @@ async function main() {
     projectDir: launchInfo.projectDir,
     pid,
   });
+
+  clearInterval(cleanupInterval);
+  process.exit(0);
 }
 
 main().catch(error => {
