@@ -1,5 +1,5 @@
 
-# Unreleased
+# 0.13.0
  - Fix log-collector processes leaking as orphans after service exit (missing clearInterval and process.exit)
  - Add `candle remove-service` command to remove a service from .candle.json
  - `candle watch` now launches services that aren't running before watching them
