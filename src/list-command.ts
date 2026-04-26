@@ -1,11 +1,10 @@
 import { findConfigFile, type ServiceConfig } from './configFile.ts';
 import {
-  deleteProcessEntry,
   findAllProcesses,
   findRunningProcessesByProjectDir,
   type ProcessEntry,
 } from './database/processTable.ts';
-import { isProcessAlive } from './process-alive.ts';
+import { filterAliveProcesses } from './process-alive.ts';
 
 export interface ListOutput {
   processes: {
@@ -43,28 +42,6 @@ function hasConfigDrift(
   }
 
   return false;
-}
-
-/**
- * Filter out processes whose PIDs are no longer alive, removing stale
- * entries from the database. This handles the case where a reboot or
- * external kill left behind DB records with no matching OS process.
- */
-function filterAliveProcesses(entries: ProcessEntry[]): ProcessEntry[] {
-  return entries.filter(entry => {
-    if (entry.log_collector_pid && isProcessAlive(entry.log_collector_pid)) {
-      return true;
-    }
-    if (isProcessAlive(entry.pid)) {
-      return true;
-    }
-    deleteProcessEntry({
-      commandName: entry.command_name,
-      projectDir: entry.project_dir,
-      pid: entry.pid,
-    });
-    return false;
-  });
 }
 
 export async function handleList(options?: { showAll?: boolean }): Promise<ListOutput> {

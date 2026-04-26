@@ -1,4 +1,6 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import * as path from 'path';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-check-start');
@@ -27,6 +29,43 @@ describe('CLI Check-Start Command', () => {
 
         expect(result.stdoutAsString()).toContain('already running');
         expect(result.stdoutAsString()).not.toContain('Started');
+    });
+
+    it('should start service when DB has stale entry with dead PID (post-reboot)', async () => {
+        // Use a fresh workspace so other tests don't interfere with the dead-PID row.
+        const staleWorkspace = new TestWorkspace('cli-check-start-stale');
+        // Provide a config so 'echo' is resolvable.
+        const fs = await import('fs');
+        fs.writeFileSync(
+            path.join(staleWorkspace.dbDir, '.candle.json'),
+            JSON.stringify({
+                services: [
+                    { name: 'echo', shell: 'node ../../sampleServers/echoServer.js' },
+                ],
+            })
+        );
+
+        // Initialize the database.
+        await staleWorkspace.runCli(['list-all']);
+
+        // Insert a stale row simulating post-reboot: killed_at=null but PID is dead.
+        const dbPath = path.join(staleWorkspace.dbDir, 'candle.db');
+        const db = new DatabaseSync(dbPath);
+        const fakePid = 2147483000;
+        db.exec(`insert into processes (command_name, project_dir, pid, log_collector_pid, start_time, shell)
+                  values ('echo', '${staleWorkspace.dbDir}', ${fakePid}, ${fakePid + 1}, strftime('%s','now'), 'node ../../sampleServers/echoServer.js')`);
+        db.close();
+
+        // check-start should detect the dead PID and actually start the service,
+        // NOT report 'already running'.
+        const result = await staleWorkspace.runCli(['check-start', 'echo']);
+        const output = result.stdoutAsString();
+        expect(output).not.toContain('already running');
+        expect(output).toContain('Started');
+
+        // Cleanup
+        await staleWorkspace.runCli(['kill-all'], { ignoreExitCode: true });
+        await staleWorkspace.cleanup();
     });
 
     it('should work with multiple service names', async () => {

@@ -8,6 +8,7 @@ import { launchWithLogCollector } from '../log-collector/launchWithLogCollector.
 import { LogIterator } from '../logs/LogIterator.ts';
 import { saveProcessLog } from '../logs/processLogs.ts';
 import { ProcessLogType } from '../logs/ProcessLogType.ts';
+import { filterAliveProcesses } from '../process-alive.ts';
 import { debugLog } from '../debug.ts';
 
 export interface RunOptions {
@@ -65,7 +66,12 @@ export async function startOneService(req: RunOptions): Promise<StartResult> {
       throw new UsageError('Command name is required');
     }
     const existingProcesses = findProcessesByCommandNameAndProjectDir(req.commandName, projectDir);
-    const runningProcesses = existingProcesses.filter(p => p.killed_at === null);
+    // Only consider entries with no killed_at AND a live PID. Reboots leave
+    // killed_at=null rows behind for processes that no longer exist; without
+    // the alive check, check-start would skip starting a service that isn't
+    // actually running. filterAliveProcesses also deletes the dead rows.
+    const notKilled = existingProcesses.filter(p => p.killed_at === null);
+    const runningProcesses = filterAliveProcesses(notKilled);
     if (runningProcesses.length > 0) {
       console.log(`[Service '${req.commandName}' is already running]`);
       return { projectDir, serviceName: req.commandName };
