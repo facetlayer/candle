@@ -1,4 +1,8 @@
 
+# 0.13.1
+ - Fix `candle check-start` skipping a service when the DB has a stale `killed_at=null` row with a dead PID (post-reboot). It now verifies the PID is alive and clears the stale row before deciding.
+ - Promote `filterAliveProcesses` to `process-alive.ts` and use it in both `handleList` and the `check-start` path.
+
 # 0.13.0
  - Fix log-collector processes leaking as orphans after service exit (missing clearInterval and process.exit)
  - Add `candle remove-service` command to remove a service from .candle.json
