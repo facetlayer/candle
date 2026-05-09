@@ -6,7 +6,7 @@ dist
 *.db
 *.db-shm
 *.db-wal
-test/workspaces/cli-add-service/fixture-*
+test/workspaces/
 .docusaurus
 docs-site/build
 .env
