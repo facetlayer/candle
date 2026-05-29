@@ -1,4 +1,8 @@
 
+# 0.13.2
+ - Fix `candle watch` printing no log output. The 10-second recency window compared second-resolution log timestamps against a millisecond cutoff, so every log line was filtered out.
+ - Add unit tests for `LatestExecutionLogFilter` and integration tests for the `watch` command.
+
 # 0.13.1
  - Fix `candle check-start` skipping a service when the DB has a stale `killed_at=null` row with a dead PID (post-reboot). It now verifies the PID is alive and clears the stale row before deciding.
  - Promote `filterAliveProcesses` to `process-alive.ts` and use it in both `handleList` and the `check-start` path.

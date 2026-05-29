@@ -1,6 +1,6 @@
 {
   "name": "@facetlayer/candle",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
