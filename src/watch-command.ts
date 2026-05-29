@@ -4,10 +4,12 @@ import { watchProcess } from './watchProcess.ts';
 
 interface WatchCommandOptions {
   commandNames: string[]; // Names of the commands to watch
+  exitAfterMs?: number; // Optional: stop watching automatically after this many ms (used for testing)
 }
 
 export async function handleWatch(options: WatchCommandOptions): Promise<void> {
   const projectDir = findProjectDir();
+  const { exitAfterMs } = options;
   const commandNames = resolveCommandNamesOrAll(projectDir, options.commandNames);
 
   // Ensure each service is running. startOneService with checkStart:true is a no-op
@@ -37,5 +39,6 @@ export async function handleWatch(options: WatchCommandOptions): Promise<void> {
     projectDir,
     commandNames,
     consoleOutputFormat: 'pretty',
+    exitAfterMs,
   });
 }

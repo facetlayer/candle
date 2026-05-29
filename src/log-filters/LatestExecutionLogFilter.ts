@@ -59,7 +59,9 @@ export class LatestExecutionLogFilter {
     this.recentCommandLaunch.clear();
 
     if (this.recentWindowMs !== undefined) {
-      this.minTimestamp = Date.now() - this.recentWindowMs;
+      // Log timestamps are stored in seconds (the DB column default is
+      // strftime('%s', 'now')), so convert the window cutoff to seconds to match.
+      this.minTimestamp = (Date.now() - this.recentWindowMs) / 1000;
     }
 
     for (const log of logs) {

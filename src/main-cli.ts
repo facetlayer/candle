@@ -151,7 +151,17 @@ function configureYargs() {
         })
         .strictOptions();
     })
-    .command('watch [name...]', 'Watch live output from process(es)', (yargs: Argv) => { yargs.positional('name', { type: 'string' }).strictOptions(); })
+    .command('watch [name...]', 'Watch live output from process(es)', (yargs: Argv) => {
+      yargs
+        .positional('name', { type: 'string' })
+        .option('exit-after-ms', {
+          // Hidden option: automatically stop watching after the given number of
+          // milliseconds. Primarily used to make the watch command testable.
+          type: 'number',
+          hidden: true,
+        })
+        .strictOptions();
+    })
     .command('wait-for-log [name]', 'Wait for a specific log message', (yargs: Argv) => {
       yargs
         .positional('name', { type: 'string' })
@@ -248,6 +258,7 @@ function parseArgs(): {
   json?: boolean;
   key?: string;
   value?: string;
+  exitAfterMs?: number;
 } {
   const argv = configureYargs().parseSync();
 
@@ -269,8 +280,9 @@ function parseArgs(): {
   const json = argv.json as boolean;
   const key = argv.key as string;
   const value = argv.value as string;
+  const exitAfterMs = argv['exit-after-ms'] as number;
 
-  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value };
+  return { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value, exitAfterMs };
 }
 
 export async function main(): Promise<void> {
@@ -297,7 +309,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value } =
+  const { command, commandNames, mcp, shell, root, enableStdin, message, timeout, topic, count, startAt, json, key, value, exitAfterMs } =
     parseArgs();
 
   // Check if no arguments - print help
@@ -425,7 +437,7 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       // Don't validate command names - allow watching transient processes
-      await handleWatch({ commandNames });
+      await handleWatch({ commandNames, exitAfterMs });
       break;
     }
 
