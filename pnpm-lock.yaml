@@ -590,7 +590,7 @@ packages:
     resolution: {integrity: sha512-eRGjR4FgtfB42doHs9H5p7rDzX9lvl6TPoNkH8v9UZhakI4lPdEgIkTYDgHncXsYPsCoj1M94vMSYQzaGyuZhg==}
 
   '@facetlayer/subprocess@1.1.1':
-    resolution: {integrity: sha512-eg+RTBKQC3+a9VZg4/gfO+6T8/47lW7PdoC6VwLslD6DcsDsK8k4dmhuYmZUGi4yLS2rqvPo9yY4PFQcjYqHJg==, tarball: https://npm.pkg.github.com/download/@facetlayer/subprocess/1.1.1/e67eae09c0136c124ae76f2ed7c3bd83fa4fff2f}
+    resolution: {integrity: sha512-wqutokTn4PCEyRqsFpkCmJ+eNmpka3ENF7nnwlMzOoHo87yF9Tz2g72WyATnY4wq8unNyZbXK5FBQOO6PVGOdA==}
 
   '@facetlayer/userdata-db@0.1.1':
     resolution: {integrity: sha512-EZYjSyStiIBeKJ19FTuXQ7KpETUZA7gmx9pUaHL0/KAyZ1wNVbk2VEF/E7gewkECp/yxrdz3DXPoKnkyWZ7WTw==}

@@ -13,17 +13,6 @@ runs:
       shell: bash
       run: corepack enable
 
-    - name: Authenticate to GitHub Packages
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: |
-        # @facetlayer/subprocess resolves from GitHub Packages
-        # (npm.pkg.github.com), which returns 401 for unauthenticated requests.
-        # The runner's GITHUB_TOKEN authenticates here; note the package must
-        # also grant read access to this repo or the download returns 403.
-        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-
     - name: Restore pnpm cache
       uses: actions/cache/restore@v4
       with:
