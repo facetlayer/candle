@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@facetlayer/docs-tool':
-        specifier: ^0.2.0
-        version: 0.2.0
       '@facetlayer/parse-stdout-lines':
         specifier: ^1.1.0
         version: 1.1.0
@@ -554,10 +551,6 @@ packages:
 
   '@facetlayer/doc-files-helper@0.1.2':
     resolution: {integrity: sha512-GbIblmIHF9epp3s/PXYqa3Nq5kiAdUHMRHScy9CWnUBU/xEvy9UHqgZPM82kCJQ6U43VAxFJVRr3rNTyER1lCw==}
-    hasBin: true
-
-  '@facetlayer/docs-tool@0.2.0':
-    resolution: {integrity: sha512-77dF5FwpuH65BXFHAOEDQFZynwQD6r4gu1cRXHo8wcv3ioV/Yx6GZGi1QQhjzkPFVOcABPzlBI1aJTpYKQAjQw==, tarball: https://npm.pkg.github.com/download/@facetlayer/docs-tool/0.2.0/6b58955793dec7a39a4fe9016e3e7f3305a79e96}
     hasBin: true
 
   '@facetlayer/generic-lexer@1.0.0':
@@ -2763,11 +2756,6 @@ snapshots:
 
   '@facetlayer/doc-files-helper@0.1.2':
     dependencies:
-      yargs: 18.0.0
-
-  '@facetlayer/docs-tool@0.2.0':
-    dependencies:
-      '@facetlayer/subprocess': 1.1.1
       yargs: 18.0.0
 
   '@facetlayer/generic-lexer@1.0.0': {}
