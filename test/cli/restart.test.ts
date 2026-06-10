@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, it, expect, afterAll } from 'vitest';
 import { TestWorkspace } from './utils';
 
@@ -169,6 +171,43 @@ describe('CLI Restart Command', () => {
             const killedCount = (output.match(/Killed/g) || []).length;
 
             expect(killedCount).toBeLessThanOrEqual(1);
+        });
+    });
+
+    describe('restart reloads command from config', () => {
+        // This suite edits its own .candle.json, so it uses a dedicated
+        // workspace to avoid clobbering the shared cli-restart config.
+        const reloadWorkspace = new TestWorkspace('cli-restart-reload');
+        const configPath = path.join(reloadWorkspace.dbDir, '.candle.json');
+
+        afterAll(() => reloadWorkspace.cleanup());
+
+        function writeConfig(marker: string) {
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({
+                    services: [
+                        {
+                            name: 'marker',
+                            shell: `node ../../sampleServers/markerServer.js ${marker} 600000`,
+                        },
+                    ],
+                }, null, 2)
+            );
+        }
+
+        it('should pick up an edited shell command on restart', async () => {
+            writeConfig('marker-v1');
+            await reloadWorkspace.runCli(['start', 'marker']);
+            await reloadWorkspace.runCli(['wait-for-log', 'marker', '--message', 'MARKER=marker-v1']);
+
+            // Edit the config to launch with a different command, then restart.
+            // Before the fix, restart relaunched the originally-captured command
+            // (marker-v1) and this new marker would never appear.
+            writeConfig('marker-v2');
+            await reloadWorkspace.runCli(['restart', 'marker']);
+
+            await reloadWorkspace.runCli(['wait-for-log', 'marker', '--message', 'MARKER=marker-v2']);
         });
     });
 

@@ -1,7 +1,25 @@
+import { findConfigFile, findServiceByName } from './configFile.ts';
 import { findProcessesByCommandNameAndProjectDir, findRunningProcessesByProjectDir, type ProcessEntry } from './database/processTable.ts';
 import { UsageError } from './errors.ts';
 import { handleKillCommand } from './kill-command.ts';
 import { startOneService } from './start/startOneService.ts';
+
+/*
+ isServiceDefinedInConfig
+
+ Returns true if the named service has an entry in the project's .candle.json.
+ Used so that restart reloads config-defined services from the config file
+ (picking up edits to `shell`/`root`) rather than relaunching with the command
+ that was captured when the process was first started.
+*/
+function isServiceDefinedInConfig(commandName: string, projectDir: string): boolean {
+  try {
+    const { config } = findConfigFile(projectDir);
+    return findServiceByName(config, commandName) !== null;
+  } catch {
+    return false;
+  }
+}
 
 interface RestartOptions {
   projectDir: string;
@@ -38,15 +56,26 @@ export async function handleRestart(options: RestartOptions) {
     // Kill all existing processes
     await handleKillCommand({ projectDir, commandNames });
 
-    // Then restart each service using stored shell/root if available
+    // Then restart each service. For config-defined services, reload the
+    // command from .candle.json so edits to `shell`/`root` take effect on
+    // restart. Only fall back to the stored shell/root for transient
+    // processes that aren't present in the config file.
     for (const commandName of commandNames) {
-      const runningProcess = processInfoMap.get(commandName);
+      let shell: string | undefined;
+      let root: string | undefined;
+
+      if (!isServiceDefinedInConfig(commandName, projectDir)) {
+        const runningProcess = processInfoMap.get(commandName);
+        shell = runningProcess?.shell;
+        root = runningProcess?.root;
+      }
+
       await startOneService({
         projectDir,
         commandName,
         consoleOutputFormat,
-        shell: runningProcess?.shell,
-        root: runningProcess?.root,
+        shell,
+        root,
       });
     }
   } catch (error) {
