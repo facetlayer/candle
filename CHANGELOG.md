@@ -1,4 +1,8 @@
 
+# 0.13.3
+ - Fix `candle restart` ignoring edits to a config-defined service's `shell`/`root`. It now reloads the service definition from `.candle.json` on restart, so config edits take effect. Transient processes (started with `--shell`) still relaunch with their stored command.
+ - Fix CI by authenticating to GitHub Packages so pnpm's supply-chain policy check can verify `@facetlayer/*` dependencies hosted there.
+
 # 0.13.2
  - Fix `candle watch` printing no log output. The 10-second recency window compared second-resolution log timestamps against a millisecond cutoff, so every log line was filtered out.
  - Add unit tests for `LatestExecutionLogFilter` and integration tests for the `watch` command.
