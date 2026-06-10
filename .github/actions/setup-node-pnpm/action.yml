@@ -18,11 +18,10 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
-        # @facetlayer/docs-tool and @facetlayer/subprocess resolve from GitHub
-        # Packages (npm.pkg.github.com), which returns 401 for unauthenticated
-        # metadata requests. Without auth, pnpm's supply-chain policy check
-        # (minimumReleaseAge) can't verify them and the install fails. The
-        # runner's GITHUB_TOKEN has packages:read for the facetlayer org.
+        # @facetlayer/subprocess resolves from GitHub Packages
+        # (npm.pkg.github.com), which returns 401 for unauthenticated requests.
+        # The runner's GITHUB_TOKEN authenticates here; note the package must
+        # also grant read access to this repo or the download returns 403.
         echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
 
     - name: Restore pnpm cache
