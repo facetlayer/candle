@@ -13,6 +13,18 @@ runs:
       shell: bash
       run: corepack enable
 
+    - name: Authenticate to GitHub Packages
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        # @facetlayer/docs-tool and @facetlayer/subprocess resolve from GitHub
+        # Packages (npm.pkg.github.com), which returns 401 for unauthenticated
+        # metadata requests. Without auth, pnpm's supply-chain policy check
+        # (minimumReleaseAge) can't verify them and the install fails. The
+        # runner's GITHUB_TOKEN has packages:read for the facetlayer org.
+        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+
     - name: Restore pnpm cache
       uses: actions/cache/restore@v4
       with:
