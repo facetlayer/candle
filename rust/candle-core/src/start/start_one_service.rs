@@ -156,14 +156,14 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     let deadline = Instant::now() + START_TIMEOUT;
     let mut started = false;
     'watch: loop {
-        let logs = log_iterator.get_next_logs(conn).map_err(db_err)?;
+        let logs = log_iterator.get_next_logs(conn, None).map_err(db_err)?;
         for log in &logs {
             if log.log_type == ProcessLogType::ProcessStarted.as_i64() {
                 started = true;
                 break 'watch;
             }
             if log.log_type == ProcessLogType::ProcessStartFailed.as_i64() {
-                let recent = initial_log_position.get_next_logs(conn).map_err(db_err)?;
+                let recent = initial_log_position.get_next_logs(conn, None).map_err(db_err)?;
                 let recent_logs = recent
                     .iter()
                     .map(|l| l.content.clone().unwrap_or_default())

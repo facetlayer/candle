@@ -14,6 +14,7 @@ pub mod doc_files;
 pub mod errors;
 pub mod kill;
 pub mod log_collector;
+pub mod log_filters;
 pub mod logs;
 pub mod output;
 pub mod process_alive;
