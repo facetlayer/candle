@@ -12,6 +12,7 @@ use std::process::exit;
 
 use candle_core::commands::assert_valid_command_names;
 use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
+use candle_core::commands::wait_for_log::handle_wait_for_log;
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
@@ -120,6 +121,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "check-start" => cmd_start(args, true),
         "list" => cmd_list(args, false),
         "list-all" => cmd_list(args, true),
+        "wait-for-log" => cmd_wait_for_log(args),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -326,6 +328,43 @@ fn cmd_list(args: &CommandArgs, show_all: bool) {
         println!("{}", list_output_to_json(&output));
     } else {
         println!("{}", format_list_output(&output));
+    }
+}
+
+/// `wait-for-log`: poll the named command's logs for a substring until it
+/// appears, the process exits, or the timeout elapses.
+fn cmd_wait_for_log(args: &CommandArgs) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    // --message is required (yargs demandOption).
+    let message = match args.value("message") {
+        Some(m) => m,
+        None => {
+            eprintln!("Missing required argument: message");
+            exit(1);
+        }
+    };
+
+    // --timeout is in seconds, default 30; convert to ms like TS `timeout * 1000`.
+    let timeout_secs: f64 = args
+        .value("timeout")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30.0);
+    let timeout_ms = (timeout_secs * 1000.0) as u64;
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    // Don't validate command names (transient names are allowed).
+
+    let result =
+        handle_wait_for_log(&conn, &project_dir, &args.positionals, message, timeout_ms);
+    if !result.success {
+        exit(1);
     }
 }
 

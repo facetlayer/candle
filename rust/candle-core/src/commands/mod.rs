@@ -3,6 +3,7 @@
 //! (e.g. [`crate::kill`]).
 
 pub mod list;
+pub mod wait_for_log;
 
 use std::path::Path;
 
