@@ -22,6 +22,7 @@ use candle_core::db::get_database;
 use candle_core::doc_files::{self, DocLookupError};
 use candle_core::errors::CandleError;
 use candle_core::kill::{handle_kill_all, handle_kill_command};
+use candle_core::start::{handle_start_command, StartCommandOptions};
 use parser::{canonical_command, parse_command_args, CommandArgs};
 use rusqlite::Connection;
 
@@ -115,6 +116,8 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "get-doc" => cmd_get_doc(args),
         "kill" => cmd_kill(args),
         "kill-all" => cmd_kill_all(),
+        "start" => cmd_start(args, false),
+        "check-start" => cmd_start(args, true),
         "list" => cmd_list(args, false),
         "list-all" => cmd_list(args, true),
         // Remaining process-management commands are wired in later milestones.
@@ -277,6 +280,34 @@ fn cmd_kill_all() {
     if let Err(e) = handle_kill_all(&conn, false) {
         eprintln!("candle: database error: {e}");
         exit(1);
+    }
+}
+
+/// `start` / `run` (`check_start = false`) and `check-start` (`check_start =
+/// true`): resolve the project dir, then launch the requested service(s).
+fn cmd_start(args: &CommandArgs, check_start: bool) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    let opts = StartCommandOptions {
+        project_dir,
+        command_names: args.positionals.clone(),
+        shell: args.value("shell").map(str::to_string),
+        root: args.value("root").map(str::to_string),
+        enable_stdin: args.has("enable-stdin"),
+        check_start,
+    };
+
+    match handle_start_command(&conn, opts) {
+        // main-cli.ts calls process.exit(0) after start; match that.
+        Ok(()) => exit(0),
+        Err(e) => fail_with(&e),
     }
 }
 

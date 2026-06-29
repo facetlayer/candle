@@ -10,14 +10,16 @@ pub mod monitor;
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Handshake contract describing the service to supervise.
 ///
 /// Mirrors `LogCollectorLaunchInfo` in `src/log-collector/LogCollectorLaunchInfo.ts`.
 /// Field names are camelCase to match the JSON written by the launcher
 /// (`commandName`, `projectDir`, `shell`, `root`, `enableStdin`, `databasePath`).
-#[derive(Debug, Clone, Deserialize)]
+/// `Serialize` is used by the CLI launcher ([`crate::start::launch`]) to write the
+/// handshake; `Deserialize` is used by the sidecar binary to read it back.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogCollectorLaunchInfo {
     pub command_name: String,

@@ -18,6 +18,15 @@ pub enum CandleError {
     MissingServiceWithName { command_name: String, cwd: String },
     /// No `.candle.json` file was found in or above a directory.
     MissingSetupFile { cwd: String },
+    /// A service failed to start; carries the joined content of the recent log
+    /// lines captured during launch. Mirrors `ProcessStartFailedError`.
+    ProcessStartFailed {
+        command_name: String,
+        recent_logs: String,
+    },
+    /// A generic, non-usage error (timeouts, launch/IO failures). Mirrors a plain
+    /// `Error` thrown in the Node start flow.
+    Generic(String),
 }
 
 impl CandleError {
@@ -31,6 +40,8 @@ impl CandleError {
             CandleError::ConfigFileError(_) => false,
             CandleError::MissingServiceWithName { .. } => true,
             CandleError::MissingSetupFile { .. } => true,
+            CandleError::ProcessStartFailed { .. } => true,
+            CandleError::Generic(_) => false,
         }
     }
 
@@ -45,6 +56,8 @@ impl CandleError {
             CandleError::ConfigFileError(_) => "ConfigFileError",
             CandleError::MissingServiceWithName { .. } => "NeedRunCommandError",
             CandleError::MissingSetupFile { .. } => "MissingSetupFile",
+            CandleError::ProcessStartFailed { .. } => "ProcessStartFailedError",
+            CandleError::Generic(_) => "Error",
         }
     }
 }
@@ -62,6 +75,14 @@ impl fmt::Display for CandleError {
                 f,
                 "No .candle.json file found in (or above) current directory: {cwd}"
             ),
+            CandleError::ProcessStartFailed {
+                command_name,
+                recent_logs,
+            } => write!(
+                f,
+                "Process '{command_name}' failed to start. Recent logs: {recent_logs}"
+            ),
+            CandleError::Generic(msg) => write!(f, "{msg}"),
         }
     }
 }
