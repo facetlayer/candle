@@ -17,6 +17,33 @@ export interface CliOptions {
 }
 
 /**
+ * Describes how to spawn the candle CLI under test.
+ *
+ * The target is selected by the CANDLE_TEST_TARGET env var:
+ *   - 'rust'  → the compiled Rust binary at rust/target/release/candle (spawned directly)
+ *   - 'node'  → (default) the Node entrypoint src/main-cli.ts, spawned via `node`
+ *
+ * This is the single seam that points the whole Vitest suite at either implementation. The Node
+ * version is kept as the default while the Rust port is in progress; once the Rust port is complete
+ * the default flips to 'rust'.
+ */
+export interface CandleSpawn {
+    cmd: string;
+    baseArgs: string[];
+    mcpCommand: string;
+}
+
+export function getCandleSpawn(): CandleSpawn {
+    const repoRoot = path.join(__dirname, '..');
+    if (process.env.CANDLE_TEST_TARGET === 'rust') {
+        const bin = path.join(repoRoot, 'rust', 'target', 'release', 'candle');
+        return { cmd: bin, baseArgs: [], mcpCommand: `${bin} --mcp` };
+    }
+    const cli = path.join(repoRoot, 'src', 'main-cli.ts');
+    return { cmd: 'node', baseArgs: [cli], mcpCommand: `node ${cli} --mcp` };
+}
+
+/**
  * TestWorkspace manages an isolated workspace directory for a test suite.
  *
  * Usage:
@@ -35,12 +62,10 @@ export class TestWorkspace {
     readonly name: string;
     readonly dbDir: string;
     private static readonly BASE_DIR = path.join(__dirname, 'workspaces');
-    private cliPath: string;
 
     constructor(name: string) {
         this.name = name;
         this.dbDir = path.join(TestWorkspace.BASE_DIR, name);
-        this.cliPath = path.join(__dirname, '..', 'src', 'main-cli.ts');
 
         // Ensure the workspace directory exists
         if (!fs.existsSync(this.dbDir)) {
@@ -69,7 +94,8 @@ export class TestWorkspace {
 
         //console.log('runCandleCommand', args, options);
 
-        const result = await runShellCommand('node', [this.cliPath, ...args], {
+        const { cmd, baseArgs } = getCandleSpawn();
+        const result = await runShellCommand(cmd, [...baseArgs, ...args], {
             cwd: options.cwd ?? cwd,
             env,
         });
@@ -88,7 +114,7 @@ export class TestWorkspace {
     createMcpApp(options: { allowDebugLogging?: boolean } = {}): MCPStdinSubprocess {
         const { allowDebugLogging = false } = options;
 
-        return mcpShell(`node ${this.cliPath} --mcp`, {
+        return mcpShell(getCandleSpawn().mcpCommand, {
             allowDebugLogging,
             cwd: this.dbDir,
             env: {
@@ -124,7 +150,8 @@ export class TestWorkspace {
         };
 
         try {
-            await runShellCommand('node', [this.cliPath, 'kill-all'], {
+            const { cmd, baseArgs } = getCandleSpawn();
+            await runShellCommand(cmd, [...baseArgs, 'kill-all'], {
                 cwd: this.dbDir,
                 env,
             });

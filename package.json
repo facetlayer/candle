@@ -26,6 +26,7 @@
     "dev": "node --watch src/main-cli.ts",
     "tsc": "tsc",
     "test": "pnpm build && vitest run",
+    "test:rust": "cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run",
     "test:watch": "vitest",
     "format": "prettier --write 'src/**/*.{ts,js,json}'",
     "local:install": "pnpm build && npm i -g ."

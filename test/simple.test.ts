@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { spawn } from 'child_process';
-import { getCliPath } from './utils';
+import { getCandleSpawn } from './TestWorkspace';
 
 describe('Simple Candle Test', () => {
     it('should show help when candle is run', async () => {
-        const cliPath = getCliPath();
+        const { cmd, baseArgs } = getCandleSpawn();
 
         const result = await new Promise<{stdout: string, stderr: string, code: number}>((resolve) => {
-            const proc = spawn('node', [cliPath, '--help']);
+            const proc = spawn(cmd, [...baseArgs, '--help']);
             let stdout = '';
             let stderr = '';
 
