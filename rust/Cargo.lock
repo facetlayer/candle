@@ -71,10 +71,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
-name = "candle-log-collector"
-version = "0.1.0"
+name = "candle-cli"
+version = "0.13.3"
 dependencies = [
- "clap",
+ "candle-core",
+]
+
+[[package]]
+name = "candle-core"
+version = "0.13.3"
+dependencies = [
  "libc",
  "rusqlite",
  "serde",
@@ -212,6 +218,17 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "log-collector"
+version = "0.13.3"
+dependencies = [
+ "clap",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

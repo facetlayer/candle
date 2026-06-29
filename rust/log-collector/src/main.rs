@@ -37,7 +37,7 @@ struct LaunchInfo {
 // -- CLI args (alternative to stdin JSON) --
 
 #[derive(Parser, Debug)]
-#[command(name = "candle-log-collector")]
+#[command(name = "log-collector")]
 struct Args {
     #[arg(long)]
     command_name: Option<String>,
