@@ -137,6 +137,15 @@ fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
     })
 }
 
+/// Result of [`get_process_logs_with_eviction_info`], mirroring `ProcessLogResult`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessLogResult {
+    /// Logs in chronological (oldest-first) order.
+    pub logs: Vec<ProcessLog>,
+    /// True if older logs exist beyond the requested `limit` (i.e. were truncated).
+    pub logs_were_evicted: bool,
+}
+
 /// Fetch process logs in chronological (oldest-first) order.
 ///
 /// Mirrors `getProcessLogs`: the SQL fetches newest-first (so a `limit` keeps the
@@ -145,6 +154,19 @@ pub fn get_process_logs(
     conn: &Connection,
     options: &LogSearchOptions,
 ) -> rusqlite::Result<Vec<ProcessLog>> {
+    Ok(get_process_logs_with_eviction_info(conn, options)?.logs)
+}
+
+/// Fetch process logs plus a flag indicating whether older logs were evicted.
+///
+/// Mirrors `getProcessLogsWithEvictionInfo`: when a `limit` is set and we got at
+/// least that many rows, re-run the same (limitless) query wrapped in a
+/// `count(*)` subquery; if the total exceeds what we returned, older logs were
+/// truncated.
+pub fn get_process_logs_with_eviction_info(
+    conn: &Connection,
+    options: &LogSearchOptions,
+) -> rusqlite::Result<ProcessLogResult> {
     let (sql, params) = build_log_search_query(options);
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
 
@@ -153,9 +175,31 @@ pub fn get_process_logs(
         .query_map(param_refs.as_slice(), row_to_log)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    let mut logs_were_evicted = false;
+    if let Some(limit) = options.limit {
+        if logs.len() as i64 >= limit {
+            let count_options = LogSearchOptions {
+                limit: None,
+                ..options.clone()
+            };
+            let (inner_sql, count_params) = build_log_search_query(&count_options);
+            let count_sql = format!("select count(*) as total from ({inner_sql})");
+            let count_refs: Vec<&dyn ToSql> =
+                count_params.iter().map(|v| v as &dyn ToSql).collect();
+            let total: i64 =
+                conn.query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))?;
+            if total > logs.len() as i64 {
+                logs_were_evicted = true;
+            }
+        }
+    }
+
     // Newest-first -> chronological.
     logs.reverse();
-    Ok(logs)
+    Ok(ProcessLogResult {
+        logs,
+        logs_were_evicted,
+    })
 }
 
 #[cfg(test)]
@@ -235,6 +279,48 @@ mod tests {
         assert_eq!(limited.len(), 2);
         assert_eq!(limited[0].content, Some("l3".to_string()));
         assert_eq!(limited[1].content, Some("l4".to_string()));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn eviction_flag_set_when_more_logs_exist() {
+        let dir = temp_db_dir("process-logs-eviction");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        for i in 0..5 {
+            save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some(&format!("l{i}")))
+                .unwrap();
+        }
+
+        // limit 2 with 5 rows present -> eviction detected.
+        let result = get_process_logs_with_eviction_info(
+            &conn,
+            &LogSearchOptions {
+                project_dir: Some("/proj".to_string()),
+                command_names: vec!["api".to_string()],
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(result.logs.len(), 2);
+        assert!(result.logs_were_evicted);
+
+        // limit covering everything -> no eviction.
+        let result = get_process_logs_with_eviction_info(
+            &conn,
+            &LogSearchOptions {
+                project_dir: Some("/proj".to_string()),
+                command_names: vec!["api".to_string()],
+                limit: Some(100),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(result.logs.len(), 5);
+        assert!(!result.logs_were_evicted);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
