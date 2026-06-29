@@ -9,8 +9,6 @@ name = "log-collector"
 path = "src/main.rs"
 
 [dependencies]
-rusqlite.workspace = true
-serde.workspace = true
+candle-core = { path = "../candle-core" }
 serde_json.workspace = true
 clap.workspace = true
-libc.workspace = true

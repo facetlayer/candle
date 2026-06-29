@@ -266,10 +266,8 @@ dependencies = [
 name = "log-collector"
 version = "0.13.3"
 dependencies = [
+ "candle-core",
  "clap",
- "libc",
- "rusqlite",
- "serde",
  "serde_json",
 ]
 

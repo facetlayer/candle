@@ -11,5 +11,7 @@ pub mod debug;
 pub mod dirs;
 pub mod doc_files;
 pub mod errors;
+pub mod log_collector;
 pub mod logs;
+pub mod process_alive;
 pub mod run_context;

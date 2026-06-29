@@ -10,6 +10,7 @@
 //! WAL + busy_timeout). The schema DDL is byte-parity with the Node version so
 //! the Vitest suite can open the same DB with raw SQL.
 
+pub mod cleanup;
 pub mod process_table;
 pub mod stdin_messages;
 
@@ -81,7 +82,16 @@ pub fn get_database(override_dir: Option<&Path>) -> rusqlite::Result<Connection>
         )
     })?;
 
-    let db_path = state_dir.join("candle.db");
+    open_database_at(&state_dir.join("candle.db"))
+}
+
+/// Open a connection to a candle database file at an explicit path.
+///
+/// Used by the log-collector sidecar, which is handed an absolute path to the
+/// `candle.db` file (rather than a state directory). Opens the file, sets the
+/// WAL journal mode and 30s busy timeout, then runs the additive, idempotent
+/// schema migration so the tables are guaranteed to exist.
+pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
 
     // WAL + busy_timeout are mandatory for multi-process concurrency. journal_mode
