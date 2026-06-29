@@ -1,8 +1,31 @@
+import * as path from 'path';
+// node:sqlite is available at runtime (Node 22+) but ships no bundled type
+// declarations; a raw insert here keeps this test implementation-agnostic.
+// @ts-ignore
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { TestWorkspace } from '../TestWorkspace';
-import { createStdinMessage } from '../../src/database/stdinMessagesTable';
 
 const workspace = new TestWorkspace('with-stdin');
+
+// Insert a stdin message directly into the candle database, implementation-agnostic
+// so this test drives the Rust binary's DB too (the schema is byte-identical to the
+// Node implementation). Replaces the former import of `createStdinMessage` from src/.
+function createStdinMessage(entry: {
+  commandName: string;
+  projectDir: string;
+  data: string;
+  encoding?: string;
+}): void {
+  const db = new DatabaseSync(path.join(workspace.dbDir, 'candle.db'));
+  try {
+    db.prepare(
+      'insert into stdin_messages(command_name, project_dir, data, encoding) values(?, ?, ?, ?)'
+    ).run(entry.commandName, entry.projectDir, entry.data, entry.encoding ?? 'utf8');
+  } finally {
+    db.close();
+  }
+}
 
 let originalDbDir: string | undefined;
 

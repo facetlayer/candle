@@ -16,6 +16,7 @@ use candle_core::commands::list::{format_list_output, handle_list, list_output_t
 use candle_core::commands::logs::handle_logs_command;
 use candle_core::commands::restart::handle_restart;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
+use candle_core::commands::watch::handle_watch;
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
@@ -128,6 +129,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "logs" => cmd_logs(args),
         "clear-logs" => cmd_clear_logs(args),
         "restart" => cmd_restart(args),
+        "watch" => cmd_watch(args),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -433,6 +435,23 @@ fn cmd_restart(args: &CommandArgs) {
 
     match handle_restart(&conn, &project_dir, &args.positionals) {
         Ok(()) => exit(0),
+        Err(e) => fail_with(&e),
+    }
+}
+
+fn cmd_watch(args: &CommandArgs) {
+    if candle_core::run_context::is_run_by_agent() {
+        eprintln!(
+            "Error: 'watch' is not available in agent mode. Use 'candle logs' to view process output."
+        );
+        exit(1);
+    }
+    let cwd = cwd();
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+    let exit_after_ms: Option<u64> = args.value("exit-after-ms").and_then(|s| s.parse().ok());
+    match handle_watch(&conn, &cwd, &args.positionals, exit_after_ms) {
+        Ok(()) => {}
         Err(e) => fail_with(&e),
     }
 }

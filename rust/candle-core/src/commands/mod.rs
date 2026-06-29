@@ -7,6 +7,7 @@ pub mod list;
 pub mod logs;
 pub mod restart;
 pub mod wait_for_log;
+pub mod watch;
 
 use std::path::Path;
 
