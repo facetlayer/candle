@@ -138,7 +138,7 @@ fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
 }
 
 /// Result of [`get_process_logs_with_eviction_info`], mirroring `ProcessLogResult`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessLogResult {
     /// Logs in chronological (oldest-first) order.
     pub logs: Vec<ProcessLog>,

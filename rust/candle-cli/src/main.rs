@@ -12,6 +12,7 @@ use std::process::exit;
 
 use candle_core::commands::assert_valid_command_names;
 use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
+use candle_core::commands::logs::handle_logs_command;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
@@ -122,6 +123,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "list" => cmd_list(args, false),
         "list-all" => cmd_list(args, true),
         "wait-for-log" => cmd_wait_for_log(args),
+        "logs" => cmd_logs(args),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -366,6 +368,24 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     if !result.success {
         exit(1);
     }
+}
+
+fn cmd_logs(args: &CommandArgs) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let limit: i64 = args.value("count").and_then(|s| s.parse().ok()).unwrap_or(100);
+    let start_at_id: Option<i64> = args.value("start-at").and_then(|s| s.parse().ok());
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    // Don't validate command names.
+
+    handle_logs_command(&conn, &project_dir, &args.positionals, limit, start_at_id);
 }
 
 fn run_mcp() {
