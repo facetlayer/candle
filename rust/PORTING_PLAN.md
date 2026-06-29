@@ -22,26 +22,27 @@ the black-box acceptance suite and is repointed at the Rust binaries. The Node i
 
 ## What works today
 
-- **M0–M6 complete and committed (plus `erase-database`).** The Rust `candle` binary can:
+- **M0–M8 complete and committed (plus `erase-database`).** The Rust `candle` binary can:
   `--version`, grouped/per-command `help`, `setup-project`, `add-service`, `remove-service`,
   `set-config`, `list-docs`, `get-doc`, `start`/`run`/`check-start`, `kill`/`stop`, `kill-all`,
   `list`/`ls`, `list-all`, `logs`, `clear-logs`, `wait-for-log`, `watch`, `restart`,
-  `erase-database`. The `log-collector` sidecar is fully ported onto `candle-core` and launched
-  (detached, stdin-JSON handshake) by `start`. Verified end-to-end.
+  `erase-database`, and `mcp`/`--mcp` (stdio JSON-RPC server). The `log-collector` sidecar is fully
+  ported onto `candle-core` and launched (detached, stdin-JSON handshake) by `start`. Verified
+  end-to-end. **Only `list-ports`/`open-browser` (M7) remain stubbed — and they have no acceptance
+  tests.**
 - **Test harness toggle is in place.** `CANDLE_TEST_TARGET=rust` runs the *existing* Vitest suite
   against the Rust binary; unset/`node` keeps the Node path. The Rust binary finds its sidecar as a
   sibling of `current_exe()` (override `CANDLE_LOG_COLLECTOR_PATH`).
-- **Quality gates green for finished work:** `cargo test` (128 unit + 4 + 1 integration), and
+- **Quality gates green:** `cargo test` (134 unit + 4 + 1 integration), and
   `cargo clippy --workspace --all-targets -- -D warnings` are clean.
 
 ## Acceptance-suite status against Rust (snapshot)
 
-`CANDLE_TEST_TARGET=rust npx vitest run` → **310 passed / 12 failed (322 total); 31 of 33 files
-green.** The 12 remaining failures are entirely **M8 (MCP server)**: `test/mcp.test.ts` (10) and the
-2 MCP cases in `test/cli/invalid-config.test.ts`. There are **no acceptance tests** for the M7
-`list-ports`/`open-browser` commands in this suite, so M8 is the only work left to take the suite
-fully green. (The M5/M6 log-viewing cluster, `restart`, the stdin test-seam fix, and the
-log-collector/stdin/eviction flows are all green.)
+`CANDLE_TEST_TARGET=rust npx vitest run` → **322 passed / 0 failed (322 total); all 33 files green.**
+The Rust port is at full acceptance-suite parity with the Node implementation. The only Node commands
+not yet ported are `list-ports`/`open-browser` (M7), which have **no acceptance tests** in this suite
+(the MCP `ListPorts`/`OpenBrowser` tools are registered but return a "not yet implemented" error if
+invoked — they are never called by any test).
 
 ## Build & test commands
 
@@ -123,17 +124,23 @@ additionally returns structured data + a JSON serializer (MCP and `--json` both 
    for these in the current Vitest suite, so this step does not move the suite count; port for
    feature parity. Still dispatch-stubbed (`not_implemented`).
 
-5. **MCP server (M8).** stdio JSON-RPC. Tools: `ListServices, ListPorts, GetLogs, StartService,
-   StartTransientService, KillService, RestartService, AddServerConfig`. Route handler output through
-   `candle_core::output::capture`; content array = logs item then result (pretty 2-space JSON) or
-   `Error: <msg>` with `isError:true`. `--mcp`/`mcp` dispatch already stubbed in `candle-cli`
-   (`run_mcp`). Decide rmcp vs hand-rolled (hand-rolled gives exact protocol control). Spec:
-   `map-mcp.md`. Verify `mcp.test.ts`, `invalid-config.test.ts` MCP cases.
+5. **MCP server (M8) — ✅ DONE.** Hand-rolled stdio JSON-RPC in `candle_core::mcp` (newline-delimited
+   frames; `initialize`/`tools/list`/`tools/call`/`ping`; `notifications/initialized` ignored; EOF →
+   `exit(0)`). All 9 tools registered (`ListServices, ListPorts, GetLogs, StartService,
+   StartTransientService, KillService, RestartService, AddServerConfig, OpenBrowser`); `ListPorts`/
+   `OpenBrowser` return a not-implemented error (untested). Handler output routed through
+   `candle_core::output::capture` + the new `CapturedOutput::mcp_log_lines()` (stderr lines prefixed
+   `[stderr] `); content array = logs item then result (pretty 2-space JSON) or `Error: <msg>` with
+   `isError:true`; unknown tool → JSON-RPC `-32601`. `mcp.test.ts` (10/10) and the
+   `invalid-config.test.ts` MCP cases pass. `--mcp`/`mcp` wired in `candle-cli` (`run_mcp` →
+   `serve_mcp`).
 
-6. **Finalize (M9).** Run the FULL suite vs Rust until green; update `docs-site`/README/CLAUDE.md for
-   intentional changes (the `logCollector` runtime switch is parsed/validated but ignored — the Rust
-   CLI always uses the Rust sidecar); consider flipping the default `CANDLE_TEST_TARGET` to `rust`
-   and updating `package.json` `test` to build Rust first; update CI.
+6. **Finalize (M9) — remaining.** Full suite is green (322/322). Still TODO for a true finish:
+   update `docs-site`/README/CLAUDE.md for intentional changes (the `logCollector` runtime switch is
+   parsed/validated but ignored — the Rust CLI always uses the Rust sidecar); decide whether to flip
+   the default `CANDLE_TEST_TARGET` to `rust` and make `package.json` `test` build Rust first; update
+   CI. Optionally port the M7 `list-ports`/`open-browser` commands for full feature parity (no tests
+   gate them).
 
 ## Gotchas learned (save yourself time)
 
