@@ -17,7 +17,8 @@ struct Buffer {
     stdout: Vec<String>,
     stderr: Vec<String>,
     /// stdout + stderr in emission order, used to build a combined transcript.
-    combined: Vec<String>,
+    /// Each entry is `(is_stderr, line)`.
+    combined: Vec<(bool, String)>,
 }
 
 thread_local! {
@@ -31,15 +32,35 @@ pub struct CapturedOutput {
     pub stdout: Vec<String>,
     /// Lines emitted via [`err`], in order.
     pub stderr: Vec<String>,
-    /// Both streams interleaved in emission order.
-    combined: Vec<String>,
+    /// Both streams interleaved in emission order. Each entry is `(is_stderr, line)`.
+    combined: Vec<(bool, String)>,
 }
 
 impl CapturedOutput {
     /// A single combined transcript (stdout + stderr in emission order, one line
     /// per entry). Useful for surfacing a handler's output to MCP clients.
     pub fn transcript(&self) -> String {
-        self.combined.join("\n")
+        self.combined
+            .iter()
+            .map(|(_, line)| line.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The captured lines formatted for an MCP tool response, mirroring the Node
+    /// `ConsoleLogInterceptor`: stderr lines get a `"[stderr] "` prefix, stdout
+    /// lines pass through verbatim, emission order preserved.
+    pub fn mcp_log_lines(&self) -> Vec<String> {
+        self.combined
+            .iter()
+            .map(|(is_stderr, line)| {
+                if *is_stderr {
+                    format!("[stderr] {line}")
+                } else {
+                    line.clone()
+                }
+            })
+            .collect()
     }
 }
 
@@ -50,7 +71,7 @@ pub fn out(line: &str) {
         match slot.as_mut() {
             Some(buf) => {
                 buf.stdout.push(line.to_string());
-                buf.combined.push(line.to_string());
+                buf.combined.push((false, line.to_string()));
             }
             None => println!("{line}"),
         }
@@ -64,7 +85,7 @@ pub fn err(line: &str) {
         match slot.as_mut() {
             Some(buf) => {
                 buf.stderr.push(line.to_string());
-                buf.combined.push(line.to_string());
+                buf.combined.push((true, line.to_string()));
             }
             None => eprintln!("{line}"),
         }
@@ -113,6 +134,15 @@ mod tests {
         assert_eq!(captured.stderr, vec!["oops".to_string()]);
         // Combined transcript preserves emission order across both streams.
         assert_eq!(captured.transcript(), "hello\noops\nworld");
+        // MCP log lines prefix stderr lines with "[stderr] ".
+        assert_eq!(
+            captured.mcp_log_lines(),
+            vec![
+                "hello".to_string(),
+                "[stderr] oops".to_string(),
+                "world".to_string()
+            ]
+        );
     }
 
     #[test]

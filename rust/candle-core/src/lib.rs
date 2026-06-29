@@ -16,6 +16,7 @@ pub mod kill;
 pub mod log_collector;
 pub mod log_filters;
 pub mod logs;
+pub mod mcp;
 pub mod output;
 pub mod process_alive;
 pub mod process_tree;

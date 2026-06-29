@@ -59,10 +59,9 @@ fn main() {
         return;
     }
 
-    // `mcp` command or `--mcp` flag → MCP server mode.
+    // `mcp` command or `--mcp` flag → MCP server mode (never returns).
     if mcp_flag {
         run_mcp();
-        return;
     }
 
     let command_token = match command_token {
@@ -97,7 +96,6 @@ fn main() {
 
     if canonical == "mcp" {
         run_mcp();
-        return;
     }
 
     let args = match parse_command_args(canonical, rest) {
@@ -468,10 +466,9 @@ fn cmd_erase_database() {
     }
 }
 
-fn run_mcp() {
-    // MCP server is ported in milestone M8.
-    eprintln!("candle: MCP server mode is not yet implemented in the Rust port");
-    exit(1);
+fn run_mcp() -> ! {
+    // stdio JSON-RPC server (M8). Blocks until stdin closes, then exits 0.
+    candle_core::mcp::serve_mcp();
 }
 
 fn not_implemented(command: &str) -> ! {
