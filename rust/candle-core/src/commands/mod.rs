@@ -3,6 +3,7 @@
 //! (e.g. [`crate::kill`]).
 
 pub mod clear_logs;
+pub mod erase_database;
 pub mod list;
 pub mod logs;
 pub mod restart;

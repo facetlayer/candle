@@ -130,6 +130,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "clear-logs" => cmd_clear_logs(args),
         "restart" => cmd_restart(args),
         "watch" => cmd_watch(args),
+        "erase-database" => cmd_erase_database(),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -453,6 +454,17 @@ fn cmd_watch(args: &CommandArgs) {
     match handle_watch(&conn, &cwd, &args.positionals, exit_after_ms) {
         Ok(()) => {}
         Err(e) => fail_with(&e),
+    }
+}
+
+/// `erase-database`: delete candle.db (+ WAL/SHM) from the state dir.
+fn cmd_erase_database() {
+    match candle_core::commands::erase_database::handle_erase_database_command() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("Error clearing database: {e}");
+            exit(1);
+        }
     }
 }
 
