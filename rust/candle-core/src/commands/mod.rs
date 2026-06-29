@@ -5,6 +5,7 @@
 pub mod clear_logs;
 pub mod list;
 pub mod logs;
+pub mod restart;
 pub mod wait_for_log;
 
 use std::path::Path;

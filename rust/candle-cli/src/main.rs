@@ -14,6 +14,7 @@ use candle_core::commands::assert_valid_command_names;
 use candle_core::commands::clear_logs::handle_clear_logs_command;
 use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
 use candle_core::commands::logs::handle_logs_command;
+use candle_core::commands::restart::handle_restart;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
@@ -126,6 +127,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "wait-for-log" => cmd_wait_for_log(args),
         "logs" => cmd_logs(args),
         "clear-logs" => cmd_clear_logs(args),
+        "restart" => cmd_restart(args),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -408,6 +410,30 @@ fn cmd_clear_logs(args: &CommandArgs) {
             eprintln!("Error clearing logs: {e}");
             exit(1);
         }
+    }
+}
+
+/// `restart`: kill the named (or all running) services in the project, then
+/// start them again. An unknown service name fails validation (stderr + exit 1);
+/// an empty project with nothing running yields the "No running processes" usage
+/// error from the handler.
+fn cmd_restart(args: &CommandArgs) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    if let Err(e) = assert_valid_command_names(&conn, &cwd, &args.positionals) {
+        fail_with(&e);
+    }
+
+    match handle_restart(&conn, &project_dir, &args.positionals) {
+        Ok(()) => exit(0),
+        Err(e) => fail_with(&e),
     }
 }
 
