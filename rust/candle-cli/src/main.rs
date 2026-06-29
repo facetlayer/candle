@@ -10,12 +10,20 @@ mod parser;
 use std::path::PathBuf;
 use std::process::exit;
 
+use candle_core::commands::assert_valid_command_names;
+use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
 };
+use candle_core::config::find_project_dir;
+use candle_core::db::cleanup::maybe_run_cleanup;
+use candle_core::db::get_database;
 use candle_core::doc_files::{self, DocLookupError};
+use candle_core::errors::CandleError;
+use candle_core::kill::{handle_kill_all, handle_kill_command};
 use parser::{canonical_command, parse_command_args, CommandArgs};
+use rusqlite::Connection;
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -105,7 +113,11 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "set-config" => cmd_set_config(args),
         "list-docs" => cmd_list_docs(),
         "get-doc" => cmd_get_doc(args),
-        // Process-management commands are wired in milestones M4+.
+        "kill" => cmd_kill(args),
+        "kill-all" => cmd_kill_all(),
+        "list" => cmd_list(args, false),
+        "list-all" => cmd_list(args, true),
+        // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
 }
@@ -215,6 +227,74 @@ fn cmd_get_doc(args: &CommandArgs) {
             );
             exit(1);
         }
+    }
+}
+
+/// Open the candle database (resolving the state dir from the environment), or
+/// print an error and exit.
+fn open_db() -> Connection {
+    match get_database(None) {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("candle: failed to open database: {e}");
+            exit(1);
+        }
+    }
+}
+
+/// Print a CandleError to stderr and exit 1. Mirrors the Node top-level handler,
+/// which prints `error.message` for usage errors.
+fn fail_with(err: &CandleError) -> ! {
+    eprintln!("{err}");
+    exit(1);
+}
+
+/// `kill` / `stop`: resolve the project dir, validate names, then mark/kill.
+fn cmd_kill(args: &CommandArgs) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    if let Err(e) = assert_valid_command_names(&conn, &cwd, &args.positionals) {
+        fail_with(&e);
+    }
+
+    if let Err(e) = handle_kill_command(&conn, &project_dir, &args.positionals, false, false) {
+        eprintln!("candle: database error: {e}");
+        exit(1);
+    }
+}
+
+/// `kill-all`: kill every process across every project. No validation, no config.
+fn cmd_kill_all() {
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+    if let Err(e) = handle_kill_all(&conn, false) {
+        eprintln!("candle: database error: {e}");
+        exit(1);
+    }
+}
+
+/// `list` / `ls` (`show_all = false`) and `list-all` (`show_all = true`).
+fn cmd_list(args: &CommandArgs, show_all: bool) {
+    let cwd = cwd();
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    let output = match handle_list(&conn, &cwd, show_all) {
+        Ok(output) => output,
+        Err(e) => fail_with(&e),
+    };
+
+    if args.has("json") {
+        println!("{}", list_output_to_json(&output));
+    } else {
+        println!("{}", format_list_output(&output));
     }
 }
 

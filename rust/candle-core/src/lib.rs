@@ -5,13 +5,17 @@
 //!
 //! Modules are added incrementally as the port progresses (see milestones M1+).
 
+pub mod commands;
 pub mod config;
 pub mod db;
 pub mod debug;
 pub mod dirs;
 pub mod doc_files;
 pub mod errors;
+pub mod kill;
 pub mod log_collector;
 pub mod logs;
+pub mod output;
 pub mod process_alive;
+pub mod process_tree;
 pub mod run_context;

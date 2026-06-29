@@ -10,3 +10,4 @@ path = "src/main.rs"
 
 [dependencies]
 candle-core = { path = "../candle-core" }
+rusqlite.workspace = true
