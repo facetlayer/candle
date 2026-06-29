@@ -2,6 +2,7 @@
 //! output sink). Lower-level, single-subsystem logic lives in its own module
 //! (e.g. [`crate::kill`]).
 
+pub mod clear_logs;
 pub mod list;
 pub mod logs;
 pub mod wait_for_log;

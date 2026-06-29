@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::exit;
 
 use candle_core::commands::assert_valid_command_names;
+use candle_core::commands::clear_logs::handle_clear_logs_command;
 use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
 use candle_core::commands::logs::handle_logs_command;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
@@ -124,6 +125,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "list-all" => cmd_list(args, true),
         "wait-for-log" => cmd_wait_for_log(args),
         "logs" => cmd_logs(args),
+        "clear-logs" => cmd_clear_logs(args),
         // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
@@ -386,6 +388,27 @@ fn cmd_logs(args: &CommandArgs) {
     // Don't validate command names.
 
     handle_logs_command(&conn, &project_dir, &args.positionals, limit, start_at_id);
+}
+
+/// `clear-logs`: delete stored output for the named command(s) in the project.
+fn cmd_clear_logs(args: &CommandArgs) {
+    let project_dir = match find_project_dir(&cwd()) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    // Don't validate command names.
+
+    match handle_clear_logs_command(&conn, &project_dir, &args.positionals) {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("Error clearing logs: {e}");
+            exit(1);
+        }
+    }
 }
 
 fn run_mcp() {
