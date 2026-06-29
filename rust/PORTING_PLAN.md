@@ -22,24 +22,26 @@ the black-box acceptance suite and is repointed at the Rust binaries. The Node i
 
 ## What works today
 
-- **M0–M4 complete and committed.** The Rust `candle` binary can: `--version`, grouped/per-command
-  `help`, `setup-project`, `add-service`, `remove-service`, `set-config`, `list-docs`, `get-doc`,
-  `start`/`run`/`check-start`, `kill`/`stop`, `kill-all`, `list`/`ls`, `list-all`. The
-  `log-collector` sidecar is fully ported onto `candle-core` and launched (detached, stdin-JSON
-  handshake) by `start`. Verified end-to-end: `start` → `list` shows RUNNING → `kill`.
+- **M0–M6 complete and committed (plus `erase-database`).** The Rust `candle` binary can:
+  `--version`, grouped/per-command `help`, `setup-project`, `add-service`, `remove-service`,
+  `set-config`, `list-docs`, `get-doc`, `start`/`run`/`check-start`, `kill`/`stop`, `kill-all`,
+  `list`/`ls`, `list-all`, `logs`, `clear-logs`, `wait-for-log`, `watch`, `restart`,
+  `erase-database`. The `log-collector` sidecar is fully ported onto `candle-core` and launched
+  (detached, stdin-JSON handshake) by `start`. Verified end-to-end.
 - **Test harness toggle is in place.** `CANDLE_TEST_TARGET=rust` runs the *existing* Vitest suite
   against the Rust binary; unset/`node` keeps the Node path. The Rust binary finds its sidecar as a
   sibling of `current_exe()` (override `CANDLE_LOG_COLLECTOR_PATH`).
-- **Quality gates green for finished work:** `cargo test` (~109 unit + 1 integration), and
+- **Quality gates green for finished work:** `cargo test` (128 unit + 4 + 1 integration), and
   `cargo clippy --workspace --all-targets -- -D warnings` are clean.
 
 ## Acceptance-suite status against Rust (snapshot)
 
-`CANDLE_TEST_TARGET=rust npx vitest run` → **181 passed / 141 failed (322 total); 12 files fully
-green.** The 141 failures are NOT start-flow bugs — they are tests that invoke a **not-yet-ported
-command** (`wait-for-log`, `restart`, `logs`, `watch`, `clear-logs`, `list-ports`/`open-browser`,
-`mcp`) and abort before their real assertion. The single biggest lever is **`wait-for-log`** (~134
-invocations across the suite) — porting it will flip a large fraction of the suite green on its own.
+`CANDLE_TEST_TARGET=rust npx vitest run` → **310 passed / 12 failed (322 total); 31 of 33 files
+green.** The 12 remaining failures are entirely **M8 (MCP server)**: `test/mcp.test.ts` (10) and the
+2 MCP cases in `test/cli/invalid-config.test.ts`. There are **no acceptance tests** for the M7
+`list-ports`/`open-browser` commands in this suite, so M8 is the only work left to take the suite
+fully green. (The M5/M6 log-viewing cluster, `restart`, the stdin test-seam fix, and the
+log-collector/stdin/eviction flows are all green.)
 
 ## Build & test commands
 
@@ -69,7 +71,16 @@ additionally returns structured data + a JSON serializer (MCP and `--json` both 
 
 ## Remaining work — do in this order
 
-1. **Log-viewing cluster (M5/M6) — START HERE.** Scaffold already committed:
+> **DONE (steps 1–3 below): M5/M6 log-viewing cluster + `restart` + `log-eviction` parity.**
+> Committed on `rust-port`: `log_filters/` (`LatestExecutionLogFilter` + `ExecutionStatusTracker`)
+> with `LogIterator` per-call/default limit support; `commands::{logs, clear_logs, wait_for_log,
+> watch, restart}`, all wired into `candle-cli`; the `test/with-stdin/stdin.test.ts` seam now does a
+> raw `node:sqlite` insert; and `erase-database` was ported opportunistically. `log-eviction`,
+> `with-stdin`, `watch`, `wait-for-log`, `logs`, `clear-logs`, `restart`, `erase-database` test files
+> are all green. **The only remaining suite failures are M8 (MCP) — start at step 5.** Steps 1–3 are
+> retained below for historical reference.
+
+1. **Log-viewing cluster (M5/M6) — ✅ DONE.** Scaffold already committed:
    `logs::console_log` (row/system-message formatting) and `process_logs::
    get_process_logs_with_eviction_info` exist and are tested but **unused**. TODO:
    - `log_filters/` — port `LatestExecutionLogFilter` + `ExecutionStatusTracker` (only-most-recent
@@ -96,19 +107,21 @@ additionally returns structured data + a JSON serializer (MCP and `--json` both 
      the many `start`/`kill`/`list`/`transient`/`stale-cleanup`/`log-collector-cleanup` tests that
      unblock once `wait-for-log` exists.
 
-2. **`restart` (M5).** Small: port `restart-command.ts` — snapshot `(shell,root)` per name BEFORE
+2. **`restart` (M5) — ✅ DONE.** Small: port `restart-command.ts` — snapshot `(shell,root)` per name BEFORE
    killing, `handle_kill_command`, then `start_one_service` per name; if the name is defined in
    config pass `shell=None`/`root=None` so it RELOADS from config (picks up edited shell); else use
    the captured shell/root. Errors: `No running processes found in this project to restart`,
    `Failed to restart: <msg>` (stderr), unknown → `No service` (via assert_valid_command_names).
    Spec: `rust/docs/porting/map-kill-restart.md §7`. Verify `restart.test.ts`.
 
-3. **`log-eviction` parity (M5).** `db::cleanup::run_cleanup` already implements eviction; just
-   confirm `log-eviction.test.ts` passes once `wait-for-log` lands (it likely will).
+3. **`log-eviction` parity (M5) — ✅ DONE.** `db::cleanup::run_cleanup` already implemented eviction;
+   `log-eviction.test.ts` passes (5/5) now that `wait-for-log`/`logs` exist.
 
 4. **Ports / open-browser (M7).** `list-ports`/`list-ports-all` (parse `lsof -iTCP -sTCP:LISTEN -n
    -P`; see `map-list-ports-browser.md` for the brittle positional parsing — dedup by `pid:port`,
-   `*`→`0.0.0.0`, IPv6 split on last `:`), `open-browser`. Verify any port/open-browser tests.
+   `*`→`0.0.0.0`, IPv6 split on last `:`), `open-browser`. NOTE: there are **no acceptance tests**
+   for these in the current Vitest suite, so this step does not move the suite count; port for
+   feature parity. Still dispatch-stubbed (`not_implemented`).
 
 5. **MCP server (M8).** stdio JSON-RPC. Tools: `ListServices, ListPorts, GetLogs, StartService,
    StartTransientService, KillService, RestartService, AddServerConfig`. Route handler output through
