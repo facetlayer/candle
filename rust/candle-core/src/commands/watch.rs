@@ -90,8 +90,8 @@ pub fn watch_process(
     // Install signal handlers and reset the stop flag.
     STOP.store(false, Ordering::SeqCst);
     unsafe {
-        libc::signal(libc::SIGINT, handle_signal as libc::sighandler_t);
-        libc::signal(libc::SIGTERM, handle_signal as libc::sighandler_t);
+        libc::signal(libc::SIGINT, handle_signal as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, handle_signal as *const () as libc::sighandler_t);
     }
 
     let deadline = exit_after_ms

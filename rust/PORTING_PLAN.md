@@ -22,27 +22,27 @@ the black-box acceptance suite and is repointed at the Rust binaries. The Node i
 
 ## What works today
 
-- **M0–M8 complete and committed (plus `erase-database`).** The Rust `candle` binary can:
-  `--version`, grouped/per-command `help`, `setup-project`, `add-service`, `remove-service`,
-  `set-config`, `list-docs`, `get-doc`, `start`/`run`/`check-start`, `kill`/`stop`, `kill-all`,
-  `list`/`ls`, `list-all`, `logs`, `clear-logs`, `wait-for-log`, `watch`, `restart`,
-  `erase-database`, and `mcp`/`--mcp` (stdio JSON-RPC server). The `log-collector` sidecar is fully
-  ported onto `candle-core` and launched (detached, stdin-JSON handshake) by `start`. Verified
-  end-to-end. **Only `list-ports`/`open-browser` (M7) remain stubbed — and they have no acceptance
-  tests.**
+- **M0–M8 complete and committed (plus `erase-database` and M7 `list-ports`/`open-browser`).** The
+  Rust `candle` binary can: `--version`, grouped/per-command `help`, `setup-project`, `add-service`,
+  `remove-service`, `set-config`, `list-docs`, `get-doc`, `start`/`run`/`check-start`, `kill`/`stop`,
+  `kill-all`, `list`/`ls`, `list-all`, `list-ports`/`list-ports-all`, `open-browser`, `logs`,
+  `clear-logs`, `wait-for-log`, `watch`, `restart`, `erase-database`, and `mcp`/`--mcp` (stdio
+  JSON-RPC server, all 9 tools live). The `log-collector` sidecar is fully ported onto `candle-core`
+  and launched (detached, stdin-JSON handshake) by `start`. Verified end-to-end. **Every Node command
+  is now ported; no stubs remain.**
 - **Test harness toggle is in place.** `CANDLE_TEST_TARGET=rust` runs the *existing* Vitest suite
   against the Rust binary; unset/`node` keeps the Node path. The Rust binary finds its sidecar as a
   sibling of `current_exe()` (override `CANDLE_LOG_COLLECTOR_PATH`).
-- **Quality gates green:** `cargo test` (134 unit + 4 + 1 integration), and
+- **Quality gates green:** `cargo test` (146 unit + 4 + 1 integration), and
   `cargo clippy --workspace --all-targets -- -D warnings` are clean.
 
 ## Acceptance-suite status against Rust (snapshot)
 
 `CANDLE_TEST_TARGET=rust npx vitest run` → **322 passed / 0 failed (322 total); all 33 files green.**
-The Rust port is at full acceptance-suite parity with the Node implementation. The only Node commands
-not yet ported are `list-ports`/`open-browser` (M7), which have **no acceptance tests** in this suite
-(the MCP `ListPorts`/`OpenBrowser` tools are registered but return a "not yet implemented" error if
-invoked — they are never called by any test).
+The Rust port is at full acceptance-suite parity with the Node implementation. As of M7 every Node
+command is ported, including `list-ports`/`open-browser` and their MCP `ListPorts`/`OpenBrowser`
+tools — these have **no acceptance tests** in this suite, so they were verified manually + with Rust
+unit tests (lsof parsing, table formatting, service-name resolution).
 
 ## Build & test commands
 
@@ -124,17 +124,24 @@ as `{processes:[...]}`).
 3. **`log-eviction` parity (M5) — ✅ DONE.** `db::cleanup::run_cleanup` already implemented eviction;
    `log-eviction.test.ts` passes (5/5) now that `wait-for-log`/`logs` exist.
 
-4. **Ports / open-browser (M7).** `list-ports`/`list-ports-all` (parse `lsof -iTCP -sTCP:LISTEN -n
-   -P`; see `map-list-ports-browser.md` for the brittle positional parsing — dedup by `pid:port`,
-   `*`→`0.0.0.0`, IPv6 split on last `:`), `open-browser`. NOTE: there are **no acceptance tests**
-   for these in the current Vitest suite, so this step does not move the suite count; port for
-   feature parity. Still dispatch-stubbed (`not_implemented`).
+4. **Ports / open-browser (M7) — ✅ DONE.** Ported `commands::list_ports` (`handle_list_ports` +
+   `get_listening_ports`/`parse_lsof_output` — one global `lsof -iTCP -sTCP:LISTEN -n -P`, dedup by
+   `pid:port`, `*`→`0.0.0.0`, IPv6 split on last `:`, default protocol `TCP`; `format_list_ports_output`)
+   and `commands::open_browser` (`resolve_service_name`, `open_url` per-platform table,
+   `handle_open_browser`, `format_open_browser_output`). Wired into `candle-cli` dispatch
+   (`list-ports`/`list-ports-all`/`open-browser`) and the MCP `ListPorts`/`OpenBrowser` tools (no
+   longer not-implemented). **Drop-in note:** the Node CLI's `list-ports [names...]` positional is a
+   no-op (it reads `argv.name`, not `argv.names`), so `list-ports foo` lists *all* project ports; the
+   Rust CLI preserves that (positionals ignored for `list-ports`). The core `handle_list_ports` filter
+   does honor `command_names` — that's the path `open-browser` and the MCP `serviceName` filter use.
+   No acceptance tests gate these; verified manually + 12 new Rust unit tests.
 
 5. **MCP server (M8) — ✅ DONE.** Hand-rolled stdio JSON-RPC in `candle_core::mcp` (newline-delimited
    frames; `initialize`/`tools/list`/`tools/call`/`ping`; `notifications/initialized` ignored; EOF →
    `exit(0)`). All 9 tools registered (`ListServices, ListPorts, GetLogs, StartService,
    StartTransientService, KillService, RestartService, AddServerConfig, OpenBrowser`); `ListPorts`/
-   `OpenBrowser` return a not-implemented error (untested). Handler output routed through
+   `OpenBrowser` are now fully implemented (M7) and call into `commands::list_ports`/`open_browser`.
+   Handler output routed through
    `candle_core::output::capture` + the new `CapturedOutput::mcp_log_lines()` (stderr lines prefixed
    `[stderr] `); content array = logs item then result (pretty 2-space JSON) or `Error: <msg>` with
    `isError:true`; unknown tool → JSON-RPC `-32601`. `mcp.test.ts` (10/10) and the
@@ -299,10 +306,10 @@ All spawning funnels through `test/TestWorkspace.ts` (`runCli`, `createMcpApp`, 
 
 ## Milestones & task breakdown (TDD chunks, each independently committable)
 
-> **Status:** ✅ **M0–M6 and M8 are DONE** (committed on `rust-port`); `erase-database` also ported.
-> ⬜ **M7** (`list-ports`/`open-browser`) and ⬜ **M9** (docs/CI finalize) remain. The full acceptance
-> suite is green (322/322) without M7, which has no tests. The bullets below are the original
-> breakdown, kept for reference.
+> **Status:** ✅ **M0–M8 are DONE** (`erase-database` and M7 `list-ports`/`open-browser` included).
+> ⬜ Only **M9** (docs/CI finalize) remains. The full acceptance suite is green (322/322); M7 has no
+> acceptance tests and was verified manually + with Rust unit tests. The bullets below are the
+> original breakdown, kept for reference.
 
 Verification for every chunk: relevant subset of the Vitest suite passes with `CANDLE_TEST_TARGET=rust`
 (after the harness switch lands in M1), plus Rust unit tests for pure logic.
@@ -327,7 +334,8 @@ Verification for every chunk: relevant subset of the Vitest suite passes with `C
   log-eviction.
 - **M6 — Watch/wait-for-log/stdin.** `watch` (`--exit-after-ms`, agent gating), `wait-for-log`,
   stdin feeding end-to-end. Verify: watch, wait-for-log, with-stdin.
-- **M7 — Ports/open-browser.** `list-ports`/`list-ports-all` (OS port detection), `open-browser`.
+- **M7 — Ports/open-browser. ✅ DONE.** `list-ports`/`list-ports-all` (OS port detection via lsof),
+  `open-browser`; MCP `ListPorts`/`OpenBrowser` tools wired.
 - **M8 — MCP server.** stdio JSON-RPC; tools ListServices, ListPorts, GetLogs, StartService,
   StartTransientService, KillService, RestartService, AddServerConfig. Verify: mcp.test.ts.
 - **M9 — Docs + cleanup.** Update `docs-site` / README for any behavior notes; finalize test script;

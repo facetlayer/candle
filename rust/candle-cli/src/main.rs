@@ -13,7 +13,9 @@ use std::process::exit;
 use candle_core::commands::assert_valid_command_names;
 use candle_core::commands::clear_logs::handle_clear_logs_command;
 use candle_core::commands::list::{format_list_output, handle_list, list_output_to_json};
+use candle_core::commands::list_ports::{format_list_ports_output, handle_list_ports};
 use candle_core::commands::logs::handle_logs_command;
+use candle_core::commands::open_browser::{format_open_browser_output, handle_open_browser};
 use candle_core::commands::restart::handle_restart;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
 use candle_core::commands::watch::handle_watch;
@@ -128,8 +130,10 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "clear-logs" => cmd_clear_logs(args),
         "restart" => cmd_restart(args),
         "watch" => cmd_watch(args),
+        "list-ports" => cmd_list_ports(args, false),
+        "list-ports-all" => cmd_list_ports(args, true),
+        "open-browser" => cmd_open_browser(args),
         "erase-database" => cmd_erase_database(),
-        // Remaining process-management commands are wired in later milestones.
         _ => not_implemented(command),
     }
 }
@@ -451,6 +455,44 @@ fn cmd_watch(args: &CommandArgs) {
     let exit_after_ms: Option<u64> = args.value("exit-after-ms").and_then(|s| s.parse().ok());
     match handle_watch(&conn, &cwd, &args.positionals, exit_after_ms) {
         Ok(()) => {}
+        Err(e) => fail_with(&e),
+    }
+}
+
+/// `list-ports` / `list-ports-all`: detect open listening ports for project (or
+/// all) processes via lsof and print them as a table.
+///
+/// Note: the Node CLI declares the `list-ports` positional as `[names...]` but
+/// reads `argv.name` (singular), so positional names never reach
+/// `handleListPorts`; `list-ports foo` lists all project ports. We preserve that
+/// behavior — positionals are ignored — so this stays a drop-in replacement.
+fn cmd_list_ports(_args: &CommandArgs, show_all: bool) {
+    let cwd = cwd();
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    let output = match handle_list_ports(&conn, &cwd, show_all, &[]) {
+        Ok(output) => output,
+        Err(e) => fail_with(&e),
+    };
+    println!("{}", format_list_ports_output(&output));
+}
+
+/// `open-browser`: resolve a service (explicit or sole running), open a browser
+/// to its lowest listening port.
+fn cmd_open_browser(args: &CommandArgs) {
+    let cwd = cwd();
+    let project_dir = match find_project_dir(&cwd) {
+        Ok(dir) => dir.display().to_string(),
+        Err(e) => fail_with(&e),
+    };
+
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    let service_name = args.positionals.first().map(String::as_str);
+    match handle_open_browser(&conn, &cwd, &project_dir, service_name) {
+        Ok(output) => println!("{}", format_open_browser_output(&output)),
         Err(e) => fail_with(&e),
     }
 }

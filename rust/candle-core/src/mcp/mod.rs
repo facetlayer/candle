@@ -176,10 +176,13 @@ fn tool_list_services(conn: &Connection, cwd: &Path, args: &Value) -> Result<Opt
     Ok(Some(serde_json::to_value(&output).unwrap_or_else(|_| json!({ "processes": [] }))))
 }
 
-fn tool_list_ports(_conn: &Connection, _cwd: &Path, _args: &Value) -> Result<Option<Value>, CandleError> {
-    Err(CandleError::Generic(
-        "ListPorts is not yet implemented in the Rust port".to_string(),
-    ))
+fn tool_list_ports(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+    let show_all = args.get("showAll").and_then(|v| v.as_bool()).unwrap_or(false);
+    let command_names: Vec<String> = arg_str(args, "serviceName")
+        .map(|s| vec![s.to_string()])
+        .unwrap_or_default();
+    let output = crate::commands::list_ports::handle_list_ports(conn, cwd, show_all, &command_names)?;
+    Ok(Some(serde_json::to_value(&output).unwrap_or_else(|_| json!({ "ports": [] }))))
 }
 
 fn tool_get_logs(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
@@ -290,10 +293,17 @@ fn tool_add_server_config(_conn: &Connection, cwd: &Path, args: &Value) -> Resul
     Ok(None)
 }
 
-fn tool_open_browser(_conn: &Connection, _cwd: &Path, _args: &Value) -> Result<Option<Value>, CandleError> {
-    Err(CandleError::Generic(
-        "OpenBrowser is not yet implemented in the Rust port".to_string(),
-    ))
+fn tool_open_browser(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+    let service_name = arg_str(args, "serviceName")
+        .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?;
+    let project_dir = resolve_project_dir(cwd)?;
+    let output = crate::commands::open_browser::handle_open_browser(
+        conn,
+        cwd,
+        &project_dir,
+        Some(service_name),
+    )?;
+    Ok(Some(serde_json::to_value(&output).unwrap_or(Value::Null)))
 }
 
 // ---- call wrapping ---------------------------------------------------------

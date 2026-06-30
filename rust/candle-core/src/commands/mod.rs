@@ -5,7 +5,9 @@
 pub mod clear_logs;
 pub mod erase_database;
 pub mod list;
+pub mod list_ports;
 pub mod logs;
+pub mod open_browser;
 pub mod restart;
 pub mod wait_for_log;
 pub mod watch;
