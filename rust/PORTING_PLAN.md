@@ -60,15 +60,21 @@ pnpm test:rust                                                     # cargo build
 `dirs`, `errors` (`CandleError`), `debug`, `run_context`, `output` (capturable sink — see below),
 `db/{mod (schema+WAL+migration, get_database/open_database_at), process_table, stdin_messages,
 cleanup}`, `config/{model,paths,validate,file,commands}`, `logs/{log_type, process_logs,
-log_iterator, console_log}`, `process_alive`, `process_tree`, `kill`, `commands/{mod
-(assert_valid_command_names), list}`, `log_collector/{mod, monitor}`, `start/{launch,
-start_one_service, start_command}`, `doc_files`. CLI: `candle-cli/src/{main (hand-rolled dispatch),
-parser, help}`.
+log_iterator (per-call + default `limit`), console_log}`, `log_filters/{latest_execution_log_filter,
+execution_status_tracker}`, `process_alive`, `process_tree`, `kill`, `commands/{mod
+(assert_valid_command_names), list, logs, clear_logs, wait_for_log, watch, restart, erase_database}`,
+`log_collector/{mod, monitor}`, `start/{launch, start_one_service, start_command}`, `mcp/{mod}`
+(stdio JSON-RPC server), `doc_files`. CLI: `candle-cli/src/{main (hand-rolled dispatch), parser,
+help}`.
 
 **Output sink (`candle_core::output`):** handlers emit via `output::out`/`output::err`. In the CLI
-this passes through to real stdout/stderr; `output::capture(f)` buffers it. This exists so the **MCP
-server (M8)** can capture handler output. New command handlers SHOULD emit through this sink. `list`
-additionally returns structured data + a JSON serializer (MCP and `--json` both use the JSON form).
+this passes through to real stdout/stderr; `output::capture(f)` buffers it (returning a
+`CapturedOutput` with `stdout`/`stderr` vecs, a `transcript()`, and `mcp_log_lines()` which prefixes
+stderr lines with `[stderr] ` in emission order). This is what lets the **MCP server** capture
+handler output instead of corrupting the JSON-RPC stream. New command handlers SHOULD emit through
+this sink. `list` additionally returns structured data + a JSON serializer (`list_output_to_json`
+emits just the `processes` array for `--json`; MCP `ListServices` serializes the whole `ListOutput`
+as `{processes:[...]}`).
 
 ## Remaining work — do in this order
 
@@ -158,11 +164,23 @@ additionally returns structured data + a JSON serializer (MCP and `--json` both 
   command_name`). That is correct parity, not a bug.
 - **`wait-for-log` is a hidden dependency of most start/kill/list tests** — they `start` then
   `wait-for-log` for a marker before asserting. Port it early.
-- **Don't run two subagents that both edit `candle-core/src/lib.rs` concurrently** — they race on the
-  `pub mod` lines. Sequence candle-core work; CLI/test-harness edits can run in parallel with
-  candle-core work.
-- One subagent **stalled on a stream watchdog** mid-cluster; its only salvaged output is the
-  committed `console_log` scaffold. The cluster commands themselves still need doing (step 1).
+- **Don't run two subagents that both edit `candle-core/src/lib.rs` (or `commands/mod.rs`)
+  concurrently** — they race on the `pub mod` lines. Sequence candle-core work; CLI/test-harness
+  edits (separate crate / TS files) can run in parallel with candle-core work.
+- **MCP stdio framing is newline-delimited JSON**, NOT LSP-style `Content-Length` framing. The test
+  client (`expect-mcp`) writes `JSON.stringify(msg) + "\n"` and reads responses line-by-line. The
+  protocol version it sends is `2025-06-18`. Requests carry an `id` (respond); notifications
+  (`notifications/initialized`) have none (stay silent). On stdin EOF the server must `exit(0)`.
+- **stdout purity for MCP** — only JSON-RPC frames may hit real stdout. The synchronous
+  `output::capture` already isolates handler output per call, so wrapping each tool handler in it is
+  sufficient; just make sure nothing else in `serve_mcp` prints to stdout.
+- **MCP `StartService` result text** the tests assert on (`"Started"`, the shell command) comes from
+  the captured `start_one_service` banner in the **logs** content item, not the structured result
+  (which is just `{projectDir, serviceName}`). Content order is logs-item first, then result/error.
+- **`erase-database` was a pre-existing gap** (M1 listed it but it was never wired); ported here.
+  Watch for other "claimed done in an earlier milestone but actually stubbed" commands.
+- **`pnpm test:rust`** already builds the release binary then runs the suite with
+  `CANDLE_TEST_TARGET=rust` — use it for a one-shot full verification.
 
 ---
 
@@ -280,6 +298,11 @@ All spawning funnels through `test/TestWorkspace.ts` (`runCli`, `createMcpApp`, 
   (keep `pnpm build` only if node target is also being exercised).
 
 ## Milestones & task breakdown (TDD chunks, each independently committable)
+
+> **Status:** ✅ **M0–M6 and M8 are DONE** (committed on `rust-port`); `erase-database` also ported.
+> ⬜ **M7** (`list-ports`/`open-browser`) and ⬜ **M9** (docs/CI finalize) remain. The full acceptance
+> suite is green (322/322) without M7, which has no tests. The bullets below are the original
+> breakdown, kept for reference.
 
 Verification for every chunk: relevant subset of the Vitest suite passes with `CANDLE_TEST_TARGET=rust`
 (after the harness switch lands in M1), plus Rust unit tests for pure logic.
