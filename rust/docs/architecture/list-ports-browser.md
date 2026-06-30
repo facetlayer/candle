@@ -1,15 +1,11 @@
-I have everything needed. Here is the spec.
+# List, ports & open-browser
 
-# Spec: `list-ports-browser` subsystem (candle → Rust reimplementation)
+This subsystem covers five CLI commands. In the Rust implementation they live in `rust/candle-core/src/commands/{list,list_ports,open_browser}.rs`, with process-tree walking in `rust/candle-core/src/process_tree.rs`. It mirrors the original Node implementation:
+- `list` / `ls` and `list-all` → `commands/list.rs` (original `src/list-command.ts`)
+- `list-ports` and `list-ports-all` → `commands/list_ports.rs` (original `src/list-ports-command.ts`)
+- `open-browser` → `commands/open_browser.rs` (original `src/open-browser-command.ts`)
 
-This subsystem covers five CLI commands implemented across three source files:
-- `list` / `ls` and `list-all` → `src/list-command.ts`
-- `list-ports` and `list-ports-all` → `src/list-ports-command.ts`
-- `open-browser` → `src/open-browser-command.ts`
-
-It depends on: the SQLite `processes` table (`src/database/processTable.ts`), liveness checking (`src/process-alive.ts`), process-tree walking (`src/process-tree.ts`), config-file resolution (`src/configFile.ts`), the DB layer (`src/database/database.ts`), and state-dir resolution (`src/dirs.ts`).
-
----
+It depends on: the SQLite `processes` table (`src/database/processTable.ts`), liveness checking (`src/process-alive.ts`), process-tree walking (`rust/candle-core/src/process_tree.rs`, original `src/process-tree.ts`), config-file resolution (`src/configFile.ts`), the DB layer (`src/database/database.ts`), and state-dir resolution (`src/dirs.ts`).
 
 ## 1. Shared data model
 
@@ -28,7 +24,7 @@ create table processes(
   root text
 )
 ```
-`ProcessEntry` (`src/database/processTable.ts:3-14`) maps 1:1 to these columns. `start_time` and `created_at`/`killed_at` are **unix seconds** (note: code multiplies `start_time * 1000` to get ms). `killed_at` and `root` are nullable (`killed_at?`, `root?`).
+`ProcessEntry` (`src/database/processTable.ts:3-14`) maps 1:1 to these columns. `start_time` and `created_at`/`killed_at` are **unix seconds** (the code multiplies `start_time * 1000` to get ms). `killed_at` and `root` are nullable.
 
 DB location (`src/dirs.ts:9-22`, `database.ts:66`): `<stateDir>/candle.db` where `stateDir` =
 1. `$CANDLE_DATABASE_DIR` if set, else
@@ -45,15 +41,13 @@ Relevant queries (`processTable.ts`):
 - `deleteProcessEntry({commandName, projectDir, pid})` → `delete ... where command_name=? and project_dir=? and pid=?`.
 
 ### Liveness (`src/process-alive.ts`)
-`isProcessAlive(pid)`: `process.kill(pid, 0)` (signal 0). In Rust: `kill(pid, 0)` via `nix`/`libc`. **Subtle:** `EPERM` (process exists, other user) → **alive=true**; `ESRCH` → dead. 
+`isProcessAlive(pid)`: a signal-0 `kill(pid, 0)` probe (via `nix`/`libc` in Rust). **Subtle:** `EPERM` (process exists, other user) → **alive=true**; `ESRCH` → dead.
 
-`filterAliveProcesses(entries)` (`process-alive.ts:26-41`): for each entry, alive if **either** `log_collector_pid` is truthy AND alive, **or** `pid` is alive. If neither, **delete the row from the DB** (side effect) and drop it. Note `log_collector_pid` is checked first and short-circuits.
+`filterAliveProcesses(entries)` (`process-alive.ts:26-41`): for each entry, alive if **either** `log_collector_pid` is truthy AND alive, **or** `pid` is alive. If neither, **delete the row from the DB** (side effect) and drop it. `log_collector_pid` is checked first and short-circuits.
 
----
+## 2. `handleList` — `list` / `list-all` (`commands/list.rs`)
 
-## 2. `handleList` — `list` / `list-all`
-
-`src/list-command.ts:47-123`. Signature: `handleList(options?: { showAll?: boolean }): Promise<ListOutput>`.
+`src/list-command.ts:47-123`. Signature: `handleList(options?: { showAll?: boolean }) -> ListOutput`.
 
 ### Return type (tests/CLI serialize `output.processes`)
 ```ts
@@ -75,11 +69,11 @@ CLI (`main-cli.ts:356-375`): with `--json`, prints `JSON.stringify(output.proces
 
 ### 2.1 `list-all` branch (`showAll: true`, lines 49-64)
 - No config file needed. `processEntries = filterAliveProcesses(findAllProcesses())`.
-- Map each entry to: `serviceName = command = command_name`, `workingDir = project_dir`, `uptime = formatUptime(Date.now() - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
+- Map each entry to: `serviceName = command = command_name`, `workingDir = project_dir`, `uptime = formatUptime(now_ms - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
 - Only alive processes appear (dead ones filtered + deleted). All listed rows are `RUNNING`.
 
 ### 2.2 `list` branch (default, lines 65-122)
-1. `findConfigFile(process.cwd())` → `{ config, projectDir }`. Throws `MissingSetupFileError` if no `.candle.json`/`.candle-setup.json` found walking up (see §6).
+1. `findConfigFile(cwd)` → `{ config, projectDir }`. Throws `MissingSetupFileError` if no `.candle.json`/`.candle-setup.json` found walking up (see §6).
 2. `configByName` = Map of `service.name → ServiceConfig`.
 3. `processEntries = filterAliveProcesses(findRunningProcessesByProjectDir(projectDir))`.
 4. `runningByName` = Map `command_name → entry`.
@@ -99,15 +93,13 @@ Returns `false` if no matching config service. Else `true` if `entry.shell !== s
 ### 2.4 `printListOutput` (`list-command.ts:141-183`)
 - If `output.message` → print it, return.
 - If `processes.length === 0` → print exactly `No services configured.` and return.
-- Headers: `['NAME','STATUS','PID','UPTIME','COMMAND','DIRECTORY']`.
+- Headers: `NAME STATUS PID UPTIME COMMAND DIRECTORY`.
 - Per row: status string gets ` [config changed]` appended when `configChanged` truthy. `pid` cell = `pid > 0 ? pid.toString() : '-'`.
-- Column widths = max(header len, all cell lens). Cells `padEnd(width)`, joined by **two spaces** (`'  '`). Separator row = `'-'.repeat(width)` per column joined by two spaces. Print header, separator, then rows.
+- Column widths = max(header len, all cell lens). Cells padded to width, joined by **two spaces** (`'  '`). Separator row = `'-'.repeat(width)` per column joined by two spaces. Print header, separator, then rows.
 
----
+## 3. `handleListPorts` — `list-ports` / `list-ports-all` (`commands/list_ports.rs`)
 
-## 3. `handleListPorts` — `list-ports` / `list-ports-all`
-
-`src/list-ports-command.ts:23-78`. Signature: `handleListPorts(options?: { showAll?: boolean; commandNames?: string[] }): Promise<ListPortsOutput>`.
+`src/list-ports-command.ts:23-78`. Signature: `handleListPorts(options?: { showAll?: boolean; commandNames?: string[] }) -> ListPortsOutput`.
 
 ### Return type
 ```ts
@@ -121,37 +113,37 @@ interface PortInfo {
 }
 interface ListPortsOutput { ports: PortInfo[]; }
 ```
-CLI never JSON-serializes this; only `printListPortsOutput` is used.
+The CLI never JSON-serializes this; only `printListPortsOutput` is used.
 
 ### Algorithm
-1. `findConfigFile(process.cwd())` → `projectDir` (throws if none).
+1. `findConfigFile(cwd)` → `projectDir` (throws if none).
 2. `processEntries = showAll ? findAllProcesses() : findProcessesByProjectDir(projectDir)`. **Note:** this uses the *non-running* query — includes `killed_at` rows. No `filterAliveProcesses` here; dead pids simply yield no lsof matches.
 3. If `commandNames` non-empty, filter `processEntries` to those whose `command_name ∈ commandNames`.
-4. For each entry, compute its full process tree `getProcessTree(entry.pid)` (in parallel via `Promise.all`).
+4. For each entry, compute its full process tree `getProcessTree(entry.pid)`.
 5. Collect **all** pids across all trees into `allPids`. If empty → return `{ ports: [] }`.
 6. `getListeningPorts(allPids)` → raw `{pid, port, address, protocol}[]`.
 7. Build `pidToService: Map<pid → {serviceName, rootPid}>` from the trees (later trees overwrite earlier on pid collision).
 8. For each raw port, look up its pid in `pidToService`; skip if absent. Emit `PortInfo` with `isChildProcess = raw.pid !== service.rootPid`.
 
-### 3.1 Process tree (`src/process-tree.ts`)
+### 3.1 Process tree (`rust/candle-core/src/process_tree.rs`, original `src/process-tree.ts`)
 `getProcessTree(rootPid)`: BFS/DFS starting from `rootPid` (included), repeatedly calling `getChildPids(pid)`:
 - **macOS (`darwin`)**: `pgrep -P <pid>` → child pids.
 - **Linux**: `ps -o pid --no-headers --ppid <pid>`.
 - **other platforms**: returns `[]` (no descendants).
-Output parsing: trim, split on `\n`, drop empties, `parseInt(trim,10)`, drop NaN. On spawn error → `[]`. Result includes the root pid plus all transitive descendants.
+Output parsing: trim, split on `\n`, drop empties, parse base-10 integers, drop non-numeric. On spawn error → `[]`. Result includes the root pid plus all transitive descendants.
 
 ### 3.2 Port detection — `getListeningPorts` (`list-ports-command.ts:87-118`)
-Runs **one** command: `lsof -iTCP -sTCP:LISTEN -n -P` (stdin ignored, stderr ignored, stdout captured). Parses **all** listening sockets system-wide, then filters to pids in the requested set. On spawn `error` (e.g. lsof missing) → resolves `[]`.
+Runs **one** command: `lsof -iTCP -sTCP:LISTEN -n -P` (stdin ignored, stderr ignored, stdout captured). Parses **all** listening sockets system-wide, then filters to pids in the requested set. On spawn error (e.g. lsof missing) → returns `[]`.
 
 **`parseLsofOutput` (`list-ports-command.ts:128-192`)** — exact rules:
 - Split stdout on `\n`. Skip any line not containing the substring `LISTEN`.
 - Split line on `/\s+/`. Skip if `< 9` fields.
-- pid = `parseInt(parts[1],10)`; skip if NaN.
+- pid = base-10 parse of `parts[1]`; skip if non-numeric.
 - protocol = value of first field equal to `"TCP"` or `"UDP"`; if none found default `"TCP"`.
 - name column = `parts[parts.length - 2]` (second-to-last, since last is `(LISTEN)`). Skip if missing or has no `:`.
-- Split address/port at the **last** `:` (`lastIndexOf`). address = before, portStr = after, `port = parseInt(portStr,10)`; skip if NaN. This handles IPv6 like `[::1]:3000` (address `[::1]`) and `*:8080`.
+- Split address/port at the **last** `:` (`lastIndexOf`). address = before, portStr = after, `port = parseInt(portStr,10)`; skip if non-numeric. This handles IPv6 like `[::1]:3000` (address `[::1]`) and `*:8080`.
 - Normalize: address `"*"` → `"0.0.0.0"`.
-- **Dedup**: keep first occurrence per `"${pid}:${port}"` key (lsof prints IPv4+IPv6 separate lines for same listener).
+- **Dedup**: keep first occurrence per `"${pid}:${port}"` key (lsof prints IPv4+IPv6 separate lines for the same listener).
 
 Example lsof line that parses (from the doc comment, lines 123-126):
 ```
@@ -160,13 +152,11 @@ node    12345   user   45u  IPv4 0x1234    0t0  TCP 127.0.0.1:3000 (LISTEN)
 
 ### 3.3 `printListPortsOutput` (`list-ports-command.ts:194-225`)
 - Empty → print exactly `No open ports found for running services.` and return.
-- Headers `['SERVICE','PID','PORT','ADDRESS','PROTOCOL']`. The PROTOCOL cell gets suffix ` (child)` when `isChildProcess`. Same column-pad/two-space-join table formatting as §2.4.
+- Headers `SERVICE PID PORT ADDRESS PROTOCOL`. The PROTOCOL cell gets suffix ` (child)` when `isChildProcess`. Same column-pad/two-space-join table formatting as §2.4.
 
----
+## 4. `handleOpenBrowser` — `open-browser` (`commands/open_browser.rs`)
 
-## 4. `handleOpenBrowser` — `open-browser`
-
-`src/open-browser-command.ts:41-75`. Signature: `handleOpenBrowser({ projectDir, serviceName? }): Promise<OpenBrowserOutput>`.
+`src/open-browser-command.ts:41-75`. Signature: `handleOpenBrowser({ projectDir, serviceName? }) -> OpenBrowserOutput`.
 
 ### Return type
 ```ts
@@ -198,79 +188,58 @@ Spawned with `stdio:'ignore', detached:true`. On `'spawn'` event → `child.unre
 ### `printOpenBrowserOutput` (lines 113-115)
 Prints exactly: `Opened <url> in browser`.
 
----
-
 ## 5. CLI wiring (`src/main-cli.ts`)
 
-Command definitions (yargs):
+Command definitions:
 - `['list','ls']` and `list-all`: both accept `--json` boolean (`:139-140`). Dispatch `:356-375`: `handleList({})` vs `handleList({showAll:true})`; `--json` → print `JSON.stringify(output.processes, null, 2)`.
 - `list-ports [names...]` (`:180`) → `handleListPorts({ commandNames })` (`:378`). `list-ports-all` (`:181`) → `handleListPorts({ showAll:true })` (`:384`).
 - `open-browser [name]` (`:182`) → `projectDir = findProjectDir(); serviceName = commandNames[0]; handleOpenBrowser({projectDir, serviceName})` (`:389-394`).
 
-**Bug to preserve-or-fix decision:** positional for `list-ports` is named `names`, but arg extraction (`:266-270`) reads `argv.name` (singular) to build `commandNames`. So as wired, `list-ports foo bar` does **not** populate `commandNames` and lists ports for all project processes. `commandNames` is reliably populated for commands declared with `[name...]`/`[name]`. Confirm against tests before replicating; the internal `handleListPorts` filter itself works correctly when given names (open-browser relies on it).
+**`list-ports` positional-name quirk (preserved):** the positional for `list-ports` is declared as `names`, but arg extraction (`:266-270`) reads `argv.name` (singular) to build `commandNames`. So as wired, `list-ports foo bar` does **not** populate `commandNames` and instead lists ports for all project processes. This quirk is reproduced in the Rust implementation. `commandNames` is reliably populated for commands declared with `[name...]`/`[name]`, and the internal `handleListPorts` filter itself works correctly when given names (open-browser relies on it).
 
-All commands use `.strictOptions()`.
-
----
+All commands use strict option parsing.
 
 ## 6. Config resolution (`src/configFile.ts`) — needed by all three
 
-`findConfigFile(cwd)` (`:68-98`): walk from `path.resolve(cwd)` upward; at each dir test `.candle.json` then `.candle-setup.json` (priority order, `CONFIG_FILENAMES`). First existing → parse via `readConfigFile` and return `{ config, projectDir, configFilename }`. If a file exists but parse fails → throw `Error("Invalid <filename> at <path>: <msg>")`. If reach filesystem root with nothing → throw `MissingSetupFileError(startingDir)` (message: `No .candle.json file found in (or above) current directory: <cwd>`).
+`findConfigFile(cwd)` (`:68-98`): walk from the resolved `cwd` upward; at each dir test `.candle.json` then `.candle-setup.json` (priority order, `CONFIG_FILENAMES`). First existing → parse via `readConfigFile` and return `{ config, projectDir, configFilename }`. If a file exists but parse fails → throw `Error("Invalid <filename> at <path>: <msg>")`. If the filesystem root is reached with nothing → throw `MissingSetupFileError(startingDir)` (message: `No .candle.json file found in (or above) current directory: <cwd>`).
 
-`findProjectDir(cwd=process.cwd())` (`:37-44`) returns just `projectDir`.
+`findProjectDir(cwd)` (`:37-44`) returns just `projectDir`.
 
 `readConfigFile`: read UTF-8, trim; empty file → `{ services: [] }`; else `JSON.parse`, default `services=[]`, then `validateConfig`. `ServiceConfig = { name, shell, root?, enableStdin? }`. Only `name` and `shell` matter for this subsystem (drift detection compares `shell` and `root`).
 
 Errors: `UsageError`/`MissingSetupFileError`/`MissingServiceWithNameError` all carry `isUsageError = true` (`src/errors.ts`), used by the top-level CLI to print a clean message instead of a stack trace.
 
----
+## 7. Subtleties / correctness notes
 
-## 7. Subtleties / easy-to-get-wrong in Rust
-
-- **Time units:** `start_time` is unix **seconds**; uptime computed as `now_ms - start_time*1000`. Don't treat as ms.
-- **`formatUptime` zero case:** must emit `"0s"` when all components are zero (other "not running" rows use literal `"-"`, set separately).
+- **Time units:** `start_time` is unix **seconds**; uptime computed as `now_ms - start_time*1000`. Not treated as ms.
+- **`formatUptime` zero case:** emits `"0s"` when all components are zero (other "not running" rows use the literal `"-"`, set separately).
 - **`pid=0` sentinel** for not-running rows; printed as `"-"`.
 - **liveness EPERM → alive**; only ESRCH (no-such-process) is dead. And `filterAliveProcesses` **deletes** dead rows as a side effect (mutating the DB during a read command).
 - **`log_collector_pid` checked before `pid`** in liveness, and only if truthy/nonzero.
 - **list-ports uses `findProcessesByProjectDir` (includes killed)** and does NOT prune via `filterAliveProcesses`; correctness comes from lsof simply not matching dead pids. open-browser's `resolveServiceName` likewise counts killed rows as "processes."
-- **lsof parsing** is positional and brittle: relies on `LISTEN` substring, `>=9` whitespace fields, name = second-to-last token, split at last `:`. Replicate the dedup-by-`pid:port` and `*`→`0.0.0.0` normalization. Default protocol `"TCP"` if no TCP/UDP token found.
-- **Single global lsof call** then in-memory filter — not per-pid; preserve for performance and to match output.
+- **lsof parsing** is positional and brittle: relies on the `LISTEN` substring, `>=9` whitespace fields, name = second-to-last token, split at last `:`. The dedup-by-`pid:port` and `*`→`0.0.0.0` normalization are reproduced. Default protocol `"TCP"` if no TCP/UDP token found.
+- **Single global lsof call** then in-memory filter — not per-pid; preserved for performance and to match output.
 - **Process tree is platform-specific** (`pgrep -P` on macOS, `ps --ppid` on Linux, empty elsewhere). `isChildProcess` depends on it.
 - **open-browser always builds `http://localhost:<port>`**, ignoring bind address; picks the numerically lowest port.
-- **Table formatting**: two-space column separator, `padEnd`, dashed separator line; exact empty-state strings (`No services configured.`, `No open ports found for running services.`, `Opened <url> in browser`) are user-facing.
+- **Table formatting:** two-space column separator, padded cells, dashed separator line; exact empty-state strings (`No services configured.`, `No open ports found for running services.`, `Opened <url> in browser`) are user-facing.
 - **`--json` prints the inner array**, not `{processes: [...]}`.
 
----
+## 8. Implementation dependencies
 
-## 8. External npm deps → Rust crates
-
-| npm / Node API | Used for | Rust equivalent |
+| Node API | Used for | Rust equivalent |
 |---|---|---|
-| `@facetlayer/sqlite-wrapper` (`DatabaseLoader`, `SqliteDatabase`) | SQLite access, WAL, migrations | `rusqlite` (+ manual migration or `refinery`) |
-| `node:child_process` `spawn` | run `lsof`, `pgrep`/`ps`, browser opener | `std::process::Command` (async: `tokio::process::Command`) |
-| `process.kill(pid,0)` | liveness | `nix::sys::signal::kill(Pid, None)` or `libc::kill` |
+| `@facetlayer/sqlite-wrapper` (`DatabaseLoader`, `SqliteDatabase`) | SQLite access, WAL, migrations | `rusqlite` |
+| `node:child_process` `spawn` | run `lsof`, `pgrep`/`ps`, browser opener | `std::process::Command` |
+| `process.kill(pid,0)` | liveness | `nix::sys::signal::kill(Pid, None)` / `libc::kill` |
 | `os.platform()` / `process.platform` | platform branch | `std::env::consts::OS` / `cfg!(target_os=...)` |
-| `path`, `fs` | config walk-up, state dir | `std::path`, `std::fs`, `dirs`/`home` crate for `~` |
+| `path`, `fs` | config walk-up, state dir | `std::path`, `std::fs`, `dirs`/`home` for `~` |
 | `yargs` | CLI parsing | `clap` |
-| Browser open | `open`/`xdg-open`/`cmd start` | reimplement same commands, or the `open`/`opener` crate (verify it matches arg behavior, esp. win32 empty title) |
+| Browser open | `open`/`xdg-open`/`cmd start` | same per-platform commands (including the win32 empty-title arg) |
 
----
+Cross-module dependency edges: open-browser → list-ports (calls `handleListPorts` with a single command name); list/list-ports → config_file + process_table; everything → db.
 
-## 9. Rust reimplementation notes (modules / ordering)
+## 9. Source files
 
-Build bottom-up:
+Rust modules: `rust/candle-core/src/commands/list.rs`, `rust/candle-core/src/commands/list_ports.rs`, `rust/candle-core/src/commands/open_browser.rs`, `rust/candle-core/src/process_tree.rs`.
 
-1. **`dirs`** — `get_state_directory()` (env `CANDLE_DATABASE_DIR` → `XDG_STATE_HOME/candle` → `~/.local/state/candle`).
-2. **`db`** — open `<stateDir>/candle.db` with `rusqlite`, schema create-if-missing, `journal_mode=WAL`, `busy_timeout=30000`.
-3. **`process_table`** — `ProcessEntry` struct + queries: `find_all_processes`, `find_running_processes_by_project_dir`, `find_processes_by_project_dir`, `find_processes_by_command_name_and_project_dir`, `delete_process_entry`.
-4. **`process_alive`** — `is_process_alive(pid)` (EPERM→true), `filter_alive_processes(entries)` (with delete side effect).
-5. **`process_tree`** — `get_process_tree(root_pid)` BFS using platform commands; `get_child_pids`.
-6. **`config_file`** — `find_config_file(cwd)`, `find_project_dir`, `ServiceConfig` (need `name`, `shell`, `root`), `MissingSetupFileError`.
-7. **`list_command`** — `ListOutput`/row struct, `hasConfigDrift`, `format_uptime`, `handle_list({show_all})`, `print_list_output`. (depends on 3,4,6)
-8. **`list_ports_command`** — `PortInfo`, `get_listening_ports` (+`parse_lsof_output`), `handle_list_ports({show_all, command_names})`, `print_list_ports_output`. (depends on 3,5)
-9. **`open_browser_command`** — `resolve_service_name`, `open_url` (platform table), `handle_open_browser`, `print_open_browser_output`. (depends on 3,6,8)
-10. **`cli`** (clap) — wire `list`/`ls`, `list-all`, `list-ports [names...]`, `list-ports-all`, `open-browser [name]`, `--json` flag; map `isUsageError` errors to clean messages. (depends on 7,8,9)
-
-Key cross-module dependency edges: open-browser → list-ports (calls `handle_list_ports` with a single command name); list/list-ports → config_file + process_table; everything → db.
-
-Relevant files: `/Users/andy/candle/src/list-command.ts`, `/Users/andy/candle/src/list-ports-command.ts`, `/Users/andy/candle/src/open-browser-command.ts`, `/Users/andy/candle/src/database/processTable.ts`, `/Users/andy/candle/src/database/database.ts`, `/Users/andy/candle/src/process-alive.ts`, `/Users/andy/candle/src/process-tree.ts`, `/Users/andy/candle/src/configFile.ts`, `/Users/andy/candle/src/dirs.ts`, `/Users/andy/candle/src/errors.ts`, `/Users/andy/candle/src/main-cli.ts`. Tests: `/Users/andy/candle/test/cli/list.test.ts`, `/Users/andy/candle/test/cli/list-all.test.ts`.
+Historical Node source of truth: `src/list-command.ts`, `src/list-ports-command.ts`, `src/open-browser-command.ts`, `src/database/processTable.ts`, `src/database/database.ts`, `src/process-alive.ts`, `src/process-tree.ts`, `src/configFile.ts`, `src/dirs.ts`, `src/errors.ts`, `src/main-cli.ts`. Tests: `test/cli/list.test.ts`, `test/cli/list-all.test.ts`.

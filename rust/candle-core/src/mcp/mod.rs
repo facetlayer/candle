@@ -2,7 +2,7 @@
 //!
 //! Ported from `src/mcp/mcp-main.ts` + `src/mcp/ConsoleLogInterceptor.ts`. Lets an
 //! LLM client manage local dev processes over a newline-delimited JSON-RPC stream
-//! on stdin/stdout. See `rust/docs/porting/map-mcp.md` for the full spec.
+//! on stdin/stdout. See `rust/docs/architecture/mcp.md` for the full spec.
 //!
 //! Architecture notes:
 //! - **Transport is hand-rolled**, not `rmcp`: the candle-core handlers are
@@ -325,7 +325,7 @@ fn call_wrapped(handler: Handler, conn: &Connection, cwd: &Path, args: &Value) -
     }
 }
 
-/// Build the `tools/call` result `{ content, isError }` per map-mcp.md §4.
+/// Build the `tools/call` result `{ content, isError }` per architecture/mcp.md §4.
 fn build_call_result(outcome: CallOutcome) -> Value {
     let mut content: Vec<Value> = Vec::new();
     if !outcome.logs.is_empty() {

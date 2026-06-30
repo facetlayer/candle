@@ -2,7 +2,7 @@
 //!
 //! Ports `src/start-command.ts`, `src/start/startOneService.ts`, and the
 //! Rust-sidecar half of `src/log-collector/launchWithLogCollector.ts`. See
-//! `rust/docs/porting/map-start-flow.md`.
+//! `rust/docs/architecture/start-flow.md`.
 
 pub mod launch;
 pub mod start_command;

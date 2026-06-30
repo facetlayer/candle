@@ -3,7 +3,7 @@
 //!
 //! Ports `src/kill/killProcessTree.ts`, `src/kill/killOneRunningProcess.ts`,
 //! `src/kill-command.ts`, and `src/kill-all-command.ts`. See
-//! `rust/docs/porting/map-kill-restart.md`.
+//! `rust/docs/architecture/kill-restart.md`.
 //!
 //! Kill is a *mark*, not a hard delete: the normal success path only sets
 //! `killed_at` so `candle list` immediately stops reporting the row as RUNNING;
