@@ -18,7 +18,11 @@ the black-box acceptance suite and is repointed at the Rust binaries. The Node i
 
 # 🔧 HANDOFF — current status & how to continue
 
-**Branch:** `rust-port` (off `main`). Each milestone is its own commit(s); nothing is merged to `main`.
+**Branch:** the port lives on `main` (the originally-planned `rust-port` branch was never used — all
+milestone commits, M0 through M7, landed directly on `main`). Each milestone is its own commit(s).
+The Node implementation in `../src` is still present and still the published package; the Rust port
+is not yet the default for `npm test` or CI (that's M9). Latest milestone commit: M7
+(`rust: port list-ports/open-browser (M7)`).
 
 ## What works today
 
@@ -62,7 +66,8 @@ pnpm test:rust                                                     # cargo build
 cleanup}`, `config/{model,paths,validate,file,commands}`, `logs/{log_type, process_logs,
 log_iterator (per-call + default `limit`), console_log}`, `log_filters/{latest_execution_log_filter,
 execution_status_tracker}`, `process_alive`, `process_tree`, `kill`, `commands/{mod
-(assert_valid_command_names), list, logs, clear_logs, wait_for_log, watch, restart, erase_database}`,
+(assert_valid_command_names), list, list_ports, open_browser, logs, clear_logs, wait_for_log, watch,
+restart, erase_database}`,
 `log_collector/{mod, monitor}`, `start/{launch, start_one_service, start_command}`, `mcp/{mod}`
 (stdio JSON-RPC server), `doc_files`. CLI: `candle-cli/src/{main (hand-rolled dispatch), parser,
 help}`.
@@ -78,14 +83,11 @@ as `{processes:[...]}`).
 
 ## Remaining work — do in this order
 
-> **DONE (steps 1–3 below): M5/M6 log-viewing cluster + `restart` + `log-eviction` parity.**
-> Committed on `rust-port`: `log_filters/` (`LatestExecutionLogFilter` + `ExecutionStatusTracker`)
-> with `LogIterator` per-call/default limit support; `commands::{logs, clear_logs, wait_for_log,
-> watch, restart}`, all wired into `candle-cli`; the `test/with-stdin/stdin.test.ts` seam now does a
-> raw `node:sqlite` insert; and `erase-database` was ported opportunistically. `log-eviction`,
-> `with-stdin`, `watch`, `wait-for-log`, `logs`, `clear-logs`, `restart`, `erase-database` test files
-> are all green. **The only remaining suite failures are M8 (MCP) — start at step 5.** Steps 1–3 are
-> retained below for historical reference.
+> **ALL CODE MILESTONES (steps 1–5, i.e. M5/M6/M7/M8) ARE DONE.** The suite is fully green
+> (322/322) and every Node command is ported. **The only remaining work is step 6 (M9):
+> defaults/docs/CI — see below.** Steps 1–5 are retained as historical reference for how each
+> subsystem was built; you do not need to do anything in them. If you are picking this up cold, read
+> "What works today" and "Architecture as built" above, then jump straight to **step 6 (M9)**.
 
 1. **Log-viewing cluster (M5/M6) — ✅ DONE.** Scaffold already committed:
    `logs::console_log` (row/system-message formatting) and `process_logs::
@@ -148,12 +150,33 @@ as `{processes:[...]}`).
    `invalid-config.test.ts` MCP cases pass. `--mcp`/`mcp` wired in `candle-cli` (`run_mcp` →
    `serve_mcp`).
 
-6. **Finalize (M9) — remaining.** Full suite is green (322/322). Still TODO for a true finish:
-   update `docs-site`/README/CLAUDE.md for intentional changes (the `logCollector` runtime switch is
-   parsed/validated but ignored — the Rust CLI always uses the Rust sidecar); decide whether to flip
-   the default `CANDLE_TEST_TARGET` to `rust` and make `package.json` `test` build Rust first; update
-   CI. Optionally port the M7 `list-ports`/`open-browser` commands for full feature parity (no tests
-   gate them).
+6. **Finalize (M9) — ⬜ THE ONLY REMAINING WORK.** Code is feature-complete and the full suite is
+   green (322/322). M9 is the "make-it-official" milestone — no new Rust features, just
+   defaults/docs/CI. Do these in order:
+
+   a. **Decide the default test target.** Today `CANDLE_TEST_TARGET` defaults to `node` (unset →
+      Node). To make Rust the default: change the default in `test/TestWorkspace.ts` +
+      `test/utils.ts:getCliPath()` to `rust`, and make `package.json`'s `test` script build the Rust
+      release binary first (`cargo build --release --manifest-path rust/Cargo.toml && vitest run`).
+      Keep a `node`-target escape hatch so the Node impl stays testable. `pnpm test:rust` already does
+      the build-then-suite dance — model `test` on it. **Confirm with the product owner before
+      flipping**, since it changes what `npm test` exercises by default.
+   b. **CI.** Add a job that builds the Rust workspace (`cargo build --release`), runs `cargo test` +
+      `cargo clippy --workspace --all-targets -- -D warnings`, then runs the Vitest suite with
+      `CANDLE_TEST_TARGET=rust`. Decide whether CI runs both targets or just Rust.
+   c. **Docs for intentional behavior changes.** The `.candle.json` `logCollector: node|rust` key is
+      still parsed/validated (config tests assert its messages) but **ignored at launch** — the Rust
+      CLI always spawns the Rust `log-collector` sidecar. Note this in `docs-site/` (and wherever
+      `logCollector` is documented) and in `README.md` if it mentions the switch. Per `CLAUDE.md`,
+      public CLI behavior changes must be reflected in `docs-site/`. The user-facing command surface
+      (`list-ports`/`open-browser`/etc.) is byte-for-byte parity, so those command docs need no
+      change — only the `logCollector` semantics do.
+   d. **Tidy.** The `not_implemented()` fallback in `candle-cli/src/main.rs` is now unreachable (every
+      canonical command is wired); leave it as a defensive catch-all or drop it. Optionally update
+      `CLAUDE.md` to mention the `rust/` tree exists and how to run it.
+
+   None of M9 is gated by the acceptance suite — it's release-engineering. When done, the Rust port
+   is a true drop-in and the milestone table below is fully ✅.
 
 ## Gotchas learned (save yourself time)
 
