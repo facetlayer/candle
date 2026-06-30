@@ -110,6 +110,8 @@ cd rust && cargo build --release
 
 The Rust collector is functionally equivalent to the Node.js version. It supports the same database schema, log types, cleanup behavior, and stdin polling.
 
+> **Note — Rust build of the Candle CLI:** The `logCollector` field selects the collector for the **published Node.js CLI**. If you run the Rust implementation of the Candle CLI itself (built from the `rust/` directory), this setting is parsed and validated but **ignored at launch** — the Rust CLI always spawns its built-in Rust collector. There is no Node collector in the Rust build.
+
 ## Complete Example
 
 ```json

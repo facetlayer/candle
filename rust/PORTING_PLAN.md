@@ -20,9 +20,10 @@ the black-box acceptance suite and is repointed at the Rust binaries. The Node i
 
 **Branch:** the port lives on `main` (the originally-planned `rust-port` branch was never used — all
 milestone commits, M0 through M7, landed directly on `main`). Each milestone is its own commit(s).
-The Node implementation in `../src` is still present and still the published package; the Rust port
-is not yet the default for `npm test` or CI (that's M9). Latest milestone commit: M7
-(`rust: port list-ports/open-browser (M7)`).
+The Node implementation in `../src` is still present and still the published package. As of M9, the
+Rust port is the **default** for `pnpm test` (unset `CANDLE_TEST_TARGET` → Rust; `pnpm test:node` is
+the escape hatch) and is gated in CI by a dedicated `rust` job. Latest milestone commit: M7
+(`rust: port list-ports/open-browser (M7)`); M9 (defaults/docs/CI) is in progress, uncommitted.
 
 ## What works today
 
@@ -150,30 +151,33 @@ as `{processes:[...]}`).
    `invalid-config.test.ts` MCP cases pass. `--mcp`/`mcp` wired in `candle-cli` (`run_mcp` →
    `serve_mcp`).
 
-6. **Finalize (M9) — ⬜ THE ONLY REMAINING WORK.** Code is feature-complete and the full suite is
-   green (322/322). M9 is the "make-it-official" milestone — no new Rust features, just
-   defaults/docs/CI. Do these in order:
+6. **Finalize (M9) — 🟡 IN PROGRESS (a/b/c done; d left as-is).** Code is feature-complete and the
+   full suite is green (322/322). M9 is the "make-it-official" milestone — no new Rust features, just
+   defaults/docs/CI.
 
-   a. **Decide the default test target.** Today `CANDLE_TEST_TARGET` defaults to `node` (unset →
-      Node). To make Rust the default: change the default in `test/TestWorkspace.ts` +
-      `test/utils.ts:getCliPath()` to `rust`, and make `package.json`'s `test` script build the Rust
-      release binary first (`cargo build --release --manifest-path rust/Cargo.toml && vitest run`).
-      Keep a `node`-target escape hatch so the Node impl stays testable. `pnpm test:rust` already does
-      the build-then-suite dance — model `test` on it. **Confirm with the product owner before
-      flipping**, since it changes what `npm test` exercises by default.
-   b. **CI.** Add a job that builds the Rust workspace (`cargo build --release`), runs `cargo test` +
-      `cargo clippy --workspace --all-targets -- -D warnings`, then runs the Vitest suite with
-      `CANDLE_TEST_TARGET=rust`. Decide whether CI runs both targets or just Rust.
-   c. **Docs for intentional behavior changes.** The `.candle.json` `logCollector: node|rust` key is
-      still parsed/validated (config tests assert its messages) but **ignored at launch** — the Rust
-      CLI always spawns the Rust `log-collector` sidecar. Note this in `docs-site/` (and wherever
-      `logCollector` is documented) and in `README.md` if it mentions the switch. Per `CLAUDE.md`,
-      public CLI behavior changes must be reflected in `docs-site/`. The user-facing command surface
-      (`list-ports`/`open-browser`/etc.) is byte-for-byte parity, so those command docs need no
-      change — only the `logCollector` semantics do.
-   d. **Tidy.** The `not_implemented()` fallback in `candle-cli/src/main.rs` is now unreachable (every
-      canonical command is wired); leave it as a defensive catch-all or drop it. Optionally update
-      `CLAUDE.md` to mention the `rust/` tree exists and how to run it.
+   a. **Default test target — ✅ DONE (product owner approved the flip).** `CANDLE_TEST_TARGET` now
+      defaults to **`rust`** (unset → Rust); `node` is the escape hatch. The seam is
+      `getCandleSpawn()` in `test/TestWorkspace.ts` — it now branches on `=== 'node'` and falls
+      through to the Rust binary. (`test/utils.ts:getCliPath()` was found to be dead code — unused by
+      any test, which all go through `getCandleSpawn()` — so it was left untouched.) `package.json`:
+      `test` now does `cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust
+      vitest run` (identical to `test:rust`); new `test:node` = `pnpm build && CANDLE_TEST_TARGET=node
+      vitest run` keeps the Node impl testable. Verified: full suite with no env var → 322/322 against
+      Rust; `node` escape hatch still spawns the Node CLI.
+   b. **CI — ✅ DONE.** `.github/workflows/ci.yml` now has two jobs (both targets gated, since Node is
+      still the published artifact): `tests` runs `pnpm test:node` (Node target); new `rust` job
+      installs the Rust toolchain (`dtolnay/rust-toolchain@stable` + clippy, `Swatinem/rust-cache`),
+      then `cargo build --release` → `cargo test` → `cargo clippy --workspace --all-targets -- -D
+      warnings` → `CANDLE_TEST_TARGET=rust pnpm exec vitest run`.
+   c. **Docs for intentional behavior change — ✅ DONE.** The `.candle.json` `logCollector: node|rust`
+      key is still parsed/validated (config tests assert its messages) but **ignored at launch** by the
+      Rust CLI (always spawns the Rust `log-collector` sidecar). Added a scoped, additive note to
+      `docs-site/docs/configuration.md` and the internal `docs/rust-log-collector.md` clarifying that
+      the setting governs the **published Node.js CLI**, and the Rust CLI build ignores it. The public
+      command surface is byte-for-byte parity, so command docs needed no change. (README.md does not
+      mention `logCollector`, so no change there.)
+   d. **Tidy — left as-is.** The `not_implemented()` fallback in `candle-cli/src/main.rs` is kept as a
+      defensive catch-all. `CLAUDE.md` not yet updated to mention the `rust/` tree (optional).
 
    None of M9 is gated by the acceptance suite — it's release-engineering. When done, the Rust port
    is a true drop-in and the milestone table below is fully ✅.

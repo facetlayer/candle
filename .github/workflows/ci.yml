@@ -17,8 +17,39 @@ jobs:
 
       - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Build
-        run: pnpm build
+      - name: Run tests (Node target)
+        run: pnpm test:node
 
-      - name: Run tests
-        run: pnpm test
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build Rust workspace
+        working-directory: rust
+        run: cargo build --release
+
+      - name: Rust unit tests
+        working-directory: rust
+        run: cargo test
+
+      - name: Clippy
+        working-directory: rust
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Acceptance suite (Rust target)
+        run: CANDLE_TEST_TARGET=rust pnpm exec vitest run

@@ -20,12 +20,12 @@ export interface CliOptions {
  * Describes how to spawn the candle CLI under test.
  *
  * The target is selected by the CANDLE_TEST_TARGET env var:
- *   - 'rust'  → the compiled Rust binary at rust/target/release/candle (spawned directly)
- *   - 'node'  → (default) the Node entrypoint src/main-cli.ts, spawned via `node`
+ *   - 'rust'  → (default) the compiled Rust binary at rust/target/release/candle (spawned directly)
+ *   - 'node'  → the Node entrypoint src/main-cli.ts, spawned via `node` (escape hatch for testing
+ *               the still-published Node implementation)
  *
- * This is the single seam that points the whole Vitest suite at either implementation. The Node
- * version is kept as the default while the Rust port is in progress; once the Rust port is complete
- * the default flips to 'rust'.
+ * This is the single seam that points the whole Vitest suite at either implementation. The Rust port
+ * is now the default; set CANDLE_TEST_TARGET=node to exercise the Node implementation instead.
  */
 export interface CandleSpawn {
     cmd: string;
@@ -35,12 +35,12 @@ export interface CandleSpawn {
 
 export function getCandleSpawn(): CandleSpawn {
     const repoRoot = path.join(__dirname, '..');
-    if (process.env.CANDLE_TEST_TARGET === 'rust') {
-        const bin = path.join(repoRoot, 'rust', 'target', 'release', 'candle');
-        return { cmd: bin, baseArgs: [], mcpCommand: `${bin} --mcp` };
+    if (process.env.CANDLE_TEST_TARGET === 'node') {
+        const cli = path.join(repoRoot, 'src', 'main-cli.ts');
+        return { cmd: 'node', baseArgs: [cli], mcpCommand: `node ${cli} --mcp` };
     }
-    const cli = path.join(repoRoot, 'src', 'main-cli.ts');
-    return { cmd: 'node', baseArgs: [cli], mcpCommand: `node ${cli} --mcp` };
+    const bin = path.join(repoRoot, 'rust', 'target', 'release', 'candle');
+    return { cmd: bin, baseArgs: [], mcpCommand: `${bin} --mcp` };
 }
 
 /**

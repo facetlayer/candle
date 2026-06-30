@@ -9,6 +9,8 @@ Candle includes an experimental log collector written in Rust as an alternative 
 
 **Status:** Experimental. The Rust collector is functionally equivalent to the Node.js collector but has not been as widely tested in production use.
 
+> **Note:** This page describes the **published Node.js CLI**, where `logCollector` chooses between the Node and Rust *collector sidecars*. The separate Rust port of the Candle CLI itself (under `rust/`) always uses the Rust collector and ignores this setting — see the [Rust port plan](../rust/PORTING_PLAN.md).
+
 ## How It Works
 
 When you start a service with `candle start`, Candle spawns a separate log collector process that captures stdout/stderr from the service and writes the output to the SQLite database. By default, this collector is a Node.js process. The Rust collector is a compiled binary that does the same job.

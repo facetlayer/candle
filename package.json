@@ -25,8 +25,9 @@
     "prepublishOnly": "node build.mts validate && node build.mts build",
     "dev": "node --watch src/main-cli.ts",
     "tsc": "tsc",
-    "test": "pnpm build && vitest run",
+    "test": "cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run",
     "test:rust": "cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run",
+    "test:node": "pnpm build && CANDLE_TEST_TARGET=node vitest run",
     "test:watch": "vitest",
     "format": "prettier --write 'src/**/*.{ts,js,json}'",
     "local:install": "pnpm build && npm i -g ."
