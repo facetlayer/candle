@@ -9,7 +9,7 @@ Candle includes an experimental log collector written in Rust as an alternative 
 
 **Status:** Experimental. The Rust collector is functionally equivalent to the Node.js collector but has not been as widely tested in production use.
 
-> **Note:** This page describes the **published Node.js CLI**, where `logCollector` chooses between the Node and Rust *collector sidecars*. The separate Rust port of the Candle CLI itself (under `rust/`) always uses the Rust collector and ignores this setting — see the [Rust port plan](../rust/PORTING_PLAN.md).
+> **Note:** This page describes the **published Node.js CLI**, where `logCollector` chooses between the Node and Rust *collector sidecars*. The separate Rust port of the Candle CLI itself (under `rust/`) always uses the Rust collector and ignores this setting.
 
 ## How It Works
 

@@ -1,9 +1,7 @@
 //! candle-core: shared library for the candle CLI and log-collector sidecar.
 //!
-//! Modules are ported from the Node/TypeScript implementation in `../../src`. See
-//! `rust/PORTING_PLAN.md` for the architecture and `rust/docs/porting/` for per-subsystem specs.
-//!
-//! Modules are added incrementally as the port progresses (see milestones M1+).
+//! Modules are ported from the Node/TypeScript implementation in `../../src`; see
+//! `rust/docs/porting/` for the per-subsystem mapping specs.
 
 pub mod commands;
 pub mod config;
