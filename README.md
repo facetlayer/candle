@@ -6,10 +6,15 @@ It's a good fit for locally running services as part of the development process.
 
 ## Quick Start ##
 
+Candle is written in Rust. Build and install it from source:
+
+    ./install-local.sh
+
+This builds the release binaries and installs `candle` (and its `log-collector` sidecar) into
+`~/.cargo/bin`. See [install-local.sh](./install-local.sh) for options.
+
 | task | command |
 | ---- | ------- |
-| Install the tool from NPM | `npm i -g @facetlayer/candle` |
-| Or run the tool using NPX | `npx @facetlayer/candle ...` |
 | Set up a project config | `candle setup-project` |
 | Add a service to the config | `candle add-service main --shell <shell command>` |
 | Start a service in the background | `candle start` (or `candle run`) |

@@ -1,6 +1,12 @@
 # Testing
 
-The acceptance test suite is a black-box conformance harness: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. It runs against either implementation through one seam — `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts) — selected by the `CANDLE_TEST_TARGET` env var. **The Rust binary is the default target**; the still-published Node implementation is the escape hatch. Most tests are unchanged from the Node era and exercise both implementations identically.
+> **Note (post-Node-removal):** The Node.js implementation has been deleted. The dual-target harness
+> described below is now single-target — the suite always runs against the compiled Rust binary. The
+> `test:node` script, the `CANDLE_TEST_TARGET=node` branch, the Node log-collector, and the CI `tests`
+> job no longer exist. The sections below are retained as a historical description of how the harness
+> straddled both implementations during the port.
+
+The acceptance test suite is a black-box conformance harness: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. It runs through one seam — `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts) — which spawns the compiled Rust binary. (Historically the seam also honored `CANDLE_TEST_TARGET=node` to run the Node implementation; that target has been removed.) Most tests are unchanged from the Node era.
 
 ## 1. Test runner mechanics
 

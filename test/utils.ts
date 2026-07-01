@@ -13,7 +13,3 @@ export function getTestTempDirectory(testName: string) {
 export function getSampleServersDirectory() {
     return path.join(__dirname, 'sampleServers');
 }
-
-export function getCliPath() {
-    return path.join(__dirname, '..', 'src', 'main-cli.ts');
-}

@@ -8,18 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-node-pnpm
-
-      - name: Run tests (Node target)
-        run: pnpm test:node
-
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 20

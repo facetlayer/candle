@@ -1,4 +1,7 @@
 
+# Unreleased
+ - Remove the legacy Node.js/TypeScript implementation now that the Rust port is complete. Candle is built and installed from source via `./install-local.sh`; the `@facetlayer/candle` npm package is retired. The Vitest acceptance suite is retained and runs against the Rust binary.
+
 # 0.13.3
  - Fix `candle restart` ignoring edits to a config-defined service's `shell`/`root`. It now reloads the service definition from `.candle.json` on restart, so config edits take effect. Transient processes (started with `--shell`) still relaunch with their stored command.
  - Fix CI by authenticating to GitHub Packages so pnpm's supply-chain policy check can verify `@facetlayer/*` dependencies hosted there.

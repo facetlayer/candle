@@ -1,8 +1,12 @@
 
 # Repo organization #
 
- ./src/ - Main source code
- ./test/ - Automated tests
+ Candle is implemented in Rust. The former Node.js/TypeScript implementation has been removed;
+ the only remaining TypeScript is the Vitest acceptance suite under ./test.
+
+ ./rust/ - Main source code (Rust workspace: candle-cli, candle-core, log-collector)
+ ./rust/docs/ - Rust architecture reference
+ ./test/ - Automated tests (Vitest, run against the compiled Rust binary)
  ./test/sampleServers/ - Sample implementations of test services.
  ./test/workspaces/ - Directories used to run Candle during tests.
  ./test/cli/ - Tests related to each CLI command
@@ -10,6 +14,7 @@
  ./docs-site/ - Public documentation website
  ./docs-site/docs/ - Contents for the public documentation site.
  ./docs-site/docs/commands/ - Public documentation for each CLI command.
+ ./install-local.sh - Build the Rust workspace and install candle locally
  ./README.md - Front page documentation that appears on Github
 
 # Documentation
