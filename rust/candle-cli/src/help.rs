@@ -7,7 +7,15 @@
 
 use candle_core::run_context::is_run_by_agent;
 
+/// The candle version, injected at build time by Cargo from the workspace `version`
+/// field in Cargo.toml (`CARGO_PKG_VERSION`). This is the single source of truth for
+/// both `--version` and the header line of the grouped help output.
+pub fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 pub fn grouped_help() -> String {
+    let version = version();
     let watch_line = if is_run_by_agent() {
         String::new()
     } else {
@@ -15,7 +23,9 @@ pub fn grouped_help() -> String {
     };
 
     format!(
-        "Usage: candle <command> [options]
+        "candle {version}
+
+Usage: candle <command> [options]
 
 Process Management:
   list, ls                  List processes for this project directory

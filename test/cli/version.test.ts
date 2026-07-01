@@ -1,7 +1,26 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, it, expect } from 'vitest';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-version');
+
+/**
+ * The version is owned by the Rust build: Cargo injects `version` from the workspace
+ * `rust/Cargo.toml` at compile time (CARGO_PKG_VERSION). Read it straight from that manifest
+ * so this test tracks the single source of truth rather than any JS package metadata.
+ */
+function versionFromCargoToml(): string {
+    const cargoToml = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'rust', 'Cargo.toml'),
+        'utf8'
+    );
+    const match = cargoToml.match(/^\s*version\s*=\s*"([^"]+)"/m);
+    if (!match) {
+        throw new Error('Could not find workspace version in rust/Cargo.toml');
+    }
+    return match[1];
+}
 
 describe('CLI Version Command', () => {
 
@@ -43,12 +62,11 @@ describe('CLI Version Command', () => {
             expect(result1.stdoutAsString().trim()).toBe(result2.stdoutAsString().trim());
         });
 
-        it('should match package.json version', async () => {
+        it('should match the version in rust/Cargo.toml', async () => {
             const result = await workspace.runCli(['--version']);
             const versionFromCli = result.stdoutAsString().trim();
 
-            const pkg = require('../../package.json');
-            expect(versionFromCli).toBe(pkg.version);
+            expect(versionFromCli).toBe(versionFromCargoToml());
         });
     });
 });

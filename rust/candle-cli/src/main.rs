@@ -38,7 +38,7 @@ fn main() {
 
     // --version / -v short-circuits everything.
     if argv.iter().any(|a| a == "--version" || a == "-v") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        println!("{}", help::version());
         return;
     }
 
