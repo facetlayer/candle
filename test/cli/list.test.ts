@@ -61,6 +61,19 @@ describe('CLI List Command', () => {
         });
     });
 
+    describe('status alias', () => {
+        it('should work with status alias', async () => {
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+
+            const listResult = await workspace.runCli(['list']);
+            const statusResult = await workspace.runCli(['status']);
+
+            expect(listResult.stdoutAsString()).toContain('echo');
+            expect(statusResult.stdoutAsString()).toContain('echo');
+        });
+    });
+
     describe('list output format', () => {
         it('should have table-like format with columns', async () => {
             await workspace.runCli(['start', 'echo']);

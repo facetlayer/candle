@@ -14,7 +14,7 @@ pub fn canonical_command(token: &str) -> Option<&'static str> {
         "restart" => "restart",
         "kill" | "stop" => "kill",
         "kill-all" => "kill-all",
-        "list" | "ls" => "list",
+        "list" | "ls" | "status" => "list",
         "list-all" => "list-all",
         "logs" => "logs",
         "watch" => "watch",
@@ -122,6 +122,7 @@ mod tests {
     fn aliases_resolve() {
         assert_eq!(canonical_command("run"), Some("start"));
         assert_eq!(canonical_command("ls"), Some("list"));
+        assert_eq!(canonical_command("status"), Some("list"));
         assert_eq!(canonical_command("stop"), Some("kill"));
         assert_eq!(canonical_command("bogus"), None);
     }

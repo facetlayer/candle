@@ -28,7 +28,7 @@ pub fn grouped_help() -> String {
 Usage: candle <command> [options]
 
 Process Management:
-  list, ls                  List processes for this project directory
+  list, ls, status          List processes for this project directory
   start, run [names...]     Start process(es) in background
   check-start [names...]    Start process(es) only if not already running
   restart [names...]        Restart running process(es)
@@ -81,7 +81,7 @@ pub fn command_help(command: &str) -> String {
         "restart" => "candle restart [name]   Restart a running process".to_string(),
         "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory".to_string(),
         "kill-all" => "candle kill-all   Kill all running processes".to_string(),
-        "list" | "ls" => "candle list   List processes for the current directory\n\nOptions:\n  --json   Output as JSON".to_string(),
+        "list" | "ls" | "status" => "candle list   List processes for the current directory\n\nOptions:\n  --json   Output as JSON".to_string(),
         "list-all" => "candle list-all   List all processes\n\nOptions:\n  --json   Output as JSON".to_string(),
         "logs" => {
             "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100)\n  --start-at <id>  Only show logs after this log ID".to_string()

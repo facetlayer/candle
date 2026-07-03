@@ -1,4 +1,4 @@
-# list / ls
+# list / ls / status
 
 List services for the current project directory.
 
@@ -7,6 +7,7 @@ List services for the current project directory.
 ```bash
 candle list
 candle ls
+candle status
 ```
 
 ## Description
