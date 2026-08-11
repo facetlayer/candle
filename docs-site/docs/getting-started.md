@@ -4,17 +4,19 @@ This guide will help you install Candle and set up your first project.
 
 ## Installation
 
-Install Candle globally using npm:
+Install the latest release with the one-line installer:
 
 ```bash
-npm install -g @facetlayer/candle
+curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
 ```
 
-Or using pnpm:
+See [Installation](installation) for Homebrew, building from source, upgrading, and
+uninstalling.
 
-```bash
-pnpm add -g @facetlayer/candle
-```
+:::note
+Candle was previously distributed as the `@facetlayer/candle` npm package. That package
+is retired — Candle is now a native binary and is no longer installed through npm.
+:::
 
 ## Configure a service
 

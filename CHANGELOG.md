@@ -1,5 +1,9 @@
 
 # Unreleased
+ - Distribute prebuilt binaries. Pushing a `v*` tag now runs `.github/workflows/release.yml`, which builds `candle` + `log-collector` for macOS and Linux (x86_64 and arm64), publishes them as a GitHub Release with a `SHA256SUMS` file, and updates the Homebrew tap.
+ - Add `install.sh`, a one-line installer (`curl -fsSL .../install.sh | sh`) that downloads the matching release for the host platform, verifies its checksum, and installs into `~/.local/bin`. Supports `--version`, `--bin-dir`, and `--uninstall`.
+ - Add a LICENSE file (MIT, matching the license already declared in `rust/Cargo.toml`) and fill in package metadata (description, repository, authors, keywords) for all three crates.
+ - Fix the documentation site still telling users to `npm install -g @facetlayer/candle`, which installs the retired Node implementation. Added a dedicated Installation page covering install, upgrade, and uninstall, and replaced the `your-org` / `your-domain.com` placeholders in the Docusaurus config.
  - Remove the legacy Node.js/TypeScript implementation now that the Rust port is complete. Candle is built and installed from source via `./install-local.sh`; the `@facetlayer/candle` npm package is retired. The Vitest acceptance suite is retained and runs against the Rust binary.
  - Print `candle <version>` as the first line of `candle --help`. The version is injected at build time from the workspace `version` in `rust/Cargo.toml` (Cargo's `CARGO_PKG_VERSION`), now the single source of truth for both `--help` and `--version`.
 

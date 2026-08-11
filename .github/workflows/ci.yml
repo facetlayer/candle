@@ -41,3 +41,32 @@ jobs:
 
       - name: Acceptance suite (Rust target)
         run: CANDLE_TEST_TARGET=rust pnpm exec vitest run
+
+  docs:
+    name: docs & installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check install.sh
+        run: |
+          sh -n install.sh
+          sh install.sh --help
+          shellcheck -s sh install.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      # The docs site is a standalone pnpm project with its own lockfile.
+      # `onBrokenLinks: throw` means this step catches dead cross-references.
+      - name: Build documentation site
+        working-directory: docs-site
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build

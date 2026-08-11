@@ -12,12 +12,12 @@ const config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://your-domain.com',
+  url: 'https://facetlayer.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   baseUrl: '/candle/',
 
   // GitHub pages deployment config
-  organizationName: 'your-org',
+  organizationName: 'facetlayer',
   projectName: 'candle',
 
   onBrokenLinks: 'throw',
@@ -41,7 +41,7 @@ const config = {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
           routeBasePath: '/',
-          editUrl: 'https://github.com/your-org/candle/tree/main/docs-site/',
+          editUrl: 'https://github.com/facetlayer/candle/tree/main/docs-site/',
         },
         blog: false,
         theme: {
@@ -64,7 +64,7 @@ const config = {
             label: 'Docs',
           },
           {
-            href: 'https://github.com/your-org/candle',
+            href: 'https://github.com/facetlayer/candle',
             label: 'GitHub',
             position: 'right',
           },
@@ -91,7 +91,7 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/your-org/candle',
+                href: 'https://github.com/facetlayer/candle',
               },
             ],
           },

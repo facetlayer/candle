@@ -6,6 +6,12 @@ members = ["candle-core", "candle-cli", "log-collector"]
 version = "0.13.3"
 edition = "2021"
 license = "MIT"
+description = "A process manager for local development, worktrees, and AI agents"
+repository = "https://github.com/facetlayer/candle"
+homepage = "https://github.com/facetlayer/candle"
+authors = ["Andy Fischer <andy.fischer@gmail.com>"]
+keywords = ["process-manager", "cli", "development", "logs"]
+categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }

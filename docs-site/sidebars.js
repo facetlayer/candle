@@ -15,6 +15,7 @@
 const sidebars = {
   tutorialSidebar: [
     {type: 'doc', id: 'index', label: 'Introduction'},
+    {type: 'doc', id: 'installation', label: 'Installation'},
     {type: 'doc', id: 'getting-started', label: 'Getting Started'},
     {type: 'doc', id: 'configuration', label: 'Configuration'},
     {
@@ -23,6 +24,7 @@ const sidebars = {
       items: [
         {type: 'doc', id: 'commands/start', label: 'start'},
         {type: 'doc', id: 'commands/run', label: 'run (alias for start)'},
+        {type: 'doc', id: 'commands/check-start', label: 'check-start'},
         {type: 'doc', id: 'commands/restart', label: 'restart'},
         {type: 'doc', id: 'commands/kill', label: 'kill'},
         {type: 'doc', id: 'commands/list', label: 'list / ls'},
@@ -50,6 +52,8 @@ const sidebars = {
       items: [
         {type: 'doc', id: 'commands/setup-project', label: 'setup-project'},
         {type: 'doc', id: 'commands/add-service', label: 'add-service'},
+        {type: 'doc', id: 'commands/remove-service', label: 'remove-service'},
+        {type: 'doc', id: 'commands/set-config', label: 'set-config'},
       ],
     },
     {

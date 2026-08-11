@@ -60,6 +60,5 @@ candle set-config logEviction.maxRetentionSeconds 172800
 
 ## See Also
 
-- [Rust Log Collector](../rust-log-collector) - Guide to the experimental Rust-based log collector
 - [setup-project](setup-project) - Create a new configuration file
 - [add-service](add-service) - Add a service to configuration

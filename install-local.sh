@@ -2,6 +2,10 @@
 #
 # install-local.sh — build and locally install the Rust-based Candle.
 #
+# This is the from-source path, for development and for platforms without a
+# prebuilt release. End users normally install with ./install.sh, which
+# downloads prebuilt binaries from GitHub Releases and needs no Rust toolchain.
+#
 # Builds the Rust workspace in release mode and installs both the `candle` CLI
 # and its `log-collector` sidecar. The two binaries MUST live in the same
 # directory: at runtime `candle` resolves the log-collector as a sibling of its

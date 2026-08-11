@@ -4,14 +4,34 @@ Candle is a process manager optimized for local development, worktrees, and AI a
 
 It's a good fit for locally running services as part of the development process.
 
+## Installation ##
+
+macOS and Linux, x86_64 and arm64:
+
+    curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
+
+This downloads the latest [release](https://github.com/facetlayer/candle/releases) for your
+platform, verifies its checksum, and installs into `~/.local/bin`. No Rust toolchain needed.
+
+Or with Homebrew:
+
+    brew install facetlayer/tap/candle
+
+Or from source (requires [Rust](https://rustup.rs/)):
+
+    git clone https://github.com/facetlayer/candle.git
+    cd candle && ./install-local.sh
+
+Candle installs two executables — `candle` and its `log-collector` sidecar — which must stay
+in the same directory.
+
+### Uninstalling ###
+
+    candle kill-all    # services are detached and outlive the binary
+    curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
+    rm -rf ~/.local/state/candle    # optional: delete the database
+
 ## Quick Start ##
-
-Candle is written in Rust. Build and install it from source:
-
-    ./install-local.sh
-
-This builds the release binaries and installs `candle` (and its `log-collector` sidecar) into
-`~/.cargo/bin`. See [install-local.sh](./install-local.sh) for options.
 
 | task | command |
 | ---- | ------- |
@@ -293,4 +313,8 @@ then run `candle kill-all` first.
 When running, Candle will create an SQLite database located at `~/.local/state/candle/candle.db`. This database
 stores a table of actively running processes, and another table of all the observed log events (from
 stdout / stderr and subprocess related events).
+
+# License #
+
+[MIT](./LICENSE)
 
