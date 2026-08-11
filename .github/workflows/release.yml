@@ -197,10 +197,13 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          # Stage first, then compare against the index: on the very first
+          # release Formula/candle.rb is untracked, and `git diff` alone does
+          # not report untracked files.
+          git add Formula/candle.rb
+          if git diff --cached --quiet; then
             echo "formula unchanged"
             exit 0
           fi
-          git add Formula/candle.rb
           git commit -m "candle $TAG"
           git push
