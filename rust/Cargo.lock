@@ -72,7 +72,7 @@ checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "candle-cli"
-version = "0.13.3"
+version = "0.14.0"
 dependencies = [
  "candle-core",
  "libc",
@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.13.3"
+version = "0.14.0"
 dependencies = [
  "include_dir",
  "libc",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "log-collector"
-version = "0.13.3"
+version = "0.14.0"
 dependencies = [
  "candle-core",
  "clap",
