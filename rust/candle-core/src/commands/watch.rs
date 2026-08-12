@@ -1,10 +1,9 @@
 //! `watch` command handler.
 //!
-//! Ports `src/watch-command.ts` + `src/watchProcess.ts` into a single module.
-//! Ensures the named (or all) services are running, then streams their logs to
-//! the console — filtered to the most recent launch within a recent time window —
-//! polling the `process_output` table until interrupted (Ctrl+C / SIGTERM) or an
-//! optional `exit_after_ms` deadline is reached.
+//! Streams live process logs to the console, polling the `process_output` table
+//! until interrupted (Ctrl+C / SIGTERM) or an optional `exit_after_ms` deadline
+//! is reached. `watch` never launches processes — it only observes. It is also
+//! reused by `start`/`restart` in interactive mode to follow a fresh launch.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
@@ -12,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
-use crate::config::file::{find_project_dir, resolve_command_names_or_all};
+use crate::config::file::find_project_dir;
+use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::errors::CandleError;
 use crate::log_filters::{ExecutionStatusTracker, LatestExecutionLogFilter, ShowPastLogsBehavior};
 use crate::logs::console_log::{
@@ -21,7 +21,7 @@ use crate::logs::console_log::{
 use crate::logs::process_logs::ProcessLog;
 use crate::logs::LogIterator;
 use crate::output;
-use crate::start::start_one_service::{start_one_service, RunOptions};
+use crate::process_alive::filter_alive_processes;
 
 const INITIAL_LOG_COUNT: i64 = 100;
 const POLL_INTERVAL: u64 = 200;
@@ -63,24 +63,30 @@ fn print_batch(
 }
 
 /// Stream logs for the given command(s) to the console until interrupted or the
-/// optional deadline is reached. Port of `watchProcess.ts`.
+/// optional deadline is reached. An empty `command_names` watches every process
+/// in the project.
+///
+/// `show_past_logs` / `recent_window_ms` control how much history is replayed
+/// before live streaming begins: the `watch` command replays recent logs, while
+/// `start` in interactive mode only shows logs from the launch it just made.
 pub fn watch_process(
     conn: &Connection,
     project_dir: &str,
     command_names: &[String],
     exit_after_ms: Option<u64>,
+    show_past_logs: ShowPastLogsBehavior,
+    recent_window_ms: Option<u64>,
 ) -> rusqlite::Result<()> {
-    let is_blended = command_names.len() > 1;
+    // With one explicit name there's no ambiguity; anything else (multiple
+    // names, or the watch-everything case) prefixes each line with its name.
+    let is_blended = command_names.len() != 1;
 
     let mut iterator = LogIterator::new(project_dir.to_string(), command_names.to_vec());
 
     // Filter to only show logs from the most recent process launch for each
-    // command, additionally pruning to a recent time window so we don't spam
+    // command, optionally pruning to a recent time window so we don't spam
     // history from long-running services when `watch` is invoked.
-    let mut filter = LatestExecutionLogFilter::new(
-        ShowPastLogsBehavior::ShowLogsFromPreviousLaunch,
-        Some(RECENT_LOG_WINDOW_MS),
-    );
+    let mut filter = LatestExecutionLogFilter::new(show_past_logs, recent_window_ms);
 
     let initial_logs = iterator.get_next_logs(conn, Some(INITIAL_LOG_COUNT))?;
     filter.check_latest_launch_status(&initial_logs);
@@ -146,7 +152,12 @@ pub fn watch_process(
     Ok(())
 }
 
-/// Handle the `watch` command. Port of `watch-command.ts`.
+/// Handle the `watch` command.
+///
+/// `watch` only observes — it never launches processes.
+/// - With no names, it watches everything in the project (including processes
+///   that haven't launched yet) and always succeeds.
+/// - With names, every named process must currently be running.
 pub fn handle_watch(
     conn: &Connection,
     cwd: &std::path::Path,
@@ -155,39 +166,73 @@ pub fn handle_watch(
 ) -> Result<(), CandleError> {
     let project_dir_path = find_project_dir(cwd)?;
     let project_dir = project_dir_path.display().to_string();
-    let names = resolve_command_names_or_all(&project_dir_path, command_names)?;
 
-    // Ensure each service is running. start_one_service with check_start:true is a
-    // no-op for services that are already running (including transient processes
-    // not in config).
-    for name in &names {
-        start_one_service(
-            conn,
-            RunOptions {
-                command_name: name.clone(),
-                project_dir: project_dir.clone(),
-                shell: None,
-                root: None,
-                enable_stdin: false,
-                check_start: true,
-            },
-        )?;
-    }
-
-    // Print what we're watching.
-    if names.len() == 1 {
-        output::out(&format!("Watching process '{}'", names[0]));
+    if command_names.is_empty() {
+        output::out("Watching all processes in this project.");
     } else {
-        output::out(&format!("Watching {} processes:", names.len()));
-        for name in &names {
-            output::out(&format!("  - '{name}'"));
+        // Each named process must be running.
+        for name in command_names {
+            let existing =
+                find_processes_by_command_name_and_project_dir(conn, name, &project_dir)
+                    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+            let not_killed: Vec<_> =
+                existing.into_iter().filter(|p| p.killed_at.is_none()).collect();
+            let running = filter_alive_processes(conn, not_killed)
+                .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+            if running.is_empty() {
+                return Err(CandleError::UsageError(format!(
+                    "Process '{name}' is not running. Start it with: candle start {name}"
+                )));
+            }
+        }
+
+        if command_names.len() == 1 {
+            output::out(&format!("Watching process '{}'", command_names[0]));
+        } else {
+            output::out(&format!("Watching {} processes:", command_names.len()));
+            for name in command_names {
+                output::out(&format!("  - '{name}'"));
+            }
         }
     }
     output::out("Press Ctrl+C to stop watching.");
     output::out("");
 
-    watch_process(conn, &project_dir, &names, exit_after_ms)
-        .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+    watch_process(
+        conn,
+        &project_dir,
+        command_names,
+        exit_after_ms,
+        ShowPastLogsBehavior::ShowLogsFromPreviousLaunch,
+        Some(RECENT_LOG_WINDOW_MS),
+    )
+    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+
+    Ok(())
+}
+
+/// Follow the logs of service(s) that were just launched by `start`/`restart`
+/// in interactive mode. Shows only logs from the fresh launch (no stale
+/// history), streaming until Ctrl+C — which detaches and leaves the processes
+/// running — or the optional deadline.
+pub fn watch_started_services(
+    conn: &Connection,
+    project_dir: &str,
+    command_names: &[String],
+    exit_after_ms: Option<u64>,
+) -> Result<(), CandleError> {
+    output::out("Watching logs. Press Ctrl+C to stop watching (the process will keep running).");
+    output::out("");
+
+    watch_process(
+        conn,
+        project_dir,
+        command_names,
+        exit_after_ms,
+        ShowPastLogsBehavior::OnlyShowAfterRecentLaunch,
+        None,
+    )
+    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
 
     Ok(())
 }

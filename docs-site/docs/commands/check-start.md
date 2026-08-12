@@ -14,6 +14,8 @@ The `check-start` command starts one or more services only if they are not alrea
 
 Compared to `start`, which always kills and restarts a running service, `check-start` is a no-op for services that are already up.
 
+Unlike `start`, `check-start` never enters watch mode — it always exits as soon as the services are confirmed running, even in an interactive terminal. This keeps it predictable for scripting.
+
 ## Arguments
 
 - `name` - Name of the service(s) to start. If omitted, checks and starts all services defined in the configuration file.

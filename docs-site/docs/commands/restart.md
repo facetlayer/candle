@@ -18,9 +18,19 @@ take effect on the next restart. Transient processes (started with `--shell`
 and not present in the config) are relaunched with the same command they were
 originally started with.
 
+`restart` follows the same interactive behavior as [start](start): when run
+interactively it watches the restarted process's logs until `Ctrl+C` (the
+process keeps running); when run non-interactively (agents, scripts, pipes) it
+exits as soon as the restart is confirmed.
+
 ## Arguments
 
 - `name` - Name of the service(s) to restart. If omitted, restarts all running services in the current project directory.
+
+## Options
+
+- `--watch` - Force interactive mode: watch logs after restarting
+- `--bg` - Force non-interactive mode: exit as soon as the restart is confirmed
 
 ## Examples
 

@@ -89,9 +89,12 @@ Candle was built and tuned to be used successfully by coding agents like Claude 
 One major decision that helps with coding agents is emphasizing **non-interactive commands**. A
 non-interactive command is one that exits immediately, instead of commands that continue to run until killed.
 
-This includes:
+Candle detects whether it's running interactively (a human at a terminal) or non-interactively
+(a coding agent, script, or pipe), and adjusts its behavior:
 
- - `candle start` (aliased as `candle run`) launches a service and then exits immediately
+ - `candle start` (aliased as `candle run`) launches a service. In an interactive terminal it then
+   watches the new process's logs until Ctrl+C (the process keeps running); when run by an agent
+   or script it exits immediately after the launch is confirmed. `--watch` and `--bg` force either mode.
  - `candle logs` can fetch recent log messages (compared to `candle watch` which interactively prints logs as they happen)
 
 Additionally the `candle --help` command detects if it's being used by Claude Code, and if so,
@@ -148,6 +151,15 @@ If no `[names]` are provided, then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
 
+When run interactively, `start` then watches the new process's logs; press Ctrl+C to
+stop watching (the process keeps running in the background). When run non-interactively
+(agents, scripts, pipes), `start` exits as soon as the launch is confirmed.
+
+Options:
+
+ - `--watch` - Force interactive mode: watch logs after starting.
+ - `--bg` - Force non-interactive mode: exit once started.
+
 ### `candle check-start [names]`
 
 Like `start` but only starts the service(s) if they are not already running.
@@ -169,9 +181,13 @@ List the services for this project directory, including active and inactive serv
 Enter watch mode for the running service(s).
 
 This will interactively print any log messages from the service
-as they happen.
+as they happen. `watch` never launches processes — use `candle start` for that.
 
-If no `[names]` are provided: Watch all running services.
+If no `[names]` are provided: Watch every process in the project (this always
+succeeds, even for services that haven't launched yet).
+
+If `[names]` are provided: Each named process must currently be running,
+otherwise the command fails.
 
 If multiple services are being watched, then each log message will have a prefix that looks like
 `[<service name>]`

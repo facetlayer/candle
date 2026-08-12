@@ -18,7 +18,7 @@ use candle_core::commands::logs::handle_logs_command;
 use candle_core::commands::open_browser::{format_open_browser_output, handle_open_browser};
 use candle_core::commands::restart::handle_restart;
 use candle_core::commands::wait_for_log::handle_wait_for_log;
-use candle_core::commands::watch::handle_watch;
+use candle_core::commands::watch::{handle_watch, watch_started_services};
 use candle_core::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
@@ -34,6 +34,14 @@ use parser::{canonical_command, parse_command_args, CommandArgs};
 use rusqlite::Connection;
 
 fn main() {
+    // Rust ignores SIGPIPE by default, which turns `candle watch | head` into a
+    // "failed printing to stdout: Broken pipe" panic. Restore the conventional
+    // Unix behavior: exit quietly when the reader goes away.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
     // --version / -v short-circuits everything.
@@ -296,8 +304,42 @@ fn cmd_kill_all() {
     }
 }
 
+/// Decide whether a launch-style command (`start` / `restart`) should stay
+/// attached and watch logs. `--watch` forces interactive, `--bg` forces
+/// non-interactive; otherwise auto-detect (human at a TTY → watch; agent,
+/// script, or pipe → return immediately).
+fn should_watch_after_launch(args: &CommandArgs) -> bool {
+    let force_bg = args.has("bg");
+    let force_watch = args.has("watch");
+    if force_bg && force_watch {
+        eprintln!("Error: Cannot use --bg and --watch together");
+        exit(1);
+    }
+    if force_watch {
+        true
+    } else if force_bg {
+        false
+    } else {
+        candle_core::run_context::is_interactive()
+    }
+}
+
+/// Print the follow-up hint after a non-interactive launch.
+fn print_logs_hint(started: &[String]) {
+    let hint = if started.len() == 1 {
+        format!("Run 'candle logs {}' to see logs.", started[0])
+    } else {
+        "Run 'candle logs' to see logs.".to_string()
+    };
+    println!("{hint}");
+}
+
 /// `start` / `run` (`check_start = false`) and `check-start` (`check_start =
 /// true`): resolve the project dir, then launch the requested service(s).
+///
+/// In interactive mode, `start` stays attached and streams the new process's
+/// logs until Ctrl+C (the process keeps running). In non-interactive mode (and
+/// always for `check-start`), it exits as soon as the launch is confirmed.
 fn cmd_start(args: &CommandArgs, check_start: bool) {
     let cwd = cwd();
     let project_dir = match find_project_dir(&cwd) {
@@ -305,11 +347,13 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
         Err(e) => fail_with(&e),
     };
 
+    let watch_after = !check_start && should_watch_after_launch(args);
+
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
     let opts = StartCommandOptions {
-        project_dir,
+        project_dir: project_dir.clone(),
         command_names: args.positionals.clone(),
         shell: args.value("shell").map(str::to_string),
         root: args.value("root").map(str::to_string),
@@ -318,8 +362,20 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
     };
 
     match handle_start_command(&conn, opts) {
-        // main-cli.ts calls process.exit(0) after start; match that.
-        Ok(()) => exit(0),
+        Ok(started) => {
+            if watch_after {
+                let exit_after_ms: Option<u64> =
+                    args.value("exit-after-ms").and_then(|s| s.parse().ok());
+                if let Err(e) =
+                    watch_started_services(&conn, &project_dir, &started, exit_after_ms)
+                {
+                    fail_with(&e);
+                }
+            } else {
+                print_logs_hint(&started);
+            }
+            exit(0)
+        }
         Err(e) => fail_with(&e),
     }
 }
@@ -421,13 +477,16 @@ fn cmd_clear_logs(args: &CommandArgs) {
 /// `restart`: kill the named (or all running) services in the project, then
 /// start them again. An unknown service name fails validation (stderr + exit 1);
 /// an empty project with nothing running yields the "No running processes" usage
-/// error from the handler.
+/// error from the handler. Follows the same interactive/non-interactive behavior
+/// as `start` (see [`cmd_start`]).
 fn cmd_restart(args: &CommandArgs) {
     let cwd = cwd();
     let project_dir = match find_project_dir(&cwd) {
         Ok(dir) => dir.display().to_string(),
         Err(e) => fail_with(&e),
     };
+
+    let watch_after = should_watch_after_launch(args);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -437,7 +496,20 @@ fn cmd_restart(args: &CommandArgs) {
     }
 
     match handle_restart(&conn, &project_dir, &args.positionals) {
-        Ok(()) => exit(0),
+        Ok(restarted) => {
+            if watch_after {
+                let exit_after_ms: Option<u64> =
+                    args.value("exit-after-ms").and_then(|s| s.parse().ok());
+                if let Err(e) =
+                    watch_started_services(&conn, &project_dir, &restarted, exit_after_ms)
+                {
+                    fail_with(&e);
+                }
+            } else {
+                print_logs_hint(&restarted);
+            }
+            exit(0)
+        }
         Err(e) => fail_with(&e),
     }
 }
@@ -445,7 +517,7 @@ fn cmd_restart(args: &CommandArgs) {
 fn cmd_watch(args: &CommandArgs) {
     if candle_core::run_context::is_run_by_agent() {
         eprintln!(
-            "Error: 'watch' is not available in agent mode. Use 'candle logs' to view process output."
+            "Error: 'watch' blocks and is not available in agent mode. Use 'candle logs' to view process output."
         );
         exit(1);
     }

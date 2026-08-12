@@ -36,6 +36,7 @@ fn is_service_defined_in_config(project_dir: &str, name: &str) -> bool {
 }
 
 /// Restart the given command(s), or all running processes when none are named.
+/// Returns the resolved list of restarted command names.
 ///
 /// The empty-names "No running processes" usage error is raised before the
 /// kill+start work, so it propagates to the caller (the CLI maps it to stderr +
@@ -45,7 +46,7 @@ pub fn handle_restart(
     conn: &Connection,
     project_dir: &str,
     command_names: &[String],
-) -> Result<(), CandleError> {
+) -> Result<Vec<String>, CandleError> {
     // Resolve the list of command names to restart.
     let names: Vec<String> = if command_names.is_empty() {
         let running = find_running_processes_by_project_dir(conn, project_dir).map_err(db_err)?;
@@ -116,7 +117,7 @@ pub fn handle_restart(
         output::err(&format!("Failed to restart: {e}"));
     }
 
-    Ok(())
+    Ok(names)
 }
 
 #[cfg(test)]

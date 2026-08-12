@@ -1,6 +1,6 @@
 # start
 
-Start service(s) in the background.
+Start service(s).
 
 `candle run` is an alias for this command — both do exactly the same thing.
 
@@ -13,16 +13,26 @@ candle run [name...] [options]
 
 ## Description
 
-The `start` command launches one or more services in the background without displaying their output.
+The `start` command launches one or more services in the background.
 
 The flow of running `start`:
 
 1. If the service is already running, restart it.
 2. Launch and wait for the service to successfully start.
 3. Wait for a 'grace period' (default of 500ms) to make sure the service stays running.
-4. Then exit.
 
-After running `start` you can check on the service using the `watch` or `logs` commands.
+What happens next depends on how `start` was invoked:
+
+- **Interactive mode** (a human at a terminal): `start` stays attached and streams
+  the new process's logs, starting from the fresh launch (no stale logs).
+  Press `Ctrl+C` to stop watching — the process keeps running in the background
+  until you stop it with a command like `candle stop`.
+- **Non-interactive mode** (AI agents, scripts, pipes, CI): `start` exits as soon
+  as the launch is confirmed and prints a hint pointing at `candle logs`.
+
+Candle picks the mode automatically: it uses non-interactive mode when the output
+is not a terminal or when run by a coding agent (such as Claude Code). Use
+`--watch` or `--bg` to force a mode explicitly.
 
 ## Arguments
 
@@ -30,6 +40,8 @@ After running `start` you can check on the service using the `watch` or `logs` c
 
 ## Options
 
+- `--watch` - Force interactive mode: watch logs after starting
+- `--bg` - Force non-interactive mode: exit as soon as the launch is confirmed
 - `--shell <command>` - Start a transient service with the specified shell command
 - `--root <directory>` - Set the working directory for a transient service
 - `--enable-stdin` - Enable stdin message polling from database
@@ -54,12 +66,19 @@ candle start api
 candle start api web worker
 ```
 
+### Start a service in the background without watching logs
+
+```bash
+candle start api --bg
+```
+
 ## Behavior
 
 1. The service is started in the background
 2. Output is logged to the database (viewable with `candle logs`)
-3. The command exits immediately
-4. Use `candle watch` or `candle logs` to view output
+3. In interactive mode, `start` watches the new logs until `Ctrl+C`; in
+   non-interactive mode it exits immediately
+4. Use `candle watch` or `candle logs` at any time to view output
 
 ## Transient Services
 
@@ -83,4 +102,4 @@ candle start server --shell "npm run dev" --root ./packages/api
 
 - [run](run) - Alias for `start`
 - [logs](logs) - View logs from started services
-- [watch](watch) - Launch (if needed) and watch live output from running services
+- [watch](watch) - Watch live output from running services

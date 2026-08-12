@@ -94,6 +94,49 @@ describe('CLI Start Command', () => {
         });
     });
 
+    describe('interactive vs non-interactive mode', () => {
+        it('exits immediately and prints a logs hint in non-interactive mode', async () => {
+            // Tests run the CLI with piped stdio, so start auto-detects
+            // non-interactive mode: it exits after launch and points at `candle logs`.
+            const result = await workspace.runCli(['start', 'echo']);
+
+            expect(result.stdoutAsString()).toContain("Run 'candle logs echo' to see logs.");
+        });
+
+        it('streams new logs with --watch and detaches leaving the process running', async () => {
+            // --watch forces interactive mode; --exit-after-ms makes it terminate on
+            // its own so the test doesn't block.
+            const result = await workspace.runCli(['start', 'echo', '--watch', '--exit-after-ms', '2500']);
+            const output = result.stdoutAsString();
+
+            // Watch-mode banner instead of the logs hint.
+            expect(output).toContain('Press Ctrl+C to stop watching');
+            expect(output).not.toContain("Run 'candle logs");
+
+            // The new launch's output is streamed live.
+            expect(output).toMatch(/Echo \d+:|Echo server started/);
+
+            // Leaving watch mode does not stop the process.
+            const list = await workspace.runCli(['list', '--json']);
+            const processes = JSON.parse(list.stdoutAsString());
+            const echo = processes.find((p: any) => p.serviceName === 'echo');
+            expect(echo?.status).toBe('RUNNING');
+        });
+
+        it('exits immediately with --bg', async () => {
+            const result = await workspace.runCli(['start', 'echo', '--bg']);
+
+            expect(result.stdoutAsString()).toContain("Run 'candle logs echo' to see logs.");
+        });
+
+        it('errors when both --bg and --watch are given', async () => {
+            const result = await workspace.runCli(['start', 'echo', '--bg', '--watch'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('--bg and --watch');
+        });
+    });
+
     describe('starting already running services', () => {
         it('should handle starting already running service', async () => {
             // Start once

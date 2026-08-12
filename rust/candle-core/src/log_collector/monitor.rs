@@ -41,12 +41,22 @@ enum LineEvent {
     Exit(Option<i32>),
 }
 
-/// Format an exit code like the Node string concatenation (`'' + code`):
-/// a number, or `null` when the process was killed by a signal.
-fn code_str(code: Option<i32>) -> String {
+/// Human-readable message for a process exit. A `None` exit code means the
+/// process was terminated by a signal (e.g. killed by `candle stop`/`restart`),
+/// so don't render it as a bogus "code null".
+fn exit_message(code: Option<i32>) -> String {
     match code {
-        Some(c) => c.to_string(),
-        None => "null".to_string(),
+        Some(c) => format!("Process exited with code {c}"),
+        None => "Process was stopped".to_string(),
+    }
+}
+
+/// Human-readable message for a process that died during the startup grace
+/// period.
+fn start_failed_message(code: Option<i32>) -> String {
+    match code {
+        Some(c) => format!("Process failed to start: exited with code {c}"),
+        None => "Process failed to start: stopped by a signal".to_string(),
     }
 }
 
@@ -268,7 +278,7 @@ pub fn run(launch_info: LogCollectorLaunchInfo) -> Option<i32> {
             &command_name,
             &project_dir,
             ProcessLogType::ProcessStartFailed,
-            Some(&format!("Process failed to start: {}", code_str(exit_code))),
+            Some(&start_failed_message(exit_code)),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
         done.store(true, Ordering::Relaxed);
@@ -294,7 +304,7 @@ pub fn run(launch_info: LogCollectorLaunchInfo) -> Option<i32> {
             &command_name,
             &project_dir,
             ProcessLogType::ProcessExited,
-            Some(&format!("Process exited with code {}", code_str(exit_code))),
+            Some(&exit_message(exit_code)),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
         done.store(true, Ordering::Relaxed);
@@ -348,7 +358,7 @@ pub fn run(launch_info: LogCollectorLaunchInfo) -> Option<i32> {
         &command_name,
         &project_dir,
         ProcessLogType::ProcessExited,
-        Some(&format!("Process exited with code {}", code_str(exit_code))),
+        Some(&exit_message(exit_code)),
     );
     let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
 

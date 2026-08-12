@@ -1,6 +1,6 @@
 # run
 
-Alias for [start](start). Launches service(s) in the background and exits.
+Alias for [start](start). Launches service(s).
 
 ## Syntax
 
@@ -10,18 +10,15 @@ candle run [name...] [options]
 
 ## Description
 
-`candle run` is an alias for `candle start`. Both commands launch one or more services in the background and exit as soon as the services are running. Neither command enters watch mode.
-
-To watch the output of services you've launched, use [watch](watch) or [logs](logs):
-
-```bash
-candle run api && candle watch api
-```
+`candle run` is an alias for `candle start`. Both commands launch one or more
+services in the background. When run interactively, they then watch the new
+process's logs until `Ctrl+C`; when run non-interactively (agents, scripts,
+pipes), they exit as soon as the services are running.
 
 See the [start](start) command documentation for the full list of arguments, options, and examples.
 
 ## See Also
 
-- [start](start) - Start services in the background (the command this aliases)
-- [watch](watch) - Launch (if needed) and watch output from services
+- [start](start) - Start services (the command this aliases)
+- [watch](watch) - Watch live output from running services
 - [logs](logs) - View recent logs from running services

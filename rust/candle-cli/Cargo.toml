@@ -17,3 +17,6 @@ path = "src/main.rs"
 [dependencies]
 candle-core = { path = "../candle-core" }
 rusqlite.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

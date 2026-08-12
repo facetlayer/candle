@@ -23,11 +23,12 @@ pub struct StartCommandOptions {
     pub check_start: bool,
 }
 
-/// Start one or more services and return once each has reported a start result.
+/// Start one or more services and return the started service names once each
+/// has reported a start result.
 pub fn handle_start_command(
     conn: &Connection,
     opts: StartCommandOptions,
-) -> Result<(), CandleError> {
+) -> Result<Vec<String>, CandleError> {
     let mut command_names = opts.command_names.clone();
 
     // With no --shell, default to all configured services when none are named.
@@ -53,16 +54,16 @@ pub fn handle_start_command(
                 check_start: opts.check_start,
             },
         )?;
-        return Ok(());
+        return Ok(command_names);
     }
 
     // Configured: start each resolved name sequentially. Transient flags are not
     // forwarded in this branch.
-    for name in command_names {
+    for name in &command_names {
         start_one_service(
             conn,
             RunOptions {
-                command_name: name,
+                command_name: name.clone(),
                 project_dir: opts.project_dir.clone(),
                 shell: None,
                 root: None,
@@ -72,5 +73,5 @@ pub fn handle_start_command(
         )?;
     }
 
-    Ok(())
+    Ok(command_names)
 }

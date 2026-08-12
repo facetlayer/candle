@@ -19,7 +19,7 @@ pub fn grouped_help() -> String {
     let watch_line = if is_run_by_agent() {
         String::new()
     } else {
-        "\n  watch [name...]           Watch live output from process(es)".to_string()
+        "\n  watch [name...]           Watch live output from running process(es)".to_string()
     };
 
     format!(
@@ -29,7 +29,7 @@ Usage: candle <command> [options]
 
 Process Management:
   list, ls, status          List processes for this project directory
-  start, run [names...]     Start process(es) in background
+  start, run [names...]     Start process(es); watches logs when run interactively
   check-start [names...]    Start process(es) only if not already running
   restart [names...]        Restart running process(es)
   kill [names...]           Kill running process(es)
@@ -73,12 +73,14 @@ Run 'candle <command> --help' for more information on a command."
 pub fn command_help(command: &str) -> String {
     match command {
         "start" | "run" => {
-            "candle start [name...]   Start process(es) in background and exit\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database".to_string()
+            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database".to_string()
         }
         "check-start" => {
             "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database".to_string()
         }
-        "restart" => "candle restart [name]   Restart a running process".to_string(),
+        "restart" => {
+            "candle restart [name...]   Restart running process(es)\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted".to_string()
+        }
         "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory".to_string(),
         "kill-all" => "candle kill-all   Kill all running processes".to_string(),
         "list" | "ls" | "status" => "candle list   List processes for the current directory\n\nOptions:\n  --json   Output as JSON".to_string(),
@@ -86,7 +88,9 @@ pub fn command_help(command: &str) -> String {
         "logs" => {
             "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100)\n  --start-at <id>  Only show logs after this log ID".to_string()
         }
-        "watch" => "candle watch [name...]   Watch live output from process(es)".to_string(),
+        "watch" => {
+            "candle watch [name...]   Watch live output from running process(es)\n\nWatch never launches processes. With no name, it watches every process in\nthe project (including ones that haven't launched yet). With a name, the\nnamed process must already be running. Press Ctrl+C to stop watching.".to_string()
+        }
         "wait-for-log" => {
             "candle wait-for-log [name]   Wait for a specific log message\n\nOptions:\n  --message <text>   The log message to wait for (required)\n  --timeout <secs>   Timeout in seconds (default: 30)".to_string()
         }

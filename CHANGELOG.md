@@ -1,5 +1,13 @@
 
 # Unreleased
+ - Candle now detects whether it's running interactively (a human at a terminal) or non-interactively (a coding agent, script, or pipe). Detection: non-interactive when stdout is not a TTY or when `CLAUDECODE` is set.
+ - `candle start` (and `candle run`) in interactive mode now stays attached after launching and watches the new process's logs — only logs from the fresh launch, no stale history. Ctrl+C detaches and leaves the process running. In non-interactive mode it exits as soon as the launch is confirmed and prints a hint pointing at `candle logs`.
+ - Add `--watch` (force interactive/watch mode) and `--bg` (force non-interactive mode) flags to `candle start` and `candle restart`.
+ - `candle restart` follows the same interactive/non-interactive behavior as `start`.
+ - `candle watch` no longer launches processes — it only observes. With no names it always succeeds and watches every process in the project (including ones that haven't launched yet); with a name, the named process must be running or the command fails.
+ - `candle check-start` always exits immediately (never watches), keeping it predictable for scripts.
+ - Fix a "failed printing to stdout: Broken pipe" panic when piping watch output (e.g. `candle watch | head`); candle now exits quietly when the reader closes the pipe.
+ - A process terminated by a signal (e.g. via `candle stop` or `restart`) now logs `Process was stopped` instead of `Process exited with code null`; a signal-killed process during the startup grace period logs `Process failed to start: stopped by a signal`.
  - Distribute prebuilt binaries. Pushing a `v*` tag now runs `.github/workflows/release.yml`, which builds `candle` + `log-collector` for macOS and Linux (x86_64 and arm64), publishes them as a GitHub Release with a `SHA256SUMS` file, and updates the Homebrew tap.
  - Add `install.sh`, a one-line installer (`curl -fsSL .../install.sh | sh`) that downloads the matching release for the host platform, verifies its checksum, and installs into `~/.local/bin`. Supports `--version`, `--bin-dir`, and `--uninstall`.
  - Add a LICENSE file (MIT, matching the license already declared in `rust/Cargo.toml`) and fill in package metadata (description, repository, authors, keywords) for all three crates.

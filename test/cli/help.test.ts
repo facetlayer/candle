@@ -95,8 +95,8 @@ describe('CLI Help Command', () => {
         it('should show help for run command', async () => {
             const result = await workspace.runCli(['run', '--help']);
 
-            // 'run' is an alias for 'start', so yargs shows the canonical help
-            expect(result.stdoutAsString()).toContain('Start process(es) in background');
+            // 'run' is an alias for 'start', so it shows the canonical start help
+            expect(result.stdoutAsString()).toContain('candle start [name...]');
         });
 
         it('should show help for start command', async () => {

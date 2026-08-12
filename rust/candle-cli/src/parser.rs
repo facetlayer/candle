@@ -40,9 +40,18 @@ pub fn canonical_command(token: &str) -> Option<&'static str> {
 /// The option spec for a canonical command: (flag-name, takes-a-value).
 fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
     match command {
-        "start" | "check-start" | "add-service" => {
+        "start" => &[
+            ("shell", true),
+            ("root", true),
+            ("enable-stdin", false),
+            ("bg", false),
+            ("watch", false),
+            ("exit-after-ms", true),
+        ],
+        "check-start" | "add-service" => {
             &[("shell", true), ("root", true), ("enable-stdin", false)]
         }
+        "restart" => &[("bg", false), ("watch", false), ("exit-after-ms", true)],
         "list" | "list-all" => &[("json", false)],
         "logs" => &[("count", true), ("start-at", true)],
         "watch" => &[("exit-after-ms", true)],
