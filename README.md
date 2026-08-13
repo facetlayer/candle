@@ -34,12 +34,11 @@ console logs for any running service.
 
 Candle ships with a few other QOL features. One example is `candle wait-for-log...` which blocks
 until a service has printed a certain message (for example, "Now serving on port ..."). This
-command can be dropped in to integration tests to help them wait until a service is fully launched.
+is useful for CI jobs and integration tests that need to launch a service and wait till it's ready.
 
-Another example is port detection - Candle ships with `candle list-ports` which uses the OS
+Another one is `candle list-ports` which uses the OS
 to detect what ports the service(s) are using, and `candle open-browser` which uses port
-detection to open a web browser to a localhost service. This also helps in worktrees since
-you'll typically have different trees using different port assignments.
+detection to open a web browser to a locally running service.
 
 ## Installation ##
 
@@ -92,19 +91,18 @@ If installed with Homebrew:
 
 ## Quick Start ##
 
-Initialize a `.candle.json` file in the root directory of your project (usually the same
-place that has the `.git` directory):
+Initialize a `.candle.json` file in the root directory of your project.
 
     candle setup-project
 
-Add a service:
+Add services:
 
-    candle add-service <service name> --shell <shell command>
+    candle add-service <service name> --shell <shell command> --root <optional root directory>
 
 Launch it:
 
     candle start                # all services
-    candle start <service name> # one services
+    candle start [service name] # one services
 
 # All Commands #
 
@@ -114,48 +112,52 @@ List all CLI commands.
 
 ## Main usage commands ##
 
-### `candle start [names]`
+### `candle start`
 
     candle start
-    candle start backend
+    candle start [service name(s)]
 
 Launch the service(s).
 
-If no `[names]` are provided: then launch all services in the project.
+If no `service names` are provided: then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
 
 If called in interactive mode (see "interactive mode detection" below), `start` will
-then enter watch mode, where it watches and prints the new process's logs.
+then start watching the service and printing console messages. Press Ctrl-C to leave this mode.
 
 Options:
 
  - `--watch` - Force interactive mode: watch logs after starting.
  - `--bg` - Force non-interactive mode: exit once started.
 
-### `candle check-start [names]`
+### `candle run`
 
-Like `start` but only starts the service(s) if they are not already running.
+Alias for `candle start`.
 
-### `candle run [names]`
+### `candle check-start`
 
-Alias for `candle start`, does the same thing as `start`.
+Similar to `start` but only starts the service(s) if they are not already running.
+If the service is running already, this command is a no-op.
 
-### `candle list` or `candle ls`
+### `candle ls`
 
 ```
 $ candle ls
 ```
 
-List the services for this project directory, including active and inactive services.
+List all services for this project directory, including running and inactive services.
 
-### `candle watch [names]`
+### `candle watch`
 
-Enter watch mode for the running service(s).
+    candle watch
+    candle watch [service name(s)]
+
+Start watching the logs for the service(s)
 
 This will interactively print any log messages from the service as they happen.
 
-If no `[names]` are provided: Watch every process in the project (including
+If no `service names` are provided: Watch every process in the project (including
 any processes that are launched after `watch` is started)
 
 If multiple services are being watched, then the output lines will include prefixes
@@ -179,19 +181,27 @@ Options:
  - `--count <number>` - Number of log lines to show (default: 100).
  - `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
 
-### `candle kill [names]`
+### `candle kill`
+
+    candle kill
+    candle kill [service name(s)]
 
 Kill named service(s)
 
-If no `[names]` are provided: Kill all services for this project directory.
+If no `service names` are provided: Kill all services for this project directory.
 
-### `candle restart [names]`
+### `candle restart`
+
+    candle restart
+    candle restart [service name(s)]
 
 Restart running service(s) for this current directory.
 
-If no `[names]` are provided: Restart all running services for this project directory
+If no `service names` are provided: Restart all running services for this project directory
 
-### `candle wait-for-log [name] --message [message]`
+### `candle wait-for-log`
+
+    candle wait-for-log [service name] --message [message]
 
 Waits until the service has printed text to stdout or stderr that includes `[message]`.
 
@@ -220,13 +230,10 @@ previous recent run has the same message.
 
 ## Port detection commands ##
 
-### `candle list-ports [names...]`
+### `candle list-ports`
 
-```
-$ candle list-ports
-$ candle list-ports backend
-$ candle list-ports backend frontend
-```
+    candle list-ports
+    candle list-ports [service name(s)]
 
 Uses the operating system to detect and list the active open ports for running services.
 
@@ -235,12 +242,10 @@ to find to find TCP ports that are in a LISTEN state
 
 If no `[names]` are provided: Show ports for all running services in the current project.
 
-### `candle open-browser [name]`
+### `candle open-browser`
 
-```
-$ candle open-browser
-$ candle open-browser frontend
-```
+    candle open-browser
+    candle open-browser [service name(s)]
 
 Attempts to detect the listening port for a target service, then opens a web
 browser to `http://localhost:<port>` for that service.
@@ -257,7 +262,10 @@ most simple cases it works pretty well.
 
 Create a new `.candle.json` config file in the current directory.
 
-### `candle add-service <name> --shell <command>`
+### `candle add-service`
+
+    candle add-service [service name] --shell [command]
+    candle add-service [service name] --shell [command] --root [root directory]
 
 Add a new service to the nearest `.candle.json` config file.
 
@@ -307,30 +315,8 @@ Candle uses **interactive mode** only when:
  - And, no coding-agent environment variables are detected. If any are, Candle assumes an agent is
    driving the CLI. This is "agent mode".
 
-The agent markers Candle looks for, each set by the agent itself on the commands it runs:
-
-| Variable | Set by |
-|---|---|
-| `CLAUDECODE` | Claude Code |
-| `GEMINI_CLI` | Gemini CLI |
-| `CURSOR_AGENT` | Cursor |
-
-Any non-empty value counts, so `CLAUDECODE=false` still means agent mode.
-
-Codex is intentionally not on this list. Its `CODEX_SANDBOX` variable means "a sandbox is active",
-not "Codex is driving" — it is unset under `--sandbox danger-full-access`, so keying on it would
-silently miss anyone who turns the sandbox off. Codex still gets non-interactive behavior via the
-TTY check, which is what matters for `start` and `restart`.
-
-What changes:
-
- - `start`, `run`, and `restart` stay attached and watch the new process's logs when interactive;
-   when non-interactive they exit as soon as the launch is confirmed and print a hint pointing at
-   `candle logs`. Pass `--watch` or `--bg` to force one or the other.
- - `check-start` always exits immediately, so scripts get the same behavior either way.
- - `watch` blocks forever by design, so in agent mode it is hidden from `candle --help` and exits
-   with an error suggesting `candle logs` instead. Note this keys on the agent variables only, not
-   on the TTY check — `watch` still works when you pipe its output.
+Candle currently checks for these environment variables to detect a coding agent: `CLAUDECODE`,
+`GEMINI_CLI`, `CURSOR_AGENT`.
 
 # License #
 
