@@ -36,6 +36,18 @@ export function getCandleSpawn(): CandleSpawn {
 }
 
 /**
+ * Blank out every coding-agent marker Candle looks for (see rust/src/run_context.rs), so the
+ * suite always runs in non-agent mode. Without this, running the tests from inside an agent
+ * would leak its marker into the spawned CLI, which hides `watch` from help and disables it —
+ * failing watch.test.ts and help.test.ts. An empty value reads as "not set" to Candle.
+ */
+export const NON_AGENT_ENV = {
+    CLAUDECODE: '',
+    GEMINI_CLI: '',
+    CURSOR_AGENT: '',
+} as const;
+
+/**
  * TestWorkspace manages an isolated workspace directory for a test suite.
  *
  * Usage:
@@ -80,7 +92,7 @@ export class TestWorkspace {
             ...process.env,
             CANDLE_DATABASE_DIR: cwd,
             FORCE_COLOR: '0',
-            CLAUDECODE: '',
+            ...NON_AGENT_ENV,
             ...(options.env || {}),
         };
 
@@ -112,7 +124,7 @@ export class TestWorkspace {
             env: {
                 ...process.env,
                 CANDLE_DATABASE_DIR: this.dbDir,
-                CLAUDECODE: '',
+                ...NON_AGENT_ENV,
             },
         });
     }

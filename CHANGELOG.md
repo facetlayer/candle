@@ -1,5 +1,6 @@
 
 # Unreleased
+ - Agent-mode detection now recognizes Gemini CLI (`GEMINI_CLI`) and Cursor (`CURSOR_AGENT`) in addition to Claude Code (`CLAUDECODE`). Any one of them, set to a non-empty value, puts Candle in agent mode. Codex is not detected by an env var: its `CODEX_SANDBOX` signals an active sandbox rather than the agent, and is unset under `--sandbox danger-full-access` — Codex still gets non-interactive behavior from the stdout TTY check.
  - Candle now ships as a **single binary**. The separate `log-collector` sidecar is gone; its behavior moved into the main CLI as a mode, `candle --monitor`, which the CLI launches by re-invoking its own executable. Installation is one file, and the CLI and its monitors can no longer fall out of version sync. `install.sh` and `install-local.sh` remove a leftover `log-collector` from a previous install.
  - Remove the `logCollector` config setting. It chose between the old Node.js and Rust collector sidecars, neither of which exists now, and it had already been ignored at launch. `candle set-config logCollector ...` reports an unknown key; a leftover `"logCollector"` entry in an existing `.candle.json` is ignored and preserved as-is.
  - Reorganize the Rust source into one crate at `rust/` (was a workspace of `candle-core` + `candle-cli` + `log-collector`), now that there is only one binary to build.

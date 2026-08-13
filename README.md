@@ -2,9 +2,9 @@
 
 Candle is a process manager designed for local development, worktrees, and AI agents.
 
-Other process managers (like `pm2`) are built to run on production backends but they
+Other process managers (like `pm2`) are built to run on production backends, but they
 can be overcomplicated for local development. Candle aims to be your favorite process
-manager when developing and running things locally.
+manager for running services locally during development.
 
 ## Features ##
 
@@ -12,16 +12,16 @@ A few things that Candle does well:
 
 ### Everything is scoped to project directories ###
 
-When running a command like `candle start`, it will automatically find the services for
-the current directory's project, just like other tools like `git`. This helps keep
-the commands simple.
+When running a command like `candle start`, it will automatically find the settings for
+the current directory's project (similar to other tools like `git`). This helps keep
+the interface simple.
 
-This also fits naturally with worktrees - each worktree is already a separate directory,
+This design fits naturally with worktrees - each worktree is already a separate directory,
 so Candle will launch separate services for separate worktrees.
 
 ### One process per instance ###
 
-Candle will make sure that each service is only launched into one process at a time (per directory)
+Candle makes sure that each service is only launched as one process at a time (per directory)
 
 ### Agent-friendly CLI ###
 
@@ -45,6 +45,13 @@ you'll typically have different trees using different port assignments.
 
 Supported on macOS and Linux, on both x86_64 and arm64.
 
+### Installation via Homebrew
+
+With Homebrew:
+
+    brew install facetlayer/tap/candle
+
+
 ### Installation via Curl ###
 
 Run:
@@ -67,43 +74,32 @@ To install somewhere else, use `--bin-dir`:
 
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sudo sh -s -- --bin-dir /usr/local/bin
 
-### Installation via Homebrew
-
-With Homebrew:
-
-    brew install facetlayer/tap/candle
-
-This installs the same prebuilt binary as the curl installer, so no Rust toolchain is needed.
-
 ### Uninstalling ###
 
-Shut down running services first — Candle launches them detached, so they outlive the binary:
-
+    # shut down any running services 
     candle kill-all
 
-Then remove it:
-
-    # installed with the script
-    curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
-
-    # installed with Homebrew
+    # if installed with Homebrew:
     brew uninstall candle
+
+    # if installed with the script:
+    curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
 
 ## Quick Start ##
 
 Initialize a `.candle.json` file in the root directory of your project (usually the same
 place that has the `.git` directory):
 
-    $ candle setup-project
+    candle setup-project
 
 Add a service:
 
-    $ candle add-service <service name> --shell <shell command>
+    candle add-service <service name> --shell <shell command>
 
 Launch it:
 
-    $ candle start                # all services
-    $ candle start <service name> # one services
+    candle start                # all services
+    candle start <service name> # one services
 
 # All Commands #
 
@@ -111,22 +107,21 @@ Launch it:
 
 List all CLI commands.
 
+## Main usage commands ##
+
 ### `candle start [names]`
 
-```
-$ candle start
-$ candle start backend
-```
+    candle start
+    candle start backend
 
 Launch the service(s).
 
-If no `[names]` are provided, then launch all services in the project.
+If no `[names]` are provided: then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
 
-When run interactively, `start` then watches the new process's logs; press Ctrl+C to
-stop watching (the process keeps running in the background). When run non-interactively
-(agents, scripts, pipes), `start` exits as soon as the launch is confirmed.
+If called in interactive mode (see "interactive mode detection" below), `start` will
+then enter watch mode, where it watches and prints the new process's logs.
 
 Options:
 
@@ -139,7 +134,7 @@ Like `start` but only starts the service(s) if they are not already running.
 
 ### `candle run [names]`
 
-Alias for `candle start`. Both commands do exactly the same thing.
+Alias for `candle start`, does the same thing as `start`.
 
 ### `candle list` or `candle ls`
 
@@ -153,17 +148,13 @@ List the services for this project directory, including active and inactive serv
 
 Enter watch mode for the running service(s).
 
-This will interactively print any log messages from the service
-as they happen. `watch` never launches processes — use `candle start` for that.
+This will interactively print any log messages from the service as they happen.
 
-If no `[names]` are provided: Watch every process in the project (this always
-succeeds, even for services that haven't launched yet).
+If no `[names]` are provided: Watch every process in the project (including
+any processes that are launched after `watch` is started)
 
-If `[names]` are provided: Each named process must currently be running,
-otherwise the command fails.
-
-If multiple services are being watched, then each log message will have a prefix that looks like
-`[<service name>]`
+If multiple services are being watched, then the output lines will include prefixes
+that looks like `[<service name>] ...`
 
 Example:
 
@@ -218,15 +209,11 @@ Example usage:
 The command will continue to wait until a certain timeout. The timeout defaults to 30 seconds and can be
 set on the command line as `--timeout [seconds]`.
 
-### `candle setup-project`
+The pattern of calling `start` then `wait-for-log` will do what you expect: it will wait
+for the most recent process instance to print the log message, and won't be triggered if a
+previous recent run has the same message.
 
-Create a new `.candle.json` config file in the current directory.
-
-### `candle add-service <name> --shell <command>`
-
-Add a new service to the nearest `.candle.json` config file.
-
-If the config file doesn't exist yet, it will be created.
+## Port detection commands ##
 
 ### `candle list-ports [names...]`
 
@@ -238,8 +225,8 @@ $ candle list-ports backend frontend
 
 Uses the operating system to detect and list the active open ports for running services.
 
-This queries `lsof` to find TCP ports that are in a LISTEN state, filtering to processes
-managed by Candle. It also detects ports opened by child processes of a service.
+This command searches Candle managed processes and also child processes. It uses `lsof`
+to find to find TCP ports that are in a LISTEN state
 
 If no `[names]` are provided: Show ports for all running services in the current project.
 
@@ -250,42 +237,49 @@ $ candle open-browser
 $ candle open-browser frontend
 ```
 
-Open a web browser to `http://localhost:<port>` for a running service.
+Attempts to detect the listening port for a target service, then opens a web
+browser to `http://localhost:<port>` for that service.
 
 The port is auto-detected using the same logic as `list-ports`.
 
-#### Disambiguation Logic
+The `open-browser` command isn't perfect, and it can be confused by certain
+situations (such as if your service has multiple listening ports). But in
+most simple cases it works pretty well.
 
-If a service has multiple ports open, then `open-browser` will use the lowest port number.
+## Project setup commands ##
 
-If the command finds multiple running services, then it will give an error.
+### `candle setup-project`
+
+Create a new `.candle.json` config file in the current directory.
+
+### `candle add-service <name> --shell <command>`
+
+Add a new service to the nearest `.candle.json` config file.
+
+If the config file doesn't exist yet, it will be created.
+
+# Less frequently used commands #
+
+Other CLI commands that are not typically used:
 
 ### `candle mcp` or `candle --mcp`
 
 Run Candle in MCP mode, using stdin as the transport.
 
-# More commands #
-
-Other CLI commands that are not typically used:
+Note that it's now recommended for coding agents to use the `candle` CLI over Bash,
+instead of using the MCP server. But this is provided as an option.
 
 ### `candle list-all`
 
 List all processes (across the entire system) that were launched by Candle.
 
-The standard `list` command is limited to the current project directory,
-but this command covers everything on the system.
-
 ### `candle kill-all`
 
 Kill all processes (across the entire system) that were launched by Candle.
 
-Similar to `list` vs `list-all`. The `kill-all` command affects
-everything on the system.
-
 ### `candle list-ports-all`
 
-Like `list-ports` but shows open ports for all Candle-managed processes across the entire system,
-not just the current project directory.
+Like `list-ports` but shows open ports for all Candle-managed processes across the entire system.
 
 ### `candle erase-database`
 
@@ -293,15 +287,45 @@ Delete the database stored in `~/.local/state/candle`.
 
 This command can help if the database is corrupted or it needs a full SQL schema rebuild.
 
-If there are any existing processes then running `erase-database` will leave those processes 'orphaned'
-(they will still be running but they won't be tracked by Candle). If you do need to run this command
-then run `candle kill-all` first.
+Warning: If there are any existing processes, then running `erase-database` will leave those processes 'orphaned'
+(they will still be running but they won't be tracked by Candle). It's recommended to run `candle kill-all`
+before doing this.
 
-# Technical Details #
+# Interactive mode detection #
 
-When running, Candle will create an SQLite database located at `~/.local/state/candle/candle.db`. This database
-stores a table of actively running processes, and another table of all the observed log events (from
-stdout / stderr and subprocess related events).
+Several Candle commands have different behavior depending if they are running in an interactive
+or non-interactive context.
+
+Candle uses **interactive mode** only when:
+
+ - Stdout is a TTY. Piping or redirecting output (`candle start | tee log.txt`) makes it non-interactive.
+ - And, no coding-agent environment variables are detected. If any are, Candle assumes an agent is
+   driving the CLI. This is "agent mode".
+
+The agent markers Candle looks for, each set by the agent itself on the commands it runs:
+
+| Variable | Set by |
+|---|---|
+| `CLAUDECODE` | Claude Code |
+| `GEMINI_CLI` | Gemini CLI |
+| `CURSOR_AGENT` | Cursor |
+
+Any non-empty value counts, so `CLAUDECODE=false` still means agent mode.
+
+Codex is intentionally not on this list. Its `CODEX_SANDBOX` variable means "a sandbox is active",
+not "Codex is driving" — it is unset under `--sandbox danger-full-access`, so keying on it would
+silently miss anyone who turns the sandbox off. Codex still gets non-interactive behavior via the
+TTY check, which is what matters for `start` and `restart`.
+
+What changes:
+
+ - `start`, `run`, and `restart` stay attached and watch the new process's logs when interactive;
+   when non-interactive they exit as soon as the launch is confirmed and print a hint pointing at
+   `candle logs`. Pass `--watch` or `--bg` to force one or the other.
+ - `check-start` always exits immediately, so scripts get the same behavior either way.
+ - `watch` blocks forever by design, so in agent mode it is hidden from `candle --help` and exits
+   with an error suggesting `candle logs` instead. Note this keys on the agent variables only, not
+   on the TTY check — `watch` still works when you pipe its output.
 
 # License #
 

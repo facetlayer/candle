@@ -83,7 +83,7 @@ against it. They are byte-level and must not drift.
   `` [Started process '<name>' (`<shell>`) in directory: '<dir>'] ``, `[Killed '<name>' process with
   PID: <pid>]`, `✓ Cleared N log entries` (U+2713), `-- older logs have been removed --`. With
   `FORCE_COLOR=0` set by the harness, no ANSI is emitted.
-- **Agent-mode detection** keys on the truthiness of `CLAUDECODE` (the empty string is *not* agent
+- **Agent-mode detection** keys on the truthiness of any agent marker var — `CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT` (the empty string is *not* agent
   mode). Agent mode disables `watch`. See `run_context` and [watch-wait.md](watch-wait.md).
 - **Monitor handshake.** The launcher sends launch-info as a single-line JSON with no trailing
   newline and then closes stdin; the monitor reads to EOF. The monitor is detached into a new session

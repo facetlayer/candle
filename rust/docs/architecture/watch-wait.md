@@ -112,13 +112,13 @@ All output goes to **stdout**, even errors except where noted in §8. Each call 
 `watch [name...]` — positional `name` (variadic, strings). Hidden option `--exit-after-ms` (number, marked hidden — `#[arg(hide = true)]` in the clap definition). Unknown flags are rejected (strict options).
 
 ### 7.2 Agent-mode disabling (`src/runContext.ts`, `main-cli.ts:434-441`)
-`isRunByAgent` is derived from the `CLAUDECODE` environment variable. In the `watch` case, when run by an agent the command prints to **stderr** and exits with code **1**:
+`is_run_by_agent` is derived from the coding-agent marker environment variables (see `run_context`). In the `watch` case, when run by an agent the command prints to **stderr** and exits with code **1**:
 ```
 Error: 'watch' is not available in agent mode. Use 'candle logs' to view process output.
 ```
 That exact stderr string and exit code 1 are preserved. Agent mode also blanks the watch-related help lines (`main-cli.ts:42`) — cosmetic.
 
-`isRunByAgent` is evaluated once from `CLAUDECODE`: presence of a non-empty value means agent mode. JS `!!` treats the empty string as false and any non-empty string as true; `"0"`/`"false"` are still truthy. The Rust check matches this — `std::env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false)`.
+`is_run_by_agent` is evaluated once: agent mode iff **any** of `CLAUDECODE` / `GEMINI_CLI` / `CURSOR_AGENT` is present and non-empty. The empty string means not-set; `"0"`/`"false"` are non-empty and therefore still count.
 
 ### 7.3 `handleWatch` (`src/watch-command.ts`)
 1. `projectDir = findProjectDir()` (searches up for `.candle.json`; uses the current working directory).
@@ -213,7 +213,7 @@ Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not cal
 6. **Exit codes:** `wait-for-log` → exit `1` on `!success`, `0` otherwise. `watch` in agent mode → exit `1` with the exact stderr message; otherwise exits 0 naturally.
 7. **stdout vs stderr:** nearly everything is stdout. Exceptions: the agent-mode watch error and the "Process has not started yet" (step 4) go to **stderr**. Step 3's "Process has not started yet" is only a return-value `message` field, never printed.
 8. **Cursor pre-advance in watch:** `getNextLogs({limit:100})` advances the cursor before `checkLatestLaunchStatus`; the initial 100 are both the status-seed and the first printed batch (`printLogs(initialLogs)`), then the loop continues from the new cursor — no double-fetch.
-9. **`isRunByAgent` is evaluated once** from `CLAUDECODE`: presence of a non-empty value = agent mode. `"0"`/`"false"` are non-empty and therefore still count as agent mode; only an unset or empty value is non-agent.
+9. **`is_run_by_agent` is evaluated once** from the agent marker vars (`CLAUDECODE` / `GEMINI_CLI` / `CURSOR_AGENT`): any one present and non-empty = agent mode. `"0"`/`"false"` are non-empty and therefore still count; only unset or empty is non-agent.
 
 ## 11. Source files
 

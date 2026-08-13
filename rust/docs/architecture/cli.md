@@ -69,15 +69,15 @@ The Node original:
 export const isRunByAgent = !!process.env.CLAUDECODE;
 ```
 
-- A single module-level constant: true iff env var `CLAUDECODE` is present and non-empty (`!!` coerces non-empty string → true; empty string → false).
-- Evaluated **once at process start**. The Rust code computes it once via `OnceLock`, reading `CLAUDECODE`.
+- A single cached value: true iff **any** of the agent marker env vars `CLAUDECODE` (Claude Code), `GEMINI_CLI` (Gemini CLI), or `CURSOR_AGENT` (Cursor) is present and non-empty (empty string → false). Codex's `CODEX_SANDBOX` is deliberately excluded: it marks an active sandbox, not the agent, and is unset under `--sandbox danger-full-access`.
+- Evaluated **once at process start**. The Rust code computes it once via `OnceLock`, reading the marker vars.
 
 Effects of `isRunByAgent` (from the CLI dispatch, originally `src/main-cli.ts`):
 - Help text: when true, the `watch [name...]` line is **omitted** from grouped help (`const watchLines = isRunByAgent ? '' : "...watch..."`, line 42).
 - Line 435: alters behavior of an agent-aware command branch — outside this subsystem's core, but the flag drives CLI presentation/behavior differences. The flag is globally accessible.
 
 ### Rust implementation
-`pub fn is_run_by_agent() -> bool { static V: OnceLock<bool> = ...; *V.get_or_init(|| std::env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false)) }`.
+`pub fn is_run_by_agent() -> bool { static V: OnceLock<bool> = ...; *V.get_or_init(|| detect_agent(|n| std::env::var(n).ok())) }`, where `detect_agent` tests each name in `AGENT_ENV_VARS` for a non-empty value.
 
 ## 4. DocFilesHelper (`doc_files.rs`, mirrors `src/docFiles/DocFilesHelper.ts`)
 

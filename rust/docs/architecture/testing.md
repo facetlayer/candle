@@ -69,7 +69,7 @@ const env = {
     ...process.env,
     CANDLE_DATABASE_DIR: cwd,   // ← DB isolation
     FORCE_COLOR: '0',           // ← disable ANSI color in output
-    CLAUDECODE: '',             // ← force isRunByAgent=false (see §8)
+    ...NON_AGENT_ENV,           // ← force is_run_by_agent=false (see §8)
     ...(options.env || {}),
 };
 const { cmd, baseArgs } = getCandleSpawn();
@@ -88,7 +88,7 @@ The returned `SubprocessResult` (from `@facetlayer/subprocess`) exposes: `exitCo
 return mcpShell(getCandleSpawn().mcpCommand, {
     allowDebugLogging,
     cwd: this.dbDir,
-    env: { ...process.env, CANDLE_DATABASE_DIR: this.dbDir, CLAUDECODE: '' },
+    env: { ...process.env, CANDLE_DATABASE_DIR: this.dbDir, ...NON_AGENT_ENV },
 });
 ```
 Note: the MCP env does **not** set `FORCE_COLOR`. `mcpShell` comes from `expect-mcp` and drives a stdio MCP client.
@@ -244,7 +244,7 @@ Root-level tests:
 
 ## 8. Subtle / platform-specific behaviors
 
-1. **`CLAUDECODE=''` is set by the harness** → `isRunByAgent = !!process.env.CLAUDECODE` becomes `false` (empty string is falsy). When agent mode is on, the `watch` command is hidden from help and disabled. Both implementations replicate this: empty string ⇒ not-agent; the help text and `watch` availability must match (`watch.test.ts` and `help.test.ts` depend on watch being present).
+1. **`NON_AGENT_ENV` is set by the harness** → every agent marker var (`CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT`) is blanked, so `is_run_by_agent` is `false` (empty string ⇒ not-set). This matters because the suite may itself be run from inside a coding agent, whose marker would otherwise be inherited by the spawned CLI. When agent mode is on, the `watch` command is hidden from help and disabled, so `watch.test.ts` and `help.test.ts` depend on this blanking.
 2. **`FORCE_COLOR=0`** disables ANSI; output must contain no escape codes when this is set (tests do raw substring matching on `RUNNING`, `Started`, etc.).
 3. Exact output strings are load-bearing — preserved verbatim across implementations:
    - Start: `[Started process '<name>' (\`<shell>\`) in directory: '<dir>']` (must contain `Started` and `'<name>'`).
