@@ -1,8 +1,5 @@
-[workspace]
-resolver = "2"
-members = ["candle-core", "candle-cli", "log-collector"]
-
-[workspace.package]
+[package]
+name = "candle"
 version = "0.14.0"
 edition = "2021"
 license = "MIT"
@@ -13,12 +10,23 @@ authors = ["Andy Fischer <andy.fischer@gmail.com>"]
 keywords = ["process-manager", "cli", "development", "logs"]
 categories = ["command-line-utilities", "development-tools"]
 
-[workspace.dependencies]
+# One crate, one binary. The library target exists so the integration tests in
+# ./tests can drive internals directly; everything ships inside the single
+# `candle` executable, including the log-monitor mode (`candle --monitor`).
+[lib]
+name = "candle"
+path = "src/lib.rs"
+
+[[bin]]
+name = "candle"
+path = "src/main.rs"
+
+[dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-clap = { version = "4", features = ["derive"] }
 libc = "0.2"
+include_dir = "0.7"
 
 [profile.release]
 opt-level = "s"

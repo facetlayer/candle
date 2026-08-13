@@ -1,6 +1,6 @@
 # MCP server
 
-Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/candle-core/src/mcp/mod.rs`](../../candle-core/src/mcp/mod.rs), with the output-capture layer in [`rust/candle-core/src/output.rs`](../../candle-core/src/output.rs). It mirrors the original Node implementation in `src/mcp/mcp-main.ts` and `src/mcp/ConsoleLogInterceptor.ts`, which remains the source-of-truth for exact behavior.
+Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/src/mcp/mod.rs`](../../src/mcp/mod.rs), with the output-capture layer in [`rust/src/output.rs`](../../src/output.rs). It mirrors the original Node implementation in `src/mcp/mcp-main.ts` and `src/mcp/ConsoleLogInterceptor.ts`, which remains the source-of-truth for exact behavior.
 
 ## 1. Overview & entry point
 
@@ -10,7 +10,7 @@ The server is launched by the CLI when the user runs `candle mcp` or passes the 
 
 - **stdio only.** The MCP JSON-RPC protocol runs over stdin/stdout.
 - **Newline-delimited JSON framing**, *not* `Content-Length`-prefixed framing: each request and response is a single line of JSON terminated by `\n`. The server loop reads `stdin.lock().lines()`, trims each line, skips empty lines, and ignores lines that do not parse as JSON. Each response is written with `writeln!` and flushed.
-- **stdout purity:** only MCP protocol frames may reach real stdout. All command-handler human-readable output is routed through [`crate::output`] and captured (see §6) so nothing leaks to stdout and corrupts the JSON-RPC stream. The transport is **hand-rolled** rather than built on `rmcp`: the candle-core handlers are synchronous (rusqlite), so a blocking line reader matches the protocol exactly and keeps it under direct control.
+- **stdout purity:** only MCP protocol frames may reach real stdout. All command-handler human-readable output is routed through [`crate::output`] and captured (see §6) so nothing leaks to stdout and corrupts the JSON-RPC stream. The transport is **hand-rolled** rather than built on `rmcp`: the command handlers are synchronous (rusqlite), so a blocking line reader matches the protocol exactly and keeps it under direct control.
 - **stdin-close shutdown:** when stdin reaches EOF (the `lines()` iterator ends) or a read errors, the loop breaks and the process exits with `std::process::exit(0)`. There is no auto-shutdown transport to rely on; the EOF → `exit(0)` behavior is wired explicitly.
 
 ## 3. Server identity & capabilities
@@ -148,7 +148,7 @@ A handler error is normalized to its `to_string()` message; only that message is
 ## 7. External dependencies
 
 - **JSON-RPC / MCP transport**: hand-rolled over `serde_json` (no `rmcp`). Newline-delimited JSON on stdin/stdout, blocking line reader.
-- **Database / handlers**: `rusqlite` (synchronous), reached through the candle-core command modules.
+- **Database / handlers**: `rusqlite` (synchronous), reached through the command modules.
 - **Browser open**: the platform browser opener spawned by the open-browser command.
 
 JSON-RPC error codes used: `-32601` (method not found) for both unknown methods and unknown tool names.

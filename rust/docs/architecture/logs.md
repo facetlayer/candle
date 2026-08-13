@@ -1,6 +1,6 @@
 # Logs subsystem
 
-The Rust logs subsystem lives under `rust/candle-core/src/logs/` (`log_type.rs`, `process_logs.rs`, `log_iterator.rs`, `console_log.rs`), `rust/candle-core/src/log_filters/` (`latest_execution_log_filter.rs`, `execution_status_tracker.rs`), and the CLI handlers `rust/candle-core/src/commands/logs.rs` and `rust/candle-core/src/commands/clear_logs.rs`. It mirrors the original Node implementation under `src/`; those `src/...` references below are kept as source-of-truth links.
+The Rust logs subsystem lives under `rust/src/logs/` (`log_type.rs`, `process_logs.rs`, `log_iterator.rs`, `console_log.rs`), `rust/src/log_filters/` (`latest_execution_log_filter.rs`, `execution_status_tracker.rs`), and the CLI handlers `rust/src/commands/logs.rs` and `rust/src/commands/clear_logs.rs`. It mirrors the original Node implementation under `src/`; those `src/...` references below are kept as source-of-truth links.
 
 ## 1. Storage model
 
@@ -31,7 +31,7 @@ Critical points:
 
 ## 2. ProcessLogType enum (exact integers)
 
-`rust/candle-core/src/logs/log_type.rs` (mirrors `src/logs/ProcessLogType.ts`):
+`rust/src/logs/log_type.rs` (mirrors `src/logs/ProcessLogType.ts`):
 
 | Name | Value |
 |------|-------|
@@ -48,7 +48,7 @@ The four "lifecycle" event types are `{3,4,5,6}` (mirrors `ExecutionStatusTracke
 
 ## 3. Data types
 
-In `rust/candle-core/src/logs/process_logs.rs`:
+In `rust/src/logs/process_logs.rs`:
 
 `NewProcessLog` (insert): `command_name: string`, `project_dir: string`, `content?: string`, `log_type: number`.
 `ProcessLog` (row): `id`, `command_name`, `project_dir`, `content?`, `log_type`, `timestamp` (all as above).
@@ -68,11 +68,11 @@ insert into process_output(command_name, project_dir, content, log_type) values(
 
 ## 4. Query accumulator
 
-The original `src/logs/SqlBuilder.ts` is a trivial accumulator: `add(sqlFragment, params[])` appends a string to `sql` and pushes params; `getSql()`/`getParams()` return them. No spacing/escaping logic. Fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and po.timestamp > ?'`). The Rust implementation uses the equivalent `String` + `Vec<rusqlite::types::Value>` pair, built directly inside `build_log_search_query` in `rust/candle-core/src/logs/process_logs.rs`.
+The original `src/logs/SqlBuilder.ts` is a trivial accumulator: `add(sqlFragment, params[])` appends a string to `sql` and pushes params; `getSql()`/`getParams()` return them. No spacing/escaping logic. Fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and po.timestamp > ?'`). The Rust implementation uses the equivalent `String` + `Vec<rusqlite::types::Value>` pair, built directly inside `build_log_search_query` in `rust/src/logs/process_logs.rs`.
 
 ## 5. build_log_search_query — exact SQL
 
-`build_log_search_query` in `rust/candle-core/src/logs/process_logs.rs` (mirrors `src/logs/buildLogSearchQuery.ts`). Base SELECT is always `select po.* from process_output po`. Branch logic (`hasCommandNames = commandNames !== undefined && commandNames.length > 0`):
+`build_log_search_query` in `rust/src/logs/process_logs.rs` (mirrors `src/logs/buildLogSearchQuery.ts`). Base SELECT is always `select po.* from process_output po`. Branch logic (`hasCommandNames = commandNames !== undefined && commandNames.length > 0`):
 
 - `projectDir` set **and** has names:
   - 1 name: `... where po.project_dir = ? and po.command_name = ?` params `[projectDir, name]`
@@ -95,7 +95,7 @@ The IN-clause placeholder string is `'?, ?, ?'` (comma-space). The original `__t
 
 ## 6. getProcessLogs / eviction info
 
-`rust/candle-core/src/logs/process_logs.rs` (mirrors `src/logs/processLogs.ts:47-81`).
+`rust/src/logs/process_logs.rs` (mirrors `src/logs/processLogs.ts:47-81`).
 
 `get_process_logs_with_eviction_info(options)`:
 1. Build query, run `db.list(sql, params)` → rows in DESC order (newest first).
@@ -109,7 +109,7 @@ Subtle: query fetches newest-N (DESC + limit) then reverses, so you always get t
 
 ## 7. LatestExecutionLogFilter
 
-`rust/candle-core/src/log_filters/latest_execution_log_filter.rs` (mirrors `src/log-filters/LatestExecutionLogFilter.ts`). Two-phase. Input logs MUST be chronological (oldest first).
+`rust/src/log_filters/latest_execution_log_filter.rs` (mirrors `src/log-filters/LatestExecutionLogFilter.ts`). Two-phase. Input logs MUST be chronological (oldest first).
 
 State: `recentCommandLaunch: Map<commandName, {startLogId}>`, `showPastLogsBehavior`, optional `recentWindowMs`, derived `minTimestamp?` (stored as `min_timestamp: Option<f64>`).
 
@@ -135,14 +135,14 @@ Note: `filter` is stateful across calls (the map persists and can be populated m
 
 ## 8. ExecutionStatusTracker
 
-`rust/candle-core/src/log_filters/execution_status_tracker.rs` (mirrors `src/log-filters/ExecutionStatusTracker.ts`). Tracks, per command, the latest lifecycle event seen.
+`rust/src/log_filters/execution_status_tracker.rs` (mirrors `src/log-filters/ExecutionStatusTracker.ts`). Tracks, per command, the latest lifecycle event seen.
 
 - `apply(logs)`: for each log whose `log_type ∈ {3,4,5,6}`, set `map[command] = {latestLifecycleEvent: log_type}` (last wins).
 - `count_running_processes()`: count distinct commands whose `latestLifecycleEvent` is `process_started (5)` **or** `process_start_initiated (3)`. (Returns `Set.size`.) Used only by `watch` to print the "still running in the background" trailer (`watchProcess.ts:105-117`).
 
 ## 9. LogIterator
 
-`rust/candle-core/src/logs/log_iterator.rs` (mirrors `src/logs/LogIterator.ts`). Cursor over logs using `afterLogId`.
+`rust/src/logs/log_iterator.rs` (mirrors `src/logs/LogIterator.ts`). Cursor over logs using `afterLogId`.
 
 - Field `currentLogId: number | null = null` (Rust `current_log_id: Option<i64>`); holds `options: LogSearchOptions`.
 - `copy()`: shallow copy sharing `options`, copies `currentLogId`.
@@ -157,7 +157,7 @@ Polling intervals: `LogIterator.it()` = 100ms; `watchProcess` poll = 200ms (`POL
 
 ## 10. Console formatting
 
-`rust/candle-core/src/logs/console_log.rs` (mirrors `src/logs.ts`).
+`rust/src/logs/console_log.rs` (mirrors `src/logs.ts`).
 
 `ConsoleLogOptions`: `format: 'pretty' | 'json'`, `prefix?: string`, `enableAppNamePrefix?: boolean`.
 
@@ -185,7 +185,7 @@ There are **no ANSI colors** in this code path — output is plain text. `prefix
 
 ## 11. logs command
 
-`rust/candle-core/src/commands/logs.rs` (mirrors `src/logs-command.ts`).
+`rust/src/commands/logs.rs` (mirrors `src/logs-command.ts`).
 
 `handle_logs_command({ projectDir, commandNames, limit=100, startAtId })`:
 1. `isBlendedMode = commandNames.length !== 1` (so 0 names ⇒ blended too).
@@ -199,7 +199,7 @@ CLI flags map to: limit (default 100), start-at id. The handler takes `limit` an
 
 ## 12. clear-logs command
 
-`rust/candle-core/src/commands/clear_logs.rs` (mirrors `src/clear-logs-command.ts`).
+`rust/src/commands/clear_logs.rs` (mirrors `src/clear-logs-command.ts`).
 
 `handle_clear_logs_command({ projectDir, commandNames })`:
 1. Print `Clearing logs for project: <projectDir>`.
@@ -212,7 +212,7 @@ CLI flags map to: limit (default 100), start-at id. The handler takes `limit` an
 
 Note: requires `result.changes` from the DELETE (SQLite `changes()` / rows-affected). The orphan delete references the `processes` table.
 
-## 13. Eviction / retention (`rust/candle-core/src/db/cleanup.rs`) — related subsystem
+## 13. Eviction / retention (`rust/src/db/cleanup.rs`) — related subsystem
 
 Not strictly "logs command" but governs log lifetime. `maybe_run_cleanup()` runs at most every `CLEANUP_INTERVAL_SECONDS = 600`s (gated by `process_last_cleanup.timestamp`). `run_cleanup(config)`:
 - Time eviction: `delete from process_output where timestamp < ?` with `now - maxRetentionSeconds`.

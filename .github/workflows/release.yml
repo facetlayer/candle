@@ -4,9 +4,7 @@ name: Release
 #
 #     git tag v0.13.4 && git push origin v0.13.4
 #
-# Each platform job builds `candle` + `log-collector` and uploads a tarball
-# containing both (they must be installed side by side — `candle` resolves the
-# sidecar as a sibling of its own executable).
+# Each platform job builds the single `candle` binary and uploads it as a tarball.
 
 on:
   push:
@@ -69,7 +67,6 @@ jobs:
           STAGE="$(mktemp -d)/$NAME"
           mkdir -p "$STAGE"
           cp rust/target/${{ matrix.target }}/release/candle "$STAGE/"
-          cp rust/target/${{ matrix.target }}/release/log-collector "$STAGE/"
           cp README.md LICENSE "$STAGE/"
           tar -czf "$NAME.tar.gz" -C "$(dirname "$STAGE")" "$NAME"
           echo "archive=$NAME.tar.gz" >> "$GITHUB_OUTPUT"
@@ -180,10 +177,7 @@ jobs:
             end
 
             def install
-              # Both binaries must land in the same directory: candle resolves
-              # log-collector as a sibling of its own executable.
               bin.install "candle"
-              bin.install "log-collector"
             end
 
             test do

@@ -21,23 +21,10 @@ The `set-config` command modifies a configuration option in your project's `.can
 
 | Key | Description | Valid Values |
 |-----|-------------|--------------|
-| `logCollector` | Which log collector implementation to use | `node` (default), `rust` |
 | `logEviction.maxLogsPerService` | Maximum number of log entries kept per service | Positive integer (default: 1000) |
 | `logEviction.maxRetentionSeconds` | Maximum age of log entries in seconds | Positive integer (default: 86400) |
 
 ## Examples
-
-### Switch to the Rust log collector
-
-```bash
-candle set-config logCollector rust
-```
-
-### Switch back to the Node.js log collector
-
-```bash
-candle set-config logCollector node
-```
 
 ### Increase log retention
 
@@ -55,8 +42,9 @@ candle set-config logEviction.maxRetentionSeconds 172800
 
 ## Notes
 
-- Changes to `logCollector` take effect when services are next started or restarted
 - The command validates values before writing to prevent invalid configuration
+- `logCollector` is no longer a valid key. It chose between the old Node.js and Rust
+  collector sidecars; Candle now ships one binary that supervises services itself.
 
 ## See Also
 

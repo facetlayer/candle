@@ -2,7 +2,7 @@
 
 > **Note (post-Node-removal):** The Node.js implementation has been deleted. The dual-target harness
 > described below is now single-target — the suite always runs against the compiled Rust binary. The
-> `test:node` script, the `CANDLE_TEST_TARGET=node` branch, the Node log-collector, and the CI `tests`
+> `test:node` script, the `CANDLE_TEST_TARGET=node` branch, the Node log collector, and the CI `tests`
 > job no longer exist. The sections below are retained as a historical description of how the harness
 > straddled both implementations during the port.
 
@@ -25,7 +25,7 @@ test: {
 `test/setup.ts` is one line: `import 'expect-mcp/vitest-setup';` (registers custom matchers `toBeSuccessful`, `toHaveTool(s)`, `toMatchTextContent`).
 
 `package.json` scripts:
-- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run`** — builds the Rust release binary (and the Rust log-collector), then runs the suite against the Rust target.
+- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run`** — builds the Rust release binary, then runs the suite against the Rust target.
 - `test:rust`: identical to `test`.
 - `test:node`: **`pnpm build && CANDLE_TEST_TARGET=node vitest run`** — builds the Node `dist/` (needed for the Node log-collector, see §6), then runs the suite against the still-published Node implementation.
 - `test:watch`: `vitest`.
@@ -50,7 +50,7 @@ This is the single seam that points the whole Vitest suite at either implementat
 |---|---|---|
 | The CLI under test | `rust/target/release/candle <args>` | `node src/main-cli.ts <args>` |
 | MCP server under test | `<rust candle> --mcp` | `node src/main-cli.ts --mcp` |
-| The log-collector (spawned by the CLI) | `rust/target/release/candle-log-collector` (direct exec, stdin = JSON) | `node dist/main-log-collector.js` (stdin = JSON) |
+| The per-service monitor (spawned by the CLI) | `rust/target/release/candle --monitor` (stdin = JSON) | `node dist/main-log-collector.js` (stdin = JSON) |
 
 ## 2. `TestWorkspace` helper (`test/TestWorkspace.ts`)
 
@@ -120,7 +120,7 @@ Several tests open the DB **directly** with Node's built-in `node:sqlite` `Datab
   insert into processes (command_name, project_dir, pid, log_collector_pid, start_time, shell)
   values ('echo', '<dbDir>', 2147483000, 2147483001, strftime('%s','now'), 'node ...');
   ```
-- `log-collector-cleanup.test.ts` reads:
+- `monitor-cleanup.test.ts` reads:
   ```sql
   select log_collector_pid from processes where command_name = ? and killed_at is null
   ```
@@ -194,18 +194,15 @@ These are ESM/CJS Node scripts launched via `node <file>`. They are test fixture
 
 Sample-server **config fixture** `test/sampleServers/.candle-setup.json` defines `web, api(root:test), echo, echo2, echo-test, test-format, delayed-logger` all relative to that dir (`node simpleServer.js` etc.). Shell commands in workspace configs use `node ../../sampleServers/<file>.js` (relative to `<dbDir>`, i.e. `test/workspaces/<name>/`).
 
-## 6. Log-collector path resolution
+## 6. Monitor process resolution
 
-The candle CLI spawns a separate log-collector process to supervise each service. Which collector binary it spawns depends on the implementation:
+The candle CLI spawns a separate monitor process to supervise each service. It is the **same binary**, re-invoked as `candle --monitor` via `std::env::current_exe()`, so there is nothing extra to build or locate — `cargo build --release` produces everything the suite needs. (`CANDLE_MONITOR_PATH` overrides the path if a test needs to point at a different build.)
 
-- **Rust target**: the candle binary spawns the Rust collector `rust/target/release/candle-log-collector` directly. This is why `pnpm test` / `test:rust` run `cargo build --release` first — both the candle binary and its collector must be built.
-- **Node target**: `launchNodeCollector` spawns `process.argv[0]` (the node binary) with `dist/main-log-collector.js`. The spawned collector is the **built** `dist/` file, which is why `test:node` runs `pnpm build` first; if `dist/` is stale or missing, every start/logs test fails. The collector choice is also configurable per-service via `.candle.json` `logCollector: 'node'|'rust'`, resolved in `startOneService`.
+Launch protocol: spawn detached (`setsid`) with stdin piped and stdout/stderr null, then write the launch-info JSON to the monitor's stdin and close it. `MonitorLaunchInfo = { commandName, projectDir, shell, root?, enableStdin?, databasePath }`. `databasePath = <stateDirectory>/candle.db`.
 
-Launch protocol: spawn detached with `stdio: ['pipe','pipe','pipe']`, await start, then write `JSON.stringify(launchInfo)` to the collector's stdin and `end()` it. `LogCollectorLaunchInfo = { commandName, projectDir, shell, root?, enableStdin?, databasePath }`. `databasePath = <stateDirectory>/candle.db`.
+Monitor lifecycle: reads launch info from stdin JSON (or flags `--command-name/--project-dir/--shell/--root/--enable-stdin/--database-path`), launches the monitored shell command (`shell:true`, cwd = `projectDir` joined with `root`), inserts a `processes` row with `log_collector_pid` = the monitor's own pid, waits for start, applies a **500ms grace period** (`DEFAULT_GRACE_PERIOD_WAIT_MS`) — if the child exited non-zero in that window it writes a `process_start_failed` log + deletes the row + exits 1. On success it writes `process_started`; on exit it writes `process_exited` (content `Process exited with code N`) and deletes the row. stdin feature: polls `stdin_messages` every 500ms (`STDIN_POLL_INTERVAL_MS`), pops oldest, writes `.data` to child stdin; clears stale messages on start.
 
-Collector lifecycle: reads launch info from stdin JSON (or CLI flags `--commandName/--projectDir/--shell/--root/--enableStdin/--databasePath`), launches the monitored shell command (`shell:true`, cwd = `projectDir` joined with `root`), inserts a `processes` row with `log_collector_pid = process.pid`, waits for start, applies a **500ms grace period** (`DEFAULT_GRACE_PERIOD_WAIT_MS`) — if the child exited non-zero in that window it writes a `process_start_failed` log + deletes the row + exits 1. On success it writes `process_started`; on exit it writes `process_exited` (content `Process exited with code N`) and deletes the row. stdin feature: polls `stdin_messages` every 500ms (`STDIN_POLL_INTERVAL_MS`), pops oldest, writes `.data` to child stdin; clears stale messages on start.
-
-The `processes` row is created **by the log collector** (not the CLI), so `start` only succeeds after the collector writes a `process_started` log (a 10s wait race in `start_one_service`). The DB write ordering matters for the `list`/`log-collector-cleanup` tests.
+The `processes` row is created **by the monitor** (not the CLI), so `start` only succeeds after the monitor writes a `process_started` log (a 10s wait race in `start_one_service`). The DB write ordering matters for the `list`/`monitor-cleanup` tests.
 
 ## 7. Test files & coverage
 
@@ -226,7 +223,7 @@ CLI tests (`test/cli/`), each owns a named workspace:
 | `list-all.test.ts` | `cli-list-all` | `list-all` works without local config (from `$HOME`); shows project dir; headers `NAME`/`STATUS` |
 | `list-docs.test.ts` | `cli-list-docs` | `list-docs`: non-empty stdout, <2s, no stderr |
 | `list.test.ts` | `cli-list`, `cli-list-fresh`, `cli-list-stale` | `list`/`ls`: headers `NAME STATUS UPTIME`; `RUNNING`; uptime regex `\d+s|\d+m`; `[config changed]` for transient shadowing config; stale dead-PID row NOT shown as RUNNING; killed not RUNNING |
-| `log-collector-cleanup.test.ts` | `cli-log-collector-cleanup` | log-collector PID (from DB) alive after start; **dead within 5s after `kill`** |
+| `monitor-cleanup.test.ts` | `cli-monitor-cleanup` | monitor PID (from DB `log_collector_pid`) alive after start; **dead within 5s after `kill`** |
 | `log-eviction.test.ts` | `cli-log-eviction` | accepts `logEviction` config; eviction indicator (`older logs have been removed` absence when small); cleanup respects `maxLogsPerService:10` |
 | `logs.test.ts` | `cli-logs` | `logs [name]`: shows content; transient; historical after kill; unknown → `No logs found`; no-name shows running; only most-recent launch (marker filtering); `--count N`; `--start-at <id>` (high id → `No logs found`); `--bogus-flag` → `Unknown argument`; `Started` + `'name'` start message; `--shell` with multiple names → stderr `Exactly one service name is required when using --shell` |
 | `remove-service.test.ts` | `cli-remove-service` | `remove-service <name>`: removes from config, output `removed`; not-found → exit1 + name in stderr; missing name; no config → fail; preserves `logEviction` |

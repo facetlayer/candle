@@ -1,11 +1,11 @@
 # List, ports & open-browser
 
-This subsystem covers five CLI commands. In the Rust implementation they live in `rust/candle-core/src/commands/{list,list_ports,open_browser}.rs`, with process-tree walking in `rust/candle-core/src/process_tree.rs`. It mirrors the original Node implementation:
+This subsystem covers five CLI commands. In the Rust implementation they live in `rust/src/commands/{list,list_ports,open_browser}.rs`, with process-tree walking in `rust/src/process_tree.rs`. It mirrors the original Node implementation:
 - `list` / `ls` and `list-all` → `commands/list.rs` (original `src/list-command.ts`)
 - `list-ports` and `list-ports-all` → `commands/list_ports.rs` (original `src/list-ports-command.ts`)
 - `open-browser` → `commands/open_browser.rs` (original `src/open-browser-command.ts`)
 
-It depends on: the SQLite `processes` table (`src/database/processTable.ts`), liveness checking (`src/process-alive.ts`), process-tree walking (`rust/candle-core/src/process_tree.rs`, original `src/process-tree.ts`), config-file resolution (`src/configFile.ts`), the DB layer (`src/database/database.ts`), and state-dir resolution (`src/dirs.ts`).
+It depends on: the SQLite `processes` table (`src/database/processTable.ts`), liveness checking (`src/process-alive.ts`), process-tree walking (`rust/src/process_tree.rs`, original `src/process-tree.ts`), config-file resolution (`src/configFile.ts`), the DB layer (`src/database/database.ts`), and state-dir resolution (`src/dirs.ts`).
 
 ## 1. Shared data model
 
@@ -125,7 +125,7 @@ The CLI never JSON-serializes this; only `printListPortsOutput` is used.
 7. Build `pidToService: Map<pid → {serviceName, rootPid}>` from the trees (later trees overwrite earlier on pid collision).
 8. For each raw port, look up its pid in `pidToService`; skip if absent. Emit `PortInfo` with `isChildProcess = raw.pid !== service.rootPid`.
 
-### 3.1 Process tree (`rust/candle-core/src/process_tree.rs`, original `src/process-tree.ts`)
+### 3.1 Process tree (`rust/src/process_tree.rs`, original `src/process-tree.ts`)
 `getProcessTree(rootPid)`: BFS/DFS starting from `rootPid` (included), repeatedly calling `getChildPids(pid)`:
 - **macOS (`darwin`)**: `pgrep -P <pid>` → child pids.
 - **Linux**: `ps -o pid --no-headers --ppid <pid>`.
@@ -240,6 +240,6 @@ Cross-module dependency edges: open-browser → list-ports (calls `handleListPor
 
 ## 9. Source files
 
-Rust modules: `rust/candle-core/src/commands/list.rs`, `rust/candle-core/src/commands/list_ports.rs`, `rust/candle-core/src/commands/open_browser.rs`, `rust/candle-core/src/process_tree.rs`.
+Rust modules: `rust/src/commands/list.rs`, `rust/src/commands/list_ports.rs`, `rust/src/commands/open_browser.rs`, `rust/src/process_tree.rs`.
 
 Historical Node source of truth: `src/list-command.ts`, `src/list-ports-command.ts`, `src/open-browser-command.ts`, `src/database/processTable.ts`, `src/database/database.ts`, `src/process-alive.ts`, `src/process-tree.ts`, `src/configFile.ts`, `src/dirs.ts`, `src/errors.ts`, `src/main-cli.ts`. Tests: `test/cli/list.test.ts`, `test/cli/list-all.test.ts`.

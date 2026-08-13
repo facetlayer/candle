@@ -2,9 +2,9 @@
 
 Candle is a native binary. It supports macOS and Linux on both x86_64 and arm64.
 
-Every install method places **two** executables side by side: `candle` and its
-`log-collector` sidecar. They must stay in the same directory — at runtime `candle`
-looks for the sidecar next to its own executable.
+Every install method places a **single** executable: `candle`. There is nothing else
+to install — the per-service log monitor is a mode of that same binary
+(`candle --monitor`), which Candle re-invokes for you.
 
 ## Recommended: one-line installer
 
@@ -93,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh |
 brew uninstall candle
 
 # Source install
-rm ~/.cargo/bin/candle ~/.cargo/bin/log-collector
+rm ~/.cargo/bin/candle
 ```
 
 Candle's only other footprint is its SQLite database, which is never removed

@@ -2,7 +2,7 @@
 
 This covers the `candle watch` and `candle wait-for-log` CLI commands and their supporting log-tailing infrastructure. Both poll a SQLite `process_output` table for new log rows; they differ in what they do when a new row appears.
 
-The Rust implementation lives in `rust/candle-core/src/commands/{watch,wait_for_log}.rs`, with the shared tailing machinery in `rust/candle-core/src/logs/log_iterator.rs`, `rust/candle-core/src/logs/process_logs.rs`, `rust/candle-core/src/logs/console_log.rs`, and the filters in `rust/candle-core/src/log_filters/`. It mirrors the original Node implementation under `src/`, whose files are cross-referenced below as the historical source of truth.
+The Rust implementation lives in `rust/src/commands/{watch,wait_for_log}.rs`, with the shared tailing machinery in `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, and the filters in `rust/src/log_filters/`. It mirrors the original Node implementation under `src/`, whose files are cross-referenced below as the historical source of truth.
 
 ## 1. Shared data model
 
@@ -106,7 +106,7 @@ All output goes to **stdout**, even errors except where noted in §8. Each call 
 
 `enableAppNamePrefix` option exists but watch/wait don't use it (watch builds its own prefix).
 
-## 7. `watch` command (`rust/candle-core/src/commands/watch.rs`)
+## 7. `watch` command (`rust/src/commands/watch.rs`)
 
 ### 7.1 CLI definition (`src/main-cli.ts:154-164`)
 `watch [name...]` — positional `name` (variadic, strings). Hidden option `--exit-after-ms` (number, marked hidden — `#[arg(hide = true)]` in the clap definition). Unknown flags are rejected (strict options).
@@ -153,7 +153,7 @@ Ordering note: `getNextLogs({limit:100})` is called **before** `checkLatestLaunc
 
 Subtlety: the function returns normally (no forced exit); the process exits naturally. With `--exit-after-ms`, the only thing that ends the loop is `watching=false` on the next poll boundary, so actual stop latency is up to `POLL_INTERVAL` (200ms) after the timer fires.
 
-## 8. `wait-for-log` command (`rust/candle-core/src/commands/wait_for_log.rs`)
+## 8. `wait-for-log` command (`rust/src/commands/wait_for_log.rs`)
 
 ### 8.1 CLI definition (`src/main-cli.ts:165-178`)
 `wait-for-log [name]` — single positional `name`. Required option `--message <string>`. Option `--timeout <number>` in seconds, default `30`. Strict options. **Not** disabled in agent mode.
@@ -217,6 +217,6 @@ Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not cal
 
 ## 11. Source files
 
-Rust modules: `rust/candle-core/src/commands/watch.rs`, `rust/candle-core/src/commands/wait_for_log.rs`, `rust/candle-core/src/logs/log_iterator.rs`, `rust/candle-core/src/logs/process_logs.rs`, `rust/candle-core/src/logs/console_log.rs`, `rust/candle-core/src/logs/log_type.rs`, `rust/candle-core/src/log_filters/latest_execution_log_filter.rs`, `rust/candle-core/src/log_filters/execution_status_tracker.rs`.
+Rust modules: `rust/src/commands/watch.rs`, `rust/src/commands/wait_for_log.rs`, `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, `rust/src/logs/log_type.rs`, `rust/src/log_filters/latest_execution_log_filter.rs`, `rust/src/log_filters/execution_status_tracker.rs`.
 
 Historical Node source of truth: `src/watch-command.ts`, `src/watchProcess.ts`, `src/wait-for-log-command.ts`, `src/logs/LogIterator.ts`, `src/log-filters/LatestExecutionLogFilter.ts`, `src/log-filters/ExecutionStatusTracker.ts`, `src/logs/processLogs.ts`, `src/logs/buildLogSearchQuery.ts`, `src/logs/SqlBuilder.ts`, `src/logs/ProcessLogType.ts`, `src/logs.ts`, `src/runContext.ts`, `src/main-cli.ts`, `src/database/database.ts`, `src/configFile.ts`.

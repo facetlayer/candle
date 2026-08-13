@@ -12,34 +12,35 @@ easy to get wrong. Many facts here are **load-bearing**: the acceptance suite su
 output and opens the database with raw SQL, so the strings, schema, and byte-level behavior below are
 contracts, not suggestions.
 
-## Workspace layout
+## Crate layout
 
-`rust/` is a Cargo workspace with one shared library crate and two binary crates, so both binaries
-share all DB/config/log logic and unit tests live in the library:
+`rust/` is a single crate producing a single binary, `candle`. The library target exists so unit and
+integration tests can drive internals directly; everything ships in the one executable:
 
 ```
 rust/
-  Cargo.toml                # [workspace] members = candle-core, candle-cli, log-collector
-  candle-core/              # lib crate — all shared subsystems
-    src/lib.rs
-  candle-cli/               # bin crate → the `candle` binary (hand-rolled dispatch)
-    src/{main,parser,help}.rs
-  log-collector/            # bin crate → the `log-collector` sidecar binary
-    src/main.rs             # thin: reads launch info, calls candle_core::log_collector::monitor
+  Cargo.toml                # package "candle" — one [lib] + one [[bin]]
+  src/lib.rs                # module surface for tests
+  src/main.rs               # entry point: picks monitor mode / MCP mode / normal CLI
+  src/cli/                  # help text, hand-rolled parser, `--monitor` argument handling
+  src/monitor/              # the per-service supervision loop
+  src/{commands,config,db,kill,logs,log_filters,mcp,start,...}/
+  tests/                    # integration tests
 ```
 
-Both binaries are produced in `rust/target/release/`. The `candle` binary locates its sidecar as a
-sibling (`log-collector` next to `candle`, via `std::env::current_exe()`); `CANDLE_LOG_COLLECTOR_PATH`
-overrides.
+**Monitor mode.** There is no sidecar binary. Every service Candle starts is supervised by a second
+`candle` process launched as `candle --monitor` — the same executable, re-invoked via
+`std::env::current_exe()` (`CANDLE_MONITOR_PATH` overrides, for tests). That means installation is
+one file, and the CLI and its monitors can never fall out of version sync.
 
 ## Subsystem docs
 
-| Doc | Covers | Primary `candle-core` modules |
+| Doc | Covers | Primary modules |
 |---|---|---|
 | [database.md](database.md) | SQLite schema, connection bootstrap, process/stdin tables, cleanup & eviction, stale-process cleanup | `db/{mod,process_table,stdin_messages,cleanup}`, `dirs`, `process_alive` |
 | [config.md](config.md) | `.candle.json` discovery/parse/validate, state-dir resolution, `add-service`/`remove-service`/`set-config`/`setup-project` | `config/{model,paths,validate,file,commands}`, `dirs` |
 | [logs.md](logs.md) | log storage model, query builder, log iterator, latest-execution filtering, `logs`/`clear-logs` | `logs/{log_type,process_logs,log_iterator,console_log}`, `log_filters/*`, `commands/{logs,clear_logs}` |
-| [start-flow.md](start-flow.md) | `start`/`check-start`, the log-collector sidecar handshake, transient vs configured services, success/failure detection | `start/{launch,start_one_service,start_command}`, `log_collector/{mod,monitor}`, `process_alive`, `process_tree` |
+| [start-flow.md](start-flow.md) | `start`/`check-start`, the monitor handshake, transient vs configured services, success/failure detection | `start/{launch,start_one_service,start_command}`, `monitor/{launch_info,run}`, `process_alive`, `process_tree` |
 | [kill-restart.md](kill-restart.md) | `kill`/`stop`, `kill-all`, `restart`; process-tree teardown | `kill/*`, `commands/restart`, `process_tree` |
 | [watch-wait.md](watch-wait.md) | `watch` (live tailing, agent-mode guard) and `wait-for-log` | `commands/{watch,wait_for_log}`, `logs/log_iterator`, `log_filters/*` |
 | [list-ports-browser.md](list-ports-browser.md) | `list`/`list-all`, `list-ports`/`list-ports-all` (lsof parsing), `open-browser` | `commands/{list,list_ports,open_browser}`, `process_tree` |
@@ -49,7 +50,7 @@ overrides.
 
 ## Cross-cutting conventions
 
-**Output sink (`candle_core::output`).** Command handlers never call `println!`/`eprintln!`
+**Output sink (`candle::output`).** Command handlers never call `println!`/`eprintln!`
 directly; they emit through `output::out`/`output::err`. In the CLI this passes through to real
 stdout/stderr. `output::capture(f)` buffers it into a `CapturedOutput` (with `stdout`/`stderr` vecs, a
 `transcript()`, and `mcp_log_lines()` that prefixes stderr lines with `[stderr] `). This is what lets
@@ -84,16 +85,14 @@ against it. They are byte-level and must not drift.
   `FORCE_COLOR=0` set by the harness, no ANSI is emitted.
 - **Agent-mode detection** keys on the truthiness of `CLAUDECODE` (the empty string is *not* agent
   mode). Agent mode disables `watch`. See `run_context` and [watch-wait.md](watch-wait.md).
-- **Sidecar handshake.** The launcher sends launch-info as a single-line JSON with no trailing
-  newline and then closes stdin; the sidecar reads to EOF. The sidecar is detached into a new session
+- **Monitor handshake.** The launcher sends launch-info as a single-line JSON with no trailing
+  newline and then closes stdin; the monitor reads to EOF. The monitor is detached into a new session
   (`setsid`) and is never waited on, so it outlives the CLI. Getting EOF/detach wrong hangs every
   start. See [start-flow.md](start-flow.md).
-- **`logCollector` is ignored.** The `.candle.json` `logCollector: node|rust` key is still parsed and
-  validated (config tests assert its messages) but has no effect: the Rust CLI always launches the
-  Rust `log-collector` sidecar. (In the published Node CLI this key still selects the collector — see
-  `docs/rust-log-collector.md` and `docs-site/docs/configuration.md`.)
-- **Version** comes from `env!("CARGO_PKG_VERSION")`; every crate's version must equal the
-  `package.json` version so `version.test.ts` passes.
+- **`logCollector` is retired.** The `.candle.json` key that chose between the Node and Rust
+  collector sidecars no longer exists. It is not a valid `set-config` key; a leftover entry in a
+  config file is preserved verbatim as an unknown key and otherwise ignored.
+- **Version** comes from `env!("CARGO_PKG_VERSION")`.
 - **MCP stdout purity.** Only newline-delimited JSON-RPC frames reach stdout; all handler output is
   captured. Tool list, ordering, content shapes, and error codes match the Node server exactly. See
   [mcp.md](mcp.md).

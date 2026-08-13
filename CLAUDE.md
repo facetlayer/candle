@@ -4,7 +4,9 @@
  Candle is implemented in Rust. The former Node.js/TypeScript implementation has been removed;
  the only remaining TypeScript is the Vitest acceptance suite under ./test.
 
- ./rust/ - Main source code (Rust workspace: candle-cli, candle-core, log-collector)
+ ./rust/ - Main source code. One crate, one binary (`candle`); `src/main.rs` is the entry point.
+ ./rust/src/cli/ - Help text, argument parsing, and the `--monitor` entry point
+ ./rust/src/monitor/ - Monitor mode: the per-service supervision loop run by `candle --monitor`
  ./rust/docs/ - Rust architecture reference
  ./test/ - Automated tests (Vitest, run against the compiled Rust binary)
  ./test/sampleServers/ - Sample implementations of test services.
@@ -14,19 +16,20 @@
  ./docs-site/ - Public documentation website
  ./docs-site/docs/ - Contents for the public documentation site.
  ./docs-site/docs/commands/ - Public documentation for each CLI command.
- ./install-local.sh - Build the Rust workspace and install candle locally (for development)
+ ./install-local.sh - Build and install candle locally (for development)
  ./install.sh - Public one-line installer; downloads prebuilt binaries from GitHub Releases
  ./.github/workflows/release.yml - Builds & publishes release binaries when a `v*` tag is pushed
  ./README.md - Front page documentation that appears on Github
 
 # Releasing #
 
- 1. Bump `version` in `rust/Cargo.toml` ([workspace.package]) and update CHANGELOG.md.
+ 1. Bump `version` in `rust/Cargo.toml` ([package]) and update CHANGELOG.md.
  2. `cargo build --release --manifest-path rust/Cargo.toml` to refresh Cargo.lock, then commit.
  3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
- The release workflow builds macOS + Linux binaries (x86_64 and arm64), publishes a GitHub
- Release with SHA256SUMS, and updates the Homebrew formula in facetlayer/homebrew-tap.
+ The release workflow builds the single `candle` binary for macOS + Linux (x86_64 and arm64),
+ publishes a GitHub Release with SHA256SUMS, and updates the Homebrew formula in
+ facetlayer/homebrew-tap.
  The Homebrew step needs a `HOMEBREW_TAP_TOKEN` repo secret and is skipped without it.
 
 # Documentation

@@ -1,56 +1,79 @@
 # candle
 
-Candle is a process manager optimized for local development, worktrees, and AI agents.
+Candle is a process manager designed for local development, worktrees, and AI agents.
 
-It's a good fit for locally running services as part of the development process.
+Other process managers (like `pm2`) are built to run on production backends but they
+can be overcomplicated for local development. Candle aims to be your favorite process
+manager when developing and running things locally.
+
+## Features ##
+
+A few things that Candle does well:
+
+### Everything is scoped to project directories ###
+
+When running a command like `candle start`, it will automatically find the services for
+the current directory's project, just like other tools like `git`. This helps keep
+the commands simple.
+
+This also fits naturally with worktrees - each worktree is already a separate directory,
+so Candle will launch separate services for separate worktrees.
+
+### One process per instance ###
+
+Candle will make sure that each service is only launched into one process at a time (per directory)
+
+### Agent-friendly CLI ###
+
+Candle detects when the CLI is being launched by a coding agent, and it will always use
+non-blocking responses (where the shell prints something and exits immediately) for
+agents, which works better for them. Agents can use `candle log ...` to fetch & search the
+console logs for any running service.
+
+### Other quality of life commands ###
+
+Candle ships with a few other QOL features. One example is `candle wait-for-log...` which blocks
+until a service has printed a certain message (for example, "Now serving on port ..."). This
+command can be dropped in to integration tests to help them wait until a service is fully launched.
+
+Another example is port detection - Candle ships with `candle list-ports` which uses the OS
+to detect what ports the service(s) are using, and `candle open-browser` which uses port
+detection to open a web browser to a localhost service. This also helps in worktrees since
+you'll typically have different trees using different port assignments.
 
 ## Installation ##
 
 Supported on macOS and Linux, on both x86_64 and arm64.
 
+### Installation via Curl ###
+
+Run:
+
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
 
 This downloads the latest [release](https://github.com/facetlayer/candle/releases) for your
-platform, verifies its SHA-256 checksum, and installs into `~/.local/bin`. No Rust toolchain
-needed.
+platform, and installs into `~/.local/bin`. No Rust toolchain needed.
 
-Then confirm it worked:
+Confirm it worked:
 
     candle --version
 
-If that prints `command not found`, `~/.local/bin` isn't on your `PATH`. Add it to your shell
-profile (`~/.zshrc`, `~/.bashrc`) and open a new terminal:
+If that prints `command not found`, you may need to add `~/.local/bin` to your `PATH`. Add this
+to your shell profile (`~/.zshrc`, `~/.bashrc`) and open a new terminal:
 
     export PATH="$HOME/.local/bin:$PATH"
 
-To install somewhere else, pass `--bin-dir`. System directories like `/usr/local/bin` are
-usually not writable by your user, so those need `sudo sh` instead of `sh`:
+To install somewhere else, use `--bin-dir`:
 
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sudo sh -s -- --bin-dir /usr/local/bin
 
-### Other ways to install ###
+### Installation via Homebrew
 
 With Homebrew:
 
     brew install facetlayer/tap/candle
 
-From source, which requires [Rust](https://rustup.rs/) and a C compiler (Candle bundles
-SQLite, so it's compiled from source and takes a few minutes):
-
-    git clone https://github.com/facetlayer/candle.git
-    cd candle && ./install-local.sh
-
-Every method installs two executables — `candle` and its `log-collector` sidecar. They must
-stay in the same directory, since `candle` looks for the sidecar next to itself. Nothing to
-do about this unless you move the binaries by hand.
-
-### Upgrading ###
-
-| installed with | upgrade with |
-| -------------- | ------------ |
-| install script | re-run the same `curl ... \| sh` command |
-| Homebrew | `brew upgrade candle` |
-| source | `git pull && ./install-local.sh` |
+This installs the same prebuilt binary as the curl installer, so no Rust toolchain is needed.
 
 ### Uninstalling ###
 
@@ -66,115 +89,23 @@ Then remove it:
     # installed with Homebrew
     brew uninstall candle
 
-Candle's only other footprint is its database, which is never deleted automatically:
-
-    rm -rf ~/.local/state/candle
-
-See [docs-site/docs/installation.md](./docs-site/docs/installation.md) for the full set of
-installer options (`--version`, `--bin-dir`, `--uninstall`).
-
 ## Quick Start ##
 
-| task | command |
-| ---- | ------- |
-| Set up a project config | `candle setup-project` |
-| Add a service to the config | `candle add-service main --shell <shell command>` |
-| Start a service in the background | `candle start` (or `candle run`) |
-| Fetch recent logs | `candle logs` |
-| Watch logs as they happen | `candle watch` |
-| List services | `candle ls` |
+Initialize a `.candle.json` file in the root directory of your project (usually the same
+place that has the `.git` directory):
 
-## Features & Design Decisions ##
+    $ candle setup-project
 
-### Simple command interface ###
+Add a service:
 
-Compared to other process managers like pm2, Candle is a lot simpler, and it doesn't include
-a lot of the complexity that's needed when running a service in the cloud.
+    $ candle add-service <service name> --shell <shell command>
 
-### One instance per service ###
+Launch it:
 
-For simplicity, Candle won't launch the same service twice in one project.
+    $ candle start                # all services
+    $ candle start <service name> # one services
 
-If you launch the service with `candle start` (or its alias `candle run`) and that service is
-already running, the existing instance will be killed first.
-
-### Organized by project directory ###
-
-A running Candle process is associated with the project directory that it's launched from.
-
-Most Candle commands like `candle ls` will only show you services for your current directory.
-This keeps things simpler for coding agents.
-
-#### Worktrees ####
-
-This approach works extremely well if you use Git worktrees.
-
-Since each worktree uses a different directory, each worktree will also have a seperate
-set of Candle services. You can run local services in both worktrees simultaneously.
-
-Note that when doing this, you'll probably need to assign unique network ports to each worktree,
-so that your services don't conflict when trying to listen on the same port.
-
-### Convenience commands ###
-
-Candle includes a few convenience commands for local development, including:
-
- * `candle list-ports` - Use the operating system to check what ports are used by running services.
- * `candle open-browser` - Open a web browser to `http://localhost:xxxx` after detecting the service's port.
-
-### Optimized for coding agents ###
-
-Candle was built and tuned to be used successfully by coding agents like Claude Code.
-
-#### Non-interactive commands ####
-
-One major decision that helps with coding agents is emphasizing **non-interactive commands**. A
-non-interactive command is one that exits immediately, instead of commands that continue to run until killed.
-
-Candle detects whether it's running interactively (a human at a terminal) or non-interactively
-(a coding agent, script, or pipe), and adjusts its behavior:
-
- - `candle start` (aliased as `candle run`) launches a service. In an interactive terminal it then
-   watches the new process's logs until Ctrl+C (the process keeps running); when run by an agent
-   or script it exits immediately after the launch is confirmed. `--watch` and `--bg` force either mode.
- - `candle logs` can fetch recent log messages (compared to `candle watch` which interactively prints logs as they happen)
-
-Additionally the `candle --help` command detects if it's being used by Claude Code, and if so,
-it will hide the `watch` command so the agent is not aware of it.
-
-Coding agents do have the *ability* to run interactive/backgrounded commands, but in our experience,
-they are much more successful with non-interactive commands.
-
-#### MCP server ####
-
-Candle does ship with an MCP server integration, although these days, most users just use the Bash CLI.
-
-# Documentation #
-
-### The config file ###
-
-In order to use Candle, your project should have a `.candle.json` file at the project's top level.
-A new config can be created with `candle setup-project`.
-
-Candle will look for this file when working with local services. You can run `candle` in a subdirectory
-of your project and it will find the nearest `.candle.json` in a parent directory.
-
-### Named services ###
-
-You can add multiple services in your project. With multiple services, each command supports a `[name]` parameter
-to pick the target.
-
-`candle start backend` - Start the service named 'backend'
-
-Some commands have a default behavior if no service is named:
-
-`candle start` - Start all services.
-
-Some commands accept multiple services at once:
-
-`candle start backend frontend` - Start the 'backend' and 'frontend' services.
-
-# Commands #
+# All Commands #
 
 ### `candle --help`
 

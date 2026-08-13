@@ -8,14 +8,12 @@
 # Options (pass after `| sh -s --` when piping):
 #     --version <tag>    Install a specific release (e.g. v0.13.3). Default: latest.
 #     --bin-dir <dir>    Where to install. Default: $HOME/.local/bin.
-#     --uninstall        Remove the installed binaries (and optionally the database).
+#     --uninstall        Remove the installed binary (and optionally the database).
 #     --help             Show this message.
 #
 # Environment overrides: CANDLE_VERSION, CANDLE_BIN_DIR.
 #
-# Candle ships two binaries — `candle` and its `log-collector` sidecar. They MUST
-# stay in the same directory: at runtime `candle` resolves the sidecar as a
-# sibling of its own executable.
+# Candle ships as a single binary: `candle`.
 
 set -eu
 
@@ -23,7 +21,7 @@ REPO="facetlayer/candle"
 BIN_DIR="${CANDLE_BIN_DIR:-$HOME/.local/bin}"
 VERSION="${CANDLE_VERSION:-latest}"
 ACTION="install"
-BINARIES="candle log-collector"
+BINARY="candle"
 
 say() { printf '%s\n' "$*"; }
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -84,16 +82,23 @@ resolve_version() {
 
 do_uninstall() {
   removed=0
-  for bin in $BINARIES; do
-    for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
-      if [ -f "$dir/$bin" ]; then
-        rm -f "$dir/$bin"
-        say "removed $dir/$bin"
-        removed=1
-      fi
-    done
+  for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
+    if [ -f "$dir/$BINARY" ]; then
+      rm -f "$dir/$BINARY"
+      say "removed $dir/$BINARY"
+      removed=1
+    fi
   done
-  [ "$removed" -eq 1 ] || say "no Candle binaries found in $BIN_DIR, ~/.cargo/bin, or /usr/local/bin"
+  # Older installs also placed a `log-collector` sidecar next to `candle`; it is
+  # no longer shipped (that mode now lives inside `candle` itself), so clean it up.
+  for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
+    if [ -f "$dir/log-collector" ]; then
+      rm -f "$dir/log-collector"
+      say "removed $dir/log-collector (obsolete sidecar)"
+      removed=1
+    fi
+  done
+  [ "$removed" -eq 1 ] || say "no Candle binary found in $BIN_DIR, ~/.cargo/bin, or /usr/local/bin"
 
   state_dir="${CANDLE_DATABASE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/candle}"
   say ""
@@ -157,14 +162,20 @@ if [ ! -w "$BIN_DIR" ]; then
        with --bin-dir (the default, ~/.local/bin, needs no sudo)."
 fi
 
-for bin in $BINARIES; do
-  src="$(find "$TMP_DIR" -type f -name "$bin" | head -n 1)"
-  [ -n "$src" ] || err "'$bin' was not found inside $ARCHIVE"
-  install -m 755 "$src" "$BIN_DIR/$bin" 2>/dev/null || {
-    cp "$src" "$BIN_DIR/$bin" && chmod 755 "$BIN_DIR/$bin"
-  }
-  say "    $bin -> $BIN_DIR/$bin"
-done
+src="$(find "$TMP_DIR" -type f -name "$BINARY" | head -n 1)"
+[ -n "$src" ] || err "'$BINARY' was not found inside $ARCHIVE"
+install -m 755 "$src" "$BIN_DIR/$BINARY" 2>/dev/null || {
+  cp "$src" "$BIN_DIR/$BINARY" && chmod 755 "$BIN_DIR/$BINARY"
+}
+say "    $BINARY -> $BIN_DIR/$BINARY"
+
+# Candle used to ship a `log-collector` sidecar alongside `candle`. That mode now
+# lives inside `candle` itself (`candle --monitor`), so remove any leftover copy
+# from an earlier install rather than leaving a dead binary on the user's PATH.
+if [ -f "$BIN_DIR/log-collector" ]; then
+  rm -f "$BIN_DIR/log-collector"
+  say "    removed obsolete $BIN_DIR/log-collector"
+fi
 
 say ""
 say "==> Done. Installed Candle $TAG to $BIN_DIR"

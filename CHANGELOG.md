@@ -1,5 +1,8 @@
 
 # Unreleased
+ - Candle now ships as a **single binary**. The separate `log-collector` sidecar is gone; its behavior moved into the main CLI as a mode, `candle --monitor`, which the CLI launches by re-invoking its own executable. Installation is one file, and the CLI and its monitors can no longer fall out of version sync. `install.sh` and `install-local.sh` remove a leftover `log-collector` from a previous install.
+ - Remove the `logCollector` config setting. It chose between the old Node.js and Rust collector sidecars, neither of which exists now, and it had already been ignored at launch. `candle set-config logCollector ...` reports an unknown key; a leftover `"logCollector"` entry in an existing `.candle.json` is ignored and preserved as-is.
+ - Reorganize the Rust source into one crate at `rust/` (was a workspace of `candle-core` + `candle-cli` + `log-collector`), now that there is only one binary to build.
  - `install.sh` now fails with an actionable message when the target directory isn't writable (e.g. `--bin-dir /usr/local/bin`), instead of a raw `mkdir: Permission denied`.
  - Expand the README installation section: verifying the install, the `PATH` note for `~/.local/bin`, upgrading, and uninstalling.
 

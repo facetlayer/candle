@@ -4,17 +4,17 @@
 
 The subsystem is a single SQLite database that stores: (a) the registry of launched background processes, (b) captured process output (logs), (c) a stdin message queue per service, and (d) a last-cleanup timestamp. It is accessed concurrently by multiple OS processes (the CLI, the per-service "log collector" subprocess, the MCP server), so WAL + busy-timeout are mandatory.
 
-The Rust implementation lives under `rust/candle-core/src/db/` (`mod.rs`, `process_table.rs`, `stdin_messages.rs`, `cleanup.rs`), with directory resolution in `rust/candle-core/src/dirs.rs` and liveness checks in `rust/candle-core/src/process_alive.rs`. It uses `rusqlite` (bundled SQLite) with hand-written SQL. It mirrors the original Node implementation built on `@facetlayer/sqlite-wrapper` (v1.3.0), which itself wrapped Node's built-in `node:sqlite` (`DatabaseSync`). Source-of-truth cross-references below point at the original `src/...` TypeScript files; all paths are repo-relative.
+The Rust implementation lives under `rust/src/db/` (`mod.rs`, `process_table.rs`, `stdin_messages.rs`, `cleanup.rs`), with directory resolution in `rust/src/dirs.rs` and liveness checks in `rust/src/process_alive.rs`. It uses `rusqlite` (bundled SQLite) with hand-written SQL. It mirrors the original Node implementation built on `@facetlayer/sqlite-wrapper` (v1.3.0), which itself wrapped Node's built-in `node:sqlite` (`DatabaseSync`). Source-of-truth cross-references below point at the original `src/...` TypeScript files; all paths are repo-relative.
 
 ## 2. Database file location, naming, creation
 
-`get_state_directory()` in `rust/candle-core/src/dirs.rs` (mirrors `src/dirs.ts`) resolves the **state dir** with this precedence order:
+`get_state_directory()` in `rust/src/dirs.rs` (mirrors `src/dirs.ts`) resolves the **state dir** with this precedence order:
 
 1. `CANDLE_DATABASE_DIR` env var → used verbatim.
 2. `XDG_STATE_HOME` env var → `join($XDG_STATE_HOME, "candle")`.
 3. Default → `join(home, ".local", "state", "candle")` i.e. `~/.local/state/candle`.
 
-DB bootstrap lives in `rust/candle-core/src/db/mod.rs` (mirrors `src/database/database.ts:56-84`):
+DB bootstrap lives in `rust/src/db/mod.rs` (mirrors `src/database/database.ts:56-84`):
 - `stateDir = overrideDirectory ?? get_state_directory()`.
 - If `stateDir` does not exist, it is created recursively (`fs.mkdirSync(stateDir, { recursive: true })` in Node).
 - DB file = `join(stateDir, "candle.db")` — **filename is exactly `candle.db`**.
@@ -32,7 +32,7 @@ Subtle / easy to get wrong:
 
 ## 3. Exact schema
 
-Defined in `rust/candle-core/src/db/mod.rs`, byte-parity with `src/database/database.ts:13-52` (`schema.name = 'CandleDatabase'`). All `integer` timestamps are **Unix epoch seconds**. Default timestamp expression is `strftime('%s','now')` (returns a string in SQLite but stored in an integer column → stored as integer text/affinity integer; epoch seconds).
+Defined in `rust/src/db/mod.rs`, byte-parity with `src/database/database.ts:13-52` (`schema.name = 'CandleDatabase'`). All `integer` timestamps are **Unix epoch seconds**. Default timestamp expression is `strftime('%s','now')` (returns a string in SQLite but stored in an integer column → stored as integer text/affinity integer; epoch seconds).
 
 ### Table `processes`
 ```sql
@@ -55,7 +55,7 @@ create table processes(
 | command_name | TEXT | no | service name |
 | project_dir | TEXT | no | absolute project dir |
 | pid | INTEGER | no | OS pid of the service process |
-| log_collector_pid | INTEGER | **yes** | pid of the supervising log-collector process |
+| log_collector_pid | INTEGER | **yes** | pid of the supervising monitor process (legacy column name) |
 | start_time | INTEGER | no | epoch seconds, set by app code (`Math.floor(Date.now()/1000)`) |
 | created_at | INTEGER | no | default `strftime('%s','now')` |
 | killed_at | INTEGER | **yes** | NULL ⇒ running; non-NULL ⇒ marked killed |
@@ -73,7 +73,7 @@ create table process_output(
     timestamp integer not null default (strftime('%s', 'now'))
 )
 ```
-`log_type` enum (`rust/candle-core/src/logs/log_type.rs`, mirrors `src/logs/ProcessLogType.ts`): `stdout=1, stderr=2, process_start_initiated=3, process_start_failed=4, process_started=5, process_exited=6`.
+`log_type` enum (`rust/src/logs/log_type.rs`, mirrors `src/logs/ProcessLogType.ts`): `stdout=1, stderr=2, process_start_initiated=3, process_start_failed=4, process_started=5, process_exited=6`.
 
 ### Table `process_last_cleanup`
 ```sql
@@ -122,7 +122,7 @@ The Rust implementation reproduces the safe, non-destructive outcome:
 
 ## 5. CRUD functions and exact SQL
 
-### Process table (`rust/candle-core/src/db/process_table.rs`, mirrors `src/database/processTable.ts`)
+### Process table (`rust/src/db/process_table.rs`, mirrors `src/database/processTable.ts`)
 The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at?, shell, root?`.
 ⚠️ **Historical gotcha (resolved in Rust):** the original TS `ProcessEntry` interface declared `launch_id`, but the table column is `id`. `select *` returns `id`, not `launch_id`, so `entry.launch_id` was effectively always `undefined` in TS. Code paths that delete/update use `command_name + project_dir + pid` as the key, not the row id. The Rust struct exposes `id` as the actual PK, and process rows are keyed by `(command_name, project_dir, pid)` for update/delete.
 
@@ -151,7 +151,7 @@ The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, lo
 - `find_all_running_processes()`: `... where killed_at is null`
 - `find_all_killed_processes()`: `... where killed_at is not null`
 
-### stdin messages (`rust/candle-core/src/db/stdin_messages.rs`, mirrors `src/database/stdinMessagesTable.ts`) — FIFO queue per service
+### stdin messages (`rust/src/db/stdin_messages.rs`, mirrors `src/database/stdinMessagesTable.ts`) — FIFO queue per service
 - `create_stdin_message({commandName, projectDir, data, encoding?})` → insert into `stdin_messages` (`encoding ?? 'utf8'`). Returns the last insert rowid.
 - `pop_stdin_message(commandName, projectDir)`:
   ```sql
@@ -164,14 +164,14 @@ The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, lo
   delete from stdin_messages where command_name = ? and project_dir = ?
   ```
 
-### Log write (`rust/candle-core/src/logs/process_logs.rs`, mirrors `src/logs/processLogs.ts`)
+### Log write (`rust/src/logs/process_logs.rs`, mirrors `src/logs/processLogs.ts`)
 - `save_process_log({command_name, project_dir, content?, log_type})`:
   ```sql
   insert into process_output(command_name, project_dir, content, log_type) values(?, ?, ?, ?)
   ```
   `timestamp` defaults to `strftime('%s','now')`.
 
-### Log read (`rust/candle-core/src/logs/process_logs.rs`, mirrors `buildLogSearchQuery.ts` + `getProcessLogsWithEvictionInfo`)
+### Log read (`rust/src/logs/process_logs.rs`, mirrors `buildLogSearchQuery.ts` + `getProcessLogsWithEvictionInfo`)
 Builds dynamic SQL on `process_output po`:
 - WHERE clauses by `project_dir` and/or `command_name IN (...)` (single command uses `= ?`).
 - Optional `and po.timestamp > ?` (sinceTimestamp), `and po.id > ?` (afterLogId).
@@ -180,7 +180,7 @@ Builds dynamic SQL on `process_output po`:
 - Eviction detection: if returned rows `>= limit`, re-runs the same query without limit wrapped in `select count(*) as total from (<sql>)`; if total > returned ⇒ `logsWereEvicted = true`.
 - Final list is reversed → returned in chronological (ascending) order.
 
-## 6. Cleanup / eviction algorithm (`rust/candle-core/src/db/cleanup.rs`, mirrors `src/database/cleanup.ts`)
+## 6. Cleanup / eviction algorithm (`rust/src/db/cleanup.rs`, mirrors `src/database/cleanup.ts`)
 
 `CLEANUP_INTERVAL_SECONDS = 10 * 60` (600s).
 
@@ -226,7 +226,7 @@ Eviction config (mirrors `src/configFile.ts`):
 - `LOG_EVICTION_DEFAULTS = { maxLogsPerService: 1000, maxRetentionSeconds: 86400 }` (24h).
 - Read from config file under `config.logEviction.{maxLogsPerService,maxRetentionSeconds}`. Validation: each, if present, must be an integer `>= 1`, else throws `Config file error: 'logEviction.<field>' must be a positive integer`.
 
-## 7. Stale process cleanup (`rust/candle-core/src/db/cleanup.rs`, mirrors `staleProcessCleanup.ts`)
+## 7. Stale process cleanup (`rust/src/db/cleanup.rs`, mirrors `staleProcessCleanup.ts`)
 
 `cleanup_stale_processes()`:
 1. `find_all_running_processes()` (killed_at IS NULL). For each `proc`:
@@ -237,7 +237,7 @@ Eviction config (mirrors `src/configFile.ts`):
      - `delete_process_entry({commandName, projectDir, pid})`.
 2. `find_all_killed_processes()` (killed_at IS NOT NULL). For each → `delete_process_entry(...)` unconditionally (collector died before deleting; clean them up).
 
-`is_process_alive(pid)` (`rust/candle-core/src/process_alive.rs`, mirrors `src/process-alive.ts:7`). The original TS was:
+`is_process_alive(pid)` (`rust/src/process_alive.rs`, mirrors `src/process-alive.ts:7`). The original TS was:
 ```js
 try { process.kill(pid, 0); return true; }
 catch (err) { if (err.code === 'EPERM') return true; return false; }

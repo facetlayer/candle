@@ -1,18 +1,18 @@
 # Kill & restart
 
 ## 0. Scope & files
-This subsystem covers three CLI commands and their shared helpers. The Rust implementation lives under `rust/candle-core/src/`; `src/...` references point at the original Node/TypeScript source, kept as the historical source of truth.
+This subsystem covers three CLI commands and their shared helpers. The Rust implementation lives under `rust/src/`; `src/...` references point at the original Node/TypeScript source, kept as the historical source of truth.
 
-- `candle kill [name...]` (alias `stop`) → `handle_kill_command` (`rust/candle-core/src/kill/mod.rs`; mirrors `src/kill-command.ts`)
-- `candle kill-all` → `handle_kill_all` (`rust/candle-core/src/kill/mod.rs`; mirrors `src/kill-all-command.ts`)
-- `candle restart [name...]` → `handle_restart` (`rust/candle-core/src/commands/restart.rs`; mirrors `src/restart-command.ts`)
-- Shared kill helpers: `kill_one_running_process`, `kill_process_tree` (`rust/candle-core/src/kill/mod.rs`), `get_process_tree` (`rust/candle-core/src/process_tree.rs`)
-- DB layer: `rust/candle-core/src/db/process_table.rs`, schema in `rust/candle-core/src/db/mod.rs`
-- Liveness check: `rust/candle-core/src/process_alive.rs`
+- `candle kill [name...]` (alias `stop`) → `handle_kill_command` (`rust/src/kill/mod.rs`; mirrors `src/kill-command.ts`)
+- `candle kill-all` → `handle_kill_all` (`rust/src/kill/mod.rs`; mirrors `src/kill-all-command.ts`)
+- `candle restart [name...]` → `handle_restart` (`rust/src/commands/restart.rs`; mirrors `src/restart-command.ts`)
+- Shared kill helpers: `kill_one_running_process`, `kill_process_tree` (`rust/src/kill/mod.rs`), `get_process_tree` (`rust/src/process_tree.rs`)
+- DB layer: `rust/src/db/process_table.rs`, schema in `rust/src/db/mod.rs`
+- Liveness check: `rust/src/process_alive.rs`
 
 ## 1. Data model
 
-### 1.1 `processes` table schema (`rust/candle-core/src/db/mod.rs`; mirrors `src/database/database.ts:16-27`)
+### 1.1 `processes` table schema (`rust/src/db/mod.rs`; mirrors `src/database/database.ts:16-27`)
 ```sql
 create table processes(
     id integer primary key autoincrement,
@@ -42,7 +42,7 @@ Key semantics:
 
 The natural key used for update/delete is the triple **(command_name, project_dir, pid)**, not `id`.
 
-## 2. `handle_kill_command` (`rust/candle-core/src/kill/mod.rs`)
+## 2. `handle_kill_command` (`rust/src/kill/mod.rs`)
 
 Options: `{ project_dir, command_names?, quiet_failure?, quiet? }`.
 
@@ -59,7 +59,7 @@ Control flow:
 
 Note the asymmetry: name-based kill queries **all** entries (incl. killed), while killing-all-in-project queries only running entries.
 
-## 3. `kill_one_running_process` (`rust/candle-core/src/kill/mod.rs`) — core kill logic
+## 3. `kill_one_running_process` (`rust/src/kill/mod.rs`) — core kill logic
 
 Signature: `kill_one_running_process(process, options { quiet? })`. The process value carries `{ command_name, project_dir, pid: Option<i32>, killed_at: Option<i64> }`.
 
@@ -84,7 +84,7 @@ Logic:
 
 Subtle: in the success path, the row is normally only *marked* `killed_at`, not deleted. Actual deletion is done later by the log collector on child exit, or by `cleanup_stale_processes` (§6). The success path does not delete except in the stale branch.
 
-## 4. `handle_kill_all` (`rust/candle-core/src/kill/mod.rs`)
+## 4. `handle_kill_all` (`rust/src/kill/mod.rs`)
 
 `handle_kill_all(options { quiet? })`.
 
@@ -93,7 +93,7 @@ Subtle: in the success path, the row is normally only *marked* `killed_at`, not 
 - If count == 0: print `No running processes found` (no project qualifier). No `quiet_failure` concept here.
 - No name validation, no project_dir. This is the system-wide nuke.
 
-## 5. `kill_process_tree` (`rust/candle-core/src/kill/mod.rs`) + `get_process_tree` (`rust/candle-core/src/process_tree.rs`)
+## 5. `kill_process_tree` (`rust/src/kill/mod.rs`) + `get_process_tree` (`rust/src/process_tree.rs`)
 
 Return type: `'success' | 'process_not_found' | 'error'`.
 
@@ -107,7 +107,7 @@ Return type: `'success' | 'process_not_found' | 'error'`.
    - On success: set `all_not_found = false`.
 6. Result: if `all_not_found` (every pid threw ESRCH) → `'process_not_found'`. Else if `has_error` → `'error'`. Else → `'success'`.
 
-### 5.1 `get_process_tree` (`rust/candle-core/src/process_tree.rs`) — building the tree
+### 5.1 `get_process_tree` (`rust/src/process_tree.rs`) — building the tree
 Iterative worklist (stack): start with `[root_pid]`, `all_pids = [root_pid]`. Pop a pid, find its direct children via `get_child_pids`, append children to both `all_pids` and the stack. Continue until stack empty. Returns `all_pids` (root first, then descendants in discovery order).
 
 `get_child_pids(parent_pid)` is **platform-specific**:
@@ -124,10 +124,10 @@ Parsing: spawn command with `stdio ['ignore','pipe','ignore']`, accumulate stdou
 - The signal-0 existence probe used elsewhere (`is_process_alive`) is `kill(pid, None)` via `nix::sys::signal::kill(Pid, None)`, treating `EPERM` as alive, `ESRCH` as dead.
 
 ## 6. DB lifecycle & reaping interaction (context, not in kill path)
-- Normal `kill` only sets `killed_at`. Final deletion is performed by either the per-process log collector on child exit, or by `cleanup_stale_processes()` (`rust/candle-core/src/db/cleanup.rs`; mirrors `src/database/staleProcessCleanup.ts`), which (a) deletes running rows whose `pid` and `log_collector_pid` are both dead, and (b) **deletes every row where `killed_at is not null`**. This two-phase (mark then reap) behavior is what makes `candle list` stop showing `RUNNING` immediately after kill (test `kill.test.ts:74` asserts `not.toContain('RUNNING')`).
+- Normal `kill` only sets `killed_at`. Final deletion is performed by either the per-process log collector on child exit, or by `cleanup_stale_processes()` (`rust/src/db/cleanup.rs`; mirrors `src/database/staleProcessCleanup.ts`), which (a) deletes running rows whose `pid` and `log_collector_pid` are both dead, and (b) **deletes every row where `killed_at is not null`**. This two-phase (mark then reap) behavior is what makes `candle list` stop showing `RUNNING` immediately after kill (test `kill.test.ts:74` asserts `not.toContain('RUNNING')`).
 - This subsystem never kills `log_collector_pid`. Only the service tree rooted at `pid`.
 
-## 7. `handle_restart` (`rust/candle-core/src/commands/restart.rs`)
+## 7. `handle_restart` (`rust/src/commands/restart.rs`)
 
 Options: `{ project_dir, command_names, console_output_format: 'pretty' | 'json' }`. The CLI always passes `'pretty'` and calls `assert_valid_command_names` first, then exits 0 after.
 
@@ -166,7 +166,7 @@ Flow:
 - assert_valid_command_names failure: stderr contains `No service` and the bad name; non-zero exit.
 
 ## 10. Crates used (replacing the original npm deps)
-- `@facetlayer/sqlite-wrapper` (wraps `better-sqlite3`, synchronous) → **`rusqlite`** (bundled sqlite). The `.list/.run/.insert` helpers map to `prepare`+`query_map` / `execute` / `execute`+`last_insert_rowid`. The DB lives in a state dir (`get_state_directory()` → `rust/candle-core/src/dirs.rs`), with env override `CANDLE_DATABASE_DIR`.
+- `@facetlayer/sqlite-wrapper` (wraps `better-sqlite3`, synchronous) → **`rusqlite`** (bundled sqlite). The `.list/.run/.insert` helpers map to `prepare`+`query_map` / `execute` / `execute`+`last_insert_rowid`. The DB lives in a state dir (`get_state_directory()` → `rust/src/dirs.rs`), with env override `CANDLE_DATABASE_DIR`.
 - `yargs` → **`clap`** (derive). Variadic positional, subcommand aliases (`kill`/`stop`).
 - `child_process.spawn` for `pgrep`/`ps` → **`std::process::Command`**.
 - `process.kill(pid, signal)` → **`nix`** crate: `nix::sys::signal::kill(Pid::from_raw(pid), Signal::SIGTERM)` and `kill(pid, None)` for the signal-0 liveness probe. Matches `nix::errno::Errno::ESRCH` and `EPERM`.

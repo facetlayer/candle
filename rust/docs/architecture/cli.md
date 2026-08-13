@@ -2,7 +2,7 @@
 
 Covers errors, debug logging, run context, doc files, command-name validation, the public library API, version handling, and the `wait-for-log` command.
 
-The Rust implementation lives in `rust/candle-core/src/` — `errors.rs`, `debug.rs`, `run_context.rs`, `doc_files.rs`, `commands/mod.rs` (command-name validation), `commands/wait_for_log.rs`, and `lib.rs` (public crate surface) — with CLI dispatch, help, and version handling in `rust/candle-cli/src/{main,parser,help}.rs`. It mirrors the original `src/errors.ts`, `src/debug.ts`, `src/runContext.ts`, `src/docFiles/DocFilesHelper.ts`, `src/index.ts`, `src/cli/assertValidCommandName.ts`, `src/wait-for-log-command.ts`, plus `src/findPackageJson.ts` and version handling in `src/main-cli.ts`.
+The Rust implementation lives in `rust/src/` — `errors.rs`, `debug.rs`, `run_context.rs`, `doc_files.rs`, `commands/mod.rs` (command-name validation), `commands/wait_for_log.rs`, and `lib.rs` (module surface) — with CLI dispatch in `main.rs` and help/parsing in `cli/{help,parser}.rs`. It mirrors the original `src/errors.ts`, `src/debug.ts`, `src/runContext.ts`, `src/docFiles/DocFilesHelper.ts`, `src/index.ts`, `src/cli/assertValidCommandName.ts`, `src/wait-for-log-command.ts`, plus `src/findPackageJson.ts` and version handling in `src/main-cli.ts`.
 
 ## 1. Errors (`errors.rs`, mirrors `src/errors.ts`)
 
@@ -56,7 +56,7 @@ Behavior:
 - Gated entirely on env var `CANDLE_ENABLE_LOGS` being **truthy/present** (any non-empty value enables; the JS check `if (process.env.CANDLE_ENABLE_LOGS)` is true for any non-empty string, including `"false"`). The Rust code enables when the var is set AND its value is a non-empty string — matching JS semantics, not parsing as boolean.
 - Appends `message + "\n"` to a file literally named `candle.log` in the **current working directory** at call time (NOT the package dir, NOT the database dir).
 - Synchronous append; creates the file if missing. No flush/close management needed.
-- Used widely as `debugLog('[component] ...' + JSON.stringify(...))` in log-collector and startup code. Each call is one line. Callers do their own string formatting.
+- Used widely as `debugLog('[component] ...' + JSON.stringify(...))` in monitor and startup code. Each call is one line. Callers do their own string formatting.
 
 ### Rust implementation
 `fn debug_log(msg: &str)` → if `std::env::var("CANDLE_ENABLE_LOGS").map(|v| !v.is_empty()).unwrap_or(false)`, open `cwd/candle.log` with `OpenOptions::new().create(true).append(true)` and write `msg` + `"\n"`. cwd is resolved via `std::env::current_dir()` on each call (it can change). IO errors are swallowed to match the fire-and-forget nature — silently ignored so the CLI never crashes on a read-only cwd.
@@ -93,7 +93,7 @@ const docFiles = new DocFilesHelper({
 ```
 - `dirs`: scanned for `*.md` files (non-recursive, top-level only).
 - `files`: explicit individual files added by basename.
-- `__packageRoot` resolves relative to the running script's directory. The docs dir contents: `agents-intro.md`, `getting-started.md`, `rust-log-collector.md`, `testing-strategy.md`, `transient-processes.md`, plus `README.md`.
+- `__packageRoot` resolves relative to the running script's directory. The docs dir contents: `agents-intro.md`, `getting-started.md`, `testing-strategy.md`, `transient-processes.md`, plus `README.md`.
 
 ### Internal model
 `fileMap: Map<basename, fullPath>`. Built in the constructor:
@@ -226,7 +226,7 @@ The Node original used two mechanisms:
 
 3. yargs `.version()` (line 234) is configured but the manual check at line 290 wins because it fires first.
 
-⚠️ In the original, two different path-resolution strategies coexisted: the inline `--version` handler only checked `../package.json` (one level up from the script dir), while `findPackageJson` checked two candidate depths. The Rust implementation compiles the version in at build time via `env!("CARGO_PKG_VERSION")` (in `rust/candle-cli/src/`) rather than reading `package.json` at runtime — avoiding the dual-path fragility. `-v`/`--version` is handled before command dispatch; output is the bare version string + newline on stdout, exit 0.
+⚠️ In the original, two different path-resolution strategies coexisted: the inline `--version` handler only checked `../package.json` (one level up from the script dir), while `findPackageJson` checked two candidate depths. The Rust implementation compiles the version in at build time via `env!("CARGO_PKG_VERSION")` (in `rust/src/`) rather than reading `package.json` at runtime — avoiding the dual-path fragility. `-v`/`--version` is handled before command dispatch; output is the bare version string + newline on stdout, exit 0.
 
 ## 8. wait-for-log command (`commands/wait_for_log.rs`, mirrors `src/wait-for-log-command.ts`)
 
@@ -273,7 +273,7 @@ The Node original's dependencies map onto the following in the Rust implementati
 | frontmatter regex | `parseFrontmatter` | `regex` crate |
 | insertion-ordered `Map` | `fileMap` iteration order | `indexmap` crate |
 | `process.env` | env reads | `std::env::var` |
-| `yargs` (`.version()`) | CLI parsing/version | hand-rolled parser in `rust/candle-cli/src/parser.rs`; version via `env!("CARGO_PKG_VERSION")` |
+| `yargs` (`.version()`) | CLI parsing/version | hand-rolled parser in `rust/src/cli/parser.rs`; version via `env!("CARGO_PKG_VERSION")` |
 | `setTimeout`/promises | poll loop | `tokio::time::sleep` |
 
 No third-party npm deps in this subsystem itself — `@facetlayer/docs-tool` was intentionally removed and replaced by the in-repo `DocFilesHelper` (per the file header comment).

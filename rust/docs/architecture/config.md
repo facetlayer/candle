@@ -2,7 +2,7 @@
 
 Covers config file discovery/parsing/validation, the `.candle.json` schema, state/database directory resolution, and the `add-service` / `remove-service` / `set-config` / `setup-project` commands.
 
-The Rust implementation lives in `rust/candle-core/src/config/` — `model.rs` (schema structs/constants), `paths.rs` (path validation), `validate.rs` (`validate_config`), `file.rs` (discovery, read, service lookup), and `commands.rs` (the mutating commands) — plus `rust/candle-core/src/dirs.rs` for state-directory resolution. It mirrors the original `src/configFile.ts`, `src/addServerConfig.ts`, `src/removeServerConfig.ts`, `src/set-config-command.ts`, `src/setup-project-command.ts`, `src/dirs.ts`, and `src/findPackageJson.ts`, with CLI wiring in `rust/candle-cli/src/` (originally `src/main-cli.ts`) and DB-dir usage in the `db` module (originally `src/database/database.ts`).
+The Rust implementation lives in `rust/src/config/` — `model.rs` (schema structs/constants), `paths.rs` (path validation), `validate.rs` (`validate_config`), `file.rs` (discovery, read, service lookup), and `commands.rs` (the mutating commands) — plus `rust/src/dirs.rs` for state-directory resolution. It mirrors the original `src/configFile.ts`, `src/addServerConfig.ts`, `src/removeServerConfig.ts`, `src/set-config-command.ts`, `src/setup-project-command.ts`, `src/dirs.ts`, and `src/findPackageJson.ts`, with CLI wiring in `rust/src/` (originally `src/main-cli.ts`) and DB-dir usage in the `db` module (originally `src/database/database.ts`).
 
 ## 1. The `.candle.json` file format
 
@@ -144,7 +144,7 @@ All three mutating commands write with 2-space indent, no trailing newline (mirr
 
 ## 7. Commands
 
-Implemented in `config/commands.rs`, with CLI dispatch in `rust/candle-cli/src/`.
+Implemented in `config/commands.rs`, with CLI dispatch in `rust/src/`.
 
 ### `setup-project` (mirrors setup-project-command.ts; CLI main-cli.ts:185, 472)
 - No args/options (`strictOptions`). Operates on the current working directory.
@@ -207,6 +207,6 @@ The Node original's dependencies map onto the following crates in the Rust imple
 | Node `fs` / `path` | file IO, lexical path ops | `std::fs`, `std::path`; lexical normalization is hand-rolled (not `canonicalize`). |
 | Node `os.homedir()` | home dir | `$HOME`/`USERPROFILE` env resolution. |
 | `JSON.parse` / `JSON.stringify(_,null,2)` | config IO with key-order preservation | `serde_json` with `preserve_order` feature (uses `indexmap` internally) + `serde_json::to_string_pretty` (2-space). |
-| `yargs` | CLI parsing (`strictOptions`, `demandOption`, positionals) | hand-rolled parser in `rust/candle-cli/src/parser.rs` (strict, required args). |
+| `yargs` | CLI parsing (`strictOptions`, `demandOption`, positionals) | hand-rolled parser in `rust/src/cli/parser.rs` (strict, required args). |
 
 Tests most sensitive to exact behavior: the stdout success strings, error messages (verbatim), 2-space JSON formatting with preserved key order and omitted falsy fields, empty-file handling, object-map `services`, the `..`-prefix path rule, and JS `Number()` coercion in `set-config`.

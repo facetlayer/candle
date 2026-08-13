@@ -25,8 +25,7 @@ The configuration file should be placed in your project root. Candle will search
   "logEviction": {
     "maxLogsPerService": "number (optional, default: 1000)",
     "maxRetentionSeconds": "number (optional, default: 86400)"
-  },
-  "logCollector": "'node' | 'rust' (optional, default: 'node')"
+  }
 }
 ```
 
@@ -89,28 +88,19 @@ Maximum age of log entries in seconds. Logs older than this are deleted during c
 
 When viewing logs, Candle displays a `-- older logs have been removed --` indicator if some log entries were evicted and are no longer available.
 
-## Log Collector (experimental)
+## Log monitoring
 
-The `logCollector` field selects which log collector implementation to use. Each service launched by Candle runs a log collector process that captures stdout/stderr and writes it to the database.
+Each service Candle starts is supervised by a monitor process that captures its
+stdout/stderr and writes the output to the database. The monitor is the `candle`
+binary re-invoking itself (`candle --monitor`); there is no separate collector
+binary and nothing to configure.
 
-- `"node"` (default) - Uses the standard Node.js-based log collector.
-- `"rust"` - Uses an experimental Rust-based log collector. This is significantly more memory-efficient (~3MB vs ~60MB per collector process), which matters on memory-constrained servers running many services.
-
-```json
-{
-  "logCollector": "rust"
-}
-```
-
-The Rust collector must be built before use:
-
-```bash
-cd rust && cargo build --release
-```
-
-The Rust collector is functionally equivalent to the Node.js version. It supports the same database schema, log types, cleanup behavior, and stdin polling.
-
-> **Note — Rust build of the Candle CLI:** The `logCollector` field selects the collector for the **published Node.js CLI**. If you run the Rust implementation of the Candle CLI itself (built from the `rust/` directory), this setting is parsed and validated but **ignored at launch** — the Rust CLI always spawns its built-in Rust collector. There is no Node collector in the Rust build.
+:::note Removed setting
+Older versions had a `logCollector` field for choosing between a Node.js and a Rust
+collector sidecar. Neither exists anymore, so the field is gone: `candle set-config
+logCollector ...` now reports an unknown key. A leftover `"logCollector"` entry in an
+existing `.candle.json` is harmless — it is ignored and preserved as-is.
+:::
 
 ## Complete Example
 
