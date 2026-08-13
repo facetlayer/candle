@@ -74,16 +74,21 @@ To install somewhere else, use `--bin-dir`:
 
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sudo sh -s -- --bin-dir /usr/local/bin
 
+### Installation from source ###
+
+    git clone https://github.com/facetlayer/candle.git
+    cd candle && ./install-local.sh
+
 ### Uninstalling ###
 
-    # shut down any running services 
-    candle kill-all
+If installed with the script:
 
-    # if installed with Homebrew:
-    brew uninstall candle
-
-    # if installed with the script:
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
+
+If installed with Homebrew:
+
+    candle kill-all
+    brew uninstall candle
 
 ## Quick Start ##
 

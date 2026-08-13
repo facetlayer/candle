@@ -8,7 +8,7 @@
 # Options (pass after `| sh -s --` when piping):
 #     --version <tag>    Install a specific release (e.g. v0.13.3). Default: latest.
 #     --bin-dir <dir>    Where to install. Default: $HOME/.local/bin.
-#     --uninstall        Remove the installed binary (and optionally the database).
+#     --uninstall        Stop running services, then remove the installed binary.
 #     --help             Show this message.
 #
 # Environment overrides: CANDLE_VERSION, CANDLE_BIN_DIR.
@@ -81,6 +81,24 @@ resolve_version() {
 }
 
 do_uninstall() {
+  # Shut down running services first. Candle launches them detached, so they
+  # would otherwise keep running with no CLI left to manage them. Best-effort:
+  # a missing binary or a failing kill-all must not abort the uninstall, and
+  # `set -e` would do exactly that without the `|| true`.
+  candle_bin=""
+  for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
+    if [ -x "$dir/$BINARY" ]; then
+      candle_bin="$dir/$BINARY"
+      break
+    fi
+  done
+  [ -n "$candle_bin" ] || candle_bin="$(command -v "$BINARY" 2>/dev/null || true)"
+
+  if [ -n "$candle_bin" ]; then
+    say "==> Shutting down running services"
+    "$candle_bin" kill-all >/dev/null 2>&1 || say "    (kill-all failed; continuing)"
+  fi
+
   removed=0
   for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
     if [ -f "$dir/$BINARY" ]; then
@@ -104,10 +122,6 @@ do_uninstall() {
   say ""
   say "Candle's database was not removed. To delete it:"
   say "    rm -rf \"$state_dir\""
-  say ""
-  say "Note: any services still running were launched as detached processes and"
-  say "keep running after uninstall. Run 'candle kill-all' before uninstalling to"
-  say "shut them down."
   exit 0
 }
 

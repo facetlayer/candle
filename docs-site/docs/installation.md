@@ -76,18 +76,17 @@ Check the installed version with `candle --version`.
 
 ## Uninstalling
 
-First, shut down anything Candle is still running. Candle launches services as
-detached processes, so they keep running after the binary is removed:
+The installer script shuts down any running services for you, then removes the binary:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
+```
+
+The other install methods don't, so shut services down first — Candle launches them as
+detached processes, and they keep running after the binary is removed:
 
 ```bash
 candle kill-all
-```
-
-Then remove the binaries:
-
-```bash
-# Installer script
-curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
 
 # Homebrew
 brew uninstall candle
