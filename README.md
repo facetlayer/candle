@@ -6,30 +6,72 @@ It's a good fit for locally running services as part of the development process.
 
 ## Installation ##
 
-macOS and Linux, x86_64 and arm64:
+Supported on macOS and Linux, on both x86_64 and arm64.
 
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
 
 This downloads the latest [release](https://github.com/facetlayer/candle/releases) for your
-platform, verifies its checksum, and installs into `~/.local/bin`. No Rust toolchain needed.
+platform, verifies its SHA-256 checksum, and installs into `~/.local/bin`. No Rust toolchain
+needed.
 
-Or with Homebrew:
+Then confirm it worked:
+
+    candle --version
+
+If that prints `command not found`, `~/.local/bin` isn't on your `PATH`. Add it to your shell
+profile (`~/.zshrc`, `~/.bashrc`) and open a new terminal:
+
+    export PATH="$HOME/.local/bin:$PATH"
+
+To install somewhere else, pass `--bin-dir`. System directories like `/usr/local/bin` are
+usually not writable by your user, so those need `sudo sh` instead of `sh`:
+
+    curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sudo sh -s -- --bin-dir /usr/local/bin
+
+### Other ways to install ###
+
+With Homebrew:
 
     brew install facetlayer/tap/candle
 
-Or from source (requires [Rust](https://rustup.rs/)):
+From source, which requires [Rust](https://rustup.rs/) and a C compiler (Candle bundles
+SQLite, so it's compiled from source and takes a few minutes):
 
     git clone https://github.com/facetlayer/candle.git
     cd candle && ./install-local.sh
 
-Candle installs two executables — `candle` and its `log-collector` sidecar — which must stay
-in the same directory.
+Every method installs two executables — `candle` and its `log-collector` sidecar. They must
+stay in the same directory, since `candle` looks for the sidecar next to itself. Nothing to
+do about this unless you move the binaries by hand.
+
+### Upgrading ###
+
+| installed with | upgrade with |
+| -------------- | ------------ |
+| install script | re-run the same `curl ... \| sh` command |
+| Homebrew | `brew upgrade candle` |
+| source | `git pull && ./install-local.sh` |
 
 ### Uninstalling ###
 
-    candle kill-all    # services are detached and outlive the binary
+Shut down running services first — Candle launches them detached, so they outlive the binary:
+
+    candle kill-all
+
+Then remove it:
+
+    # installed with the script
     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh -s -- --uninstall
-    rm -rf ~/.local/state/candle    # optional: delete the database
+
+    # installed with Homebrew
+    brew uninstall candle
+
+Candle's only other footprint is its database, which is never deleted automatically:
+
+    rm -rf ~/.local/state/candle
+
+See [docs-site/docs/installation.md](./docs-site/docs/installation.md) for the full set of
+installer options (`--version`, `--bin-dir`, `--uninstall`).
 
 ## Quick Start ##
 

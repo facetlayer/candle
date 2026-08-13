@@ -1,4 +1,8 @@
 
+# Unreleased
+ - `install.sh` now fails with an actionable message when the target directory isn't writable (e.g. `--bin-dir /usr/local/bin`), instead of a raw `mkdir: Permission denied`.
+ - Expand the README installation section: verifying the install, the `PATH` note for `~/.local/bin`, upgrading, and uninstalling.
+
 # 0.14.0
  - Candle now detects whether it's running interactively (a human at a terminal) or non-interactively (a coding agent, script, or pipe). Detection: non-interactive when stdout is not a TTY or when `CLAUDECODE` is set.
  - `candle start` (and `candle run`) in interactive mode now stays attached after launching and watches the new process's logs — only logs from the fresh launch, no stale history. Ctrl+C detaches and leaves the process running. In non-interactive mode it exits as soon as the launch is confirmed and prints a hint pointing at `candle logs`.

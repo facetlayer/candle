@@ -148,7 +148,15 @@ fi
 
 tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR"
 
-mkdir -p "$BIN_DIR"
+if ! mkdir -p "$BIN_DIR" 2>/dev/null; then
+  err "cannot create '$BIN_DIR' (permission denied). Re-run with sudo, or choose a
+       writable directory with --bin-dir (the default, ~/.local/bin, needs no sudo)."
+fi
+if [ ! -w "$BIN_DIR" ]; then
+  err "'$BIN_DIR' is not writable. Re-run with sudo, or choose a writable directory
+       with --bin-dir (the default, ~/.local/bin, needs no sudo)."
+fi
+
 for bin in $BINARIES; do
   src="$(find "$TMP_DIR" -type f -name "$bin" | head -n 1)"
   [ -n "$src" ] || err "'$bin' was not found inside $ARCHIVE"

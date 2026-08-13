@@ -31,8 +31,9 @@ Pass options after `-s --` when piping to `sh`:
 # Install a specific version
 curl -fsSL .../install.sh | sh -s -- --version v0.13.3
 
-# Install somewhere else
-curl -fsSL .../install.sh | sh -s -- --bin-dir /usr/local/bin
+# Install somewhere else. System directories are usually not writable by your
+# user, so those need `sudo sh` rather than `sh`.
+curl -fsSL .../install.sh | sudo sh -s -- --bin-dir /usr/local/bin
 ```
 
 | Option | Description |
