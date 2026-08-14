@@ -18,7 +18,7 @@ describe('Stale process cleanup', () => {
         // Kill the process externally (bypassing candle), simulating a reboot.
         // We use SIGKILL to prevent graceful shutdown / cleanup.
         const listBefore = await workspace.runCli(['list']);
-        const pidMatch = listBefore.stdoutAsString().match(/echo\s+RUNNING\s+(\d+)/);
+        const pidMatch = listBefore.stdoutAsString().match(/^echo\s+RUNNING\s+pid\s+(\d+)/m);
         expect(pidMatch).toBeTruthy();
         const pid = parseInt(pidMatch![1], 10);
 
@@ -77,7 +77,7 @@ describe('Stale process cleanup', () => {
         expect(before.stdoutAsString()).toContain('RUNNING');
 
         // Get the PID and kill it externally
-        const pidMatch = before.stdoutAsString().match(/stale-test\s+RUNNING\s+(\d+)/);
+        const pidMatch = before.stdoutAsString().match(/^stale-test\s+RUNNING\s+pid\s+(\d+)/m);
         expect(pidMatch).toBeTruthy();
         const pid = parseInt(pidMatch![1], 10);
 

@@ -31,6 +31,8 @@ describe('CLI Help Command', () => {
                 'kill-all',
                 'list',
                 'ls',
+                'ps',
+                'status',
                 'list-all',
                 'logs',
                 'watch',
@@ -115,6 +117,12 @@ describe('CLI Help Command', () => {
             const result = await workspace.runCli(['list', '--help']);
 
             expect(result.stdoutAsString()).toContain('list');
+        });
+
+        it('should show help for ps command', async () => {
+            const result = await workspace.runCli(['ps', '--help']);
+
+            expect(result.stdoutAsString()).toContain('candle ps');
         });
 
         it('should show help for logs command', async () => {

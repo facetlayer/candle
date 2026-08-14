@@ -175,6 +175,43 @@ describe('CLI Start Command', () => {
             expect(result.stdoutAsString().toLowerCase()).toMatch(/start/);
         });
 
+        it('should print the launch banner with the shell and root directory', async () => {
+            const result = await workspace.runCli(['start', 'echo']);
+            const lines = result.stdoutAsString().split('\n');
+
+            // 'start' on an already-running service prints a kill line first.
+            const banner = lines.findIndex(line => line.startsWith('[Started process'));
+            expect(banner).toBeGreaterThanOrEqual(0);
+            expect(lines[banner]).toBe(
+                "[Started process 'echo'] $ node ../../sampleServers/echoServer.js"
+            );
+            expect(lines[banner + 1]).toBe(`[With root directory: ${workspace.dbDir}]`);
+        });
+
+        it('should show the transient shell in the launch banner', async () => {
+            const shell = 'node ../../sampleServers/testProcess.js';
+            const result = await workspace.runCli(['start', 'banner-transient', '--shell', shell]);
+
+            expect(result.stdoutAsString().split('\n')[0]).toBe(
+                `[Started process 'banner-transient'] $ ${shell}`
+            );
+        });
+
+        it('should show the resolved root in the launch banner when --root is given', async () => {
+            const result = await workspace.runCli([
+                'start',
+                'banner-rooted',
+                '--shell',
+                'node ../../../sampleServers/testProcess.js',
+                '--root',
+                'test',
+            ]);
+
+            expect(result.stdoutAsString()).toContain(
+                `[With root directory: ${workspace.dbDir}/test]`
+            );
+        });
+
         it('should have minimal stderr on success', async () => {
             const result = await workspace.runCli(['start', 'echo']);
 

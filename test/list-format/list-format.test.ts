@@ -3,53 +3,54 @@ import { TestWorkspace } from '../TestWorkspace';
 
 const workspace = new TestWorkspace('list-format');
 
+const SHELL = 'node ../../sampleServers/testProcess.js';
+
 describe('List Format', () => {
     afterAll(() => workspace.cleanup());
 
-    it('should show correct column headers and format', async () => {
+    it('should show the multiline detail view for list', async () => {
         // Start a process using the test-format service
         await workspace.runCli(['start', 'test-format']);
 
         // Wait for the service to start up by waiting for the expected log message
         await workspace.runCli(['wait-for-log', 'test-format', '--message', 'Test server started']);
 
-        // List processes
-        const listResult = await workspace.runCli(['list']);
+        const output = (await workspace.runCli(['list'])).stdoutAsString();
+        const lines = output.split('\n');
 
-        // Check that the correct headers are present in the correct order
-        expect(listResult.stdoutAsString()).toContain('NAME');
-        expect(listResult.stdoutAsString()).toContain('COMMAND');
-        expect(listResult.stdoutAsString()).toContain('DIRECTORY');
-        expect(listResult.stdoutAsString()).toContain('UPTIME');
-        expect(listResult.stdoutAsString()).toContain('PID');
-        expect(listResult.stdoutAsString()).toContain('STATUS');
+        // Header line, then the two indented detail lines.
+        expect(lines[0]).toMatch(/^test-format {2}RUNNING {2}pid \d+ {2}uptime \S/);
+        expect(lines[1]).toBe(`  command:   ${SHELL}`);
+        expect(lines[2]).toBe(`  directory: ${workspace.dbDir}`);
 
-        // Check that the headers appear in the correct order
-        const headerLine = listResult.stdoutAsString().split('\n')[0];
-        const nameIndex = headerLine.indexOf('NAME');
-        const commandIndex = headerLine.indexOf('COMMAND');
-        const directoryIndex = headerLine.indexOf('DIRECTORY');
-        const uptimeIndex = headerLine.indexOf('UPTIME');
-        const pidIndex = headerLine.indexOf('PID');
-        const statusIndex = headerLine.indexOf('STATUS');
-
-        expect(nameIndex).toBeLessThan(statusIndex);
-        expect(statusIndex).toBeLessThan(pidIndex);
-        expect(pidIndex).toBeLessThan(uptimeIndex);
-        expect(uptimeIndex).toBeLessThan(commandIndex);
-        expect(commandIndex).toBeLessThan(directoryIndex);
+        // The table headers belong to 'candle ps' now.
+        expect(output).not.toContain('NAME');
+        expect(output).not.toContain('COMMAND');
+        expect(output).not.toContain('DIRECTORY');
+        expect(output).not.toContain('UPTIME');
 
         // Check that old headers are NOT present
-        expect(listResult.stdoutAsString()).not.toContain('LAUNCH_ID');
-        expect(listResult.stdoutAsString()).not.toContain('WRAPPER_PID');
+        expect(output).not.toContain('LAUNCH_ID');
+        expect(output).not.toContain('WRAPPER_PID');
+    });
 
-        // Check that the process data is shown
-        expect(listResult.stdoutAsString()).toContain('test-format');
-        // Process should be either RUNNING or STOPPED (might have exited quickly)
-        expect(listResult.stdoutAsString()).toMatch(/RUNNING|STOPPED/);
-        // Should contain either PID numbers for running processes or dashes for stopped ones
-        expect(listResult.stdoutAsString()).toMatch(/\d+|-/); // Should contain PID numbers or dashes
+    it('should show the compact table for ps', async () => {
+        await workspace.runCli(['start', 'test-format']);
+        await workspace.runCli(['wait-for-log', 'test-format', '--message', 'Test server started']);
 
-        // Clean up is handled by afterAll
+        const output = (await workspace.runCli(['ps'])).stdoutAsString();
+        const headerLine = output.split('\n')[0];
+
+        expect(headerLine.indexOf('NAME')).toBeLessThan(headerLine.indexOf('STATUS'));
+        expect(headerLine.indexOf('STATUS')).toBeLessThan(headerLine.indexOf('PID'));
+        expect(headerLine.indexOf('PID')).toBeLessThan(headerLine.indexOf('UPTIME'));
+
+        // The two widest columns are dropped to save horizontal space.
+        expect(output).not.toContain('COMMAND');
+        expect(output).not.toContain('DIRECTORY');
+        expect(output).not.toContain(SHELL);
+
+        expect(output).toContain('test-format');
+        expect(output).toMatch(/RUNNING|not running/);
     });
 });
