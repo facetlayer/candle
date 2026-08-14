@@ -240,14 +240,15 @@ Root-level tests:
 - `test/mcp.test.ts` (`mcp` workspace) — MCP tools list `[ListServices, ListPorts, GetLogs, StartService, StartTransientService, KillService, RestartService, AddServerConfig]`; `StartService{name}` → `Started` + shell echoed; `ListServices` returns JSON `{processes:[{serviceName,status:'RUNNING',...}]}`; `StartTransientService{name,shell[,root]}`; missing `name`/`shell` → `isError`; `RestartService` matches `/Started|Restarted/`; `GetLogs{name,limit}`; `showAll` param.
 - `test/transient-processes.test.ts` (`transient-processes`) — transient start/kill/restart/logs; `--root`; validation; name-collision (transient shadows config, kills prior same-name); config-drift `[config changed]`; DB stores shell.
 - `test/with-stdin/stdin.test.ts` (`with-stdin`) — config `enableStdin:true` and `--enable-stdin`; sends via `createStdinMessage` directly into DB; expects `[RECEIVED] ...` in logs; no-enableStdin → not received.
-- `test/list-format/list-format.test.ts` (`list-format`) — exact column order `NAME, STATUS, PID, UPTIME, COMMAND, DIRECTORY` (header index ordering asserted); old headers `LAUNCH_ID`/`WRAPPER_PID` absent; status `RUNNING|STOPPED`.
+- `test/list-format/list-format.test.ts` (`list-format`) — `list` renders the multiline detail view (header `<name>  RUNNING  pid N  uptime T`, then `  command:   <shell>` / `  directory: <dir>`) and contains none of the table headers; `ps` renders the compact table with column order `NAME, STATUS, PID, UPTIME` (header index ordering asserted) and omits `COMMAND`/`DIRECTORY` and the shell string; old headers `LAUNCH_ID`/`WRAPPER_PID` absent.
+- `test/cli/ps.test.ts` (`ps`) — the `ps`/`status` table, its `--json` output, positional name filtering, and the unknown-name error.
 
 ## 8. Subtle / platform-specific behaviors
 
 1. **`NON_AGENT_ENV` is set by the harness** → every agent marker var (`CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT`) is blanked, so `is_run_by_agent` is `false` (empty string ⇒ not-set). This matters because the suite may itself be run from inside a coding agent, whose marker would otherwise be inherited by the spawned CLI. When agent mode is on, the `watch` command is hidden from help and disabled, so `watch.test.ts` and `help.test.ts` depend on this blanking.
 2. **`FORCE_COLOR=0`** disables ANSI; output must contain no escape codes when this is set (tests do raw substring matching on `RUNNING`, `Started`, etc.).
 3. Exact output strings are load-bearing — preserved verbatim across implementations:
-   - Start: `[Started process '<name>' (\`<shell>\`) in directory: '<dir>']` (must contain `Started` and `'<name>'`).
+   - Start: two lines — `[Started process '<name>'] $ <shell>` then `[With root directory: <dir>]` (the first must contain `Started` and `'<name>'`).
    - check-start skip: `[Service '<name>' is already running]` (contains `already running`).
    - Errors: `No service '<name>' configured for directory: <cwd>`; `No .candle.json file found in (or above) current directory: <cwd>`; `Process '<name>' failed to start. Recent logs: ...`; `No services configured in .candle.json`; `Exactly one service name is required when using --shell`; `Unrecognized command '<cmd>'`.
    - Unknown flags yield yargs-style `Unknown argument` (strict mode). The Node CLI uses yargs `.strictOptions()`; the Rust CLI (clap) is configured to reject unknown flags and emit a message containing `Unknown argument`.

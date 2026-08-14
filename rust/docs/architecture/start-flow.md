@@ -119,7 +119,8 @@ let mut launch_dir = project_dir;
 if let Some(root) = service_config.root {
   launch_dir = if root.is_absolute() { root } else { project_dir.join(root) };
 }
-println!("[Started process '{}' (`{}`) in directory: '{}']", service_config.name, service_config.shell, launch_dir);
+println!("[Started process '{}'] $ {}", service_config.name, service_config.shell);
+println!("[With root directory: {}]", launch_dir);
 ```
 
 These exact strings are test-observable. Returns `{ project_dir, service_name }`.
@@ -267,5 +268,5 @@ Key SQL used by start-flow:
 8. **Start-failed branch (wait_for_start reject) does NOT delete the process row**, but the grace-period-failure branch does. This asymmetry is preserved.
 9. **10s CLI timeout** rejects with `'Process failed to start (timed out while waiting)'` independent of the monitor — the monitor keeps running even if the CLI times out.
 10. **launchDir divergence**: the success message special-cases absolute root; `monitor::start`'s cwd does not (joins always). Behavior preserved for absolute roots.
-11. **Exact output strings** (`[Started process '<name>' (`<shell>`) in directory: '<dir>']`, `[Service '<name>' is already running]`, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
+11. **Exact output strings** (the two-line start banner `[Started process '<name>'] $ <shell>` / `[With root directory: <dir>]`, `[Service '<name>' is already running]`, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
 12. **Config resolution order**: `.candle.json` then deprecated `.candle-setup.json`; loose substring + directory-aware matching for service names; walk up parent dirs to find config.

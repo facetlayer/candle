@@ -80,7 +80,7 @@ against it. They are byte-level and must not drift.
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).
 - **Output strings are load-bearing.** Tests substring-match exact bytes, so brackets, backticks,
   quotes, and Unicode are reproduced verbatim — e.g. the start banner
-  `` [Started process '<name>' (`<shell>`) in directory: '<dir>'] ``, `[Killed '<name>' process with
+  `[Started process '<name>'] $ <shell>` followed by `[With root directory: <dir>]`, `[Killed '<name>' process with
   PID: <pid>]`, `✓ Cleared N log entries` (U+2713), `-- older logs have been removed --`. With
   `FORCE_COLOR=0` set by the harness, no ANSI is emitted.
 - **Agent-mode detection** keys on the truthiness of any agent marker var — `CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT` (the empty string is *not* agent

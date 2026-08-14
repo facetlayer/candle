@@ -53,7 +53,7 @@ Relevant queries (`processTable.ts`):
 ```ts
 interface ListOutput {
   processes: {
-    command: string;       // == serviceName
+    command: string;       // the service's shell string (NOT the service name)
     workingDir: string;
     uptime: string;        // formatted, see §2.3
     pid: number;           // 0 when not running
@@ -69,7 +69,7 @@ CLI (`main-cli.ts:356-375`): with `--json`, prints `JSON.stringify(output.proces
 
 ### 2.1 `list-all` branch (`showAll: true`, lines 49-64)
 - No config file needed. `processEntries = filterAliveProcesses(findAllProcesses())`.
-- Map each entry to: `serviceName = command = command_name`, `workingDir = project_dir`, `uptime = formatUptime(now_ms - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
+- Map each entry to: `serviceName = command_name`, `command = entry.shell ?? ''`, `workingDir = project_dir`, `uptime = formatUptime(now_ms - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
 - Only alive processes appear (dead ones filtered + deleted). All listed rows are `RUNNING`.
 
 ### 2.2 `list` branch (default, lines 65-122)
@@ -90,12 +90,30 @@ Returns `false` if no matching config service. Else `true` if `entry.shell !== s
 ### 2.3 `formatUptime(ms)` (`list-command.ts:125-139`)
 `totalSeconds = floor(ms/1000)`; days=`/86400`, hours=`%86400/3600`, minutes=`%3600/60`, secs=`%60`. Push `"{d}d"`, `"{h}h"`, `"{m}m"`, `"{s}s"` only for nonzero parts; **if all zero, emit `"0s"`**. Join with single space. E.g. `"1d 2h"`, `"3m 5s"`, `"0s"`.
 
-### 2.4 `printListOutput` (`list-command.ts:141-183`)
-- If `output.message` → print it, return.
-- If `processes.length === 0` → print exactly `No services configured.` and return.
-- Headers: `NAME STATUS PID UPTIME COMMAND DIRECTORY`.
-- Per row: status string gets ` [config changed]` appended when `configChanged` truthy. `pid` cell = `pid > 0 ? pid.toString() : '-'`.
-- Column widths = max(header len, all cell lens). Cells padded to width, joined by **two spaces** (`'  '`). Separator row = `'-'.repeat(width)` per column joined by two spaces. Print header, separator, then rows.
+### 2.4 Renderers (`commands/list.rs`)
+Three renderers share one `ListOutput`. All three print exactly `No services configured.` when
+`processes` is empty.
+
+**`format_list_detail` — the `candle list` / `ls` multiline view.** One entry per service:
+a header line `<name>  <status>` (with ` [config changed]` appended on drift), then, only when
+RUNNING, `  pid <pid>` and `  uptime <uptime>`. Two indented detail lines follow:
+`  command:   <shell>` and `  directory: <workingDir>`, both printed in full and never truncated.
+Entries are separated by a blank line.
+
+**`format_ps_output` — the `candle ps` / `status` table.** Columns `NAME STATUS PID UPTIME` only;
+`COMMAND` and `DIRECTORY` are dropped so the table stays narrow.
+
+**`format_list_output` — the full table, now used only by `list-all`.** Columns
+`NAME STATUS PID UPTIME COMMAND DIRECTORY`.
+
+Shared by both tables: status gets ` [config changed]` appended when `configChanged` is truthy;
+`pid` cell = `pid > 0 ? pid.toString() : '-'`. Column widths = max(header len, all cell lens).
+Cells padded to width, joined by **two spaces** (`'  '`). Separator row = `'-'.repeat(width)` per
+column joined by two spaces. Print header, separator, then rows.
+
+Both `list` and `ps` accept zero or more positional service names (`filter_by_service_names`),
+which filter the listing — and the `--json` array — to just those services; an unmatched name is a
+usage error that exits non-zero.
 
 ## 3. `handleListPorts` — `list-ports` / `list-ports-all` (`commands/list_ports.rs`)
 
