@@ -12,7 +12,10 @@ use std::process::exit;
 
 use candle::commands::assert_valid_command_names;
 use candle::commands::clear_logs::handle_clear_logs_command;
-use candle::commands::list::{format_list_output, handle_list, list_output_to_json};
+use candle::commands::list::{
+    filter_by_service_names, format_list_detail, format_list_output, format_ps_output, handle_list,
+    list_output_to_json,
+};
 use candle::commands::list_ports::{format_list_ports_output, handle_list_ports};
 use candle::commands::logs::handle_logs_command;
 use candle::commands::open_browser::{format_open_browser_output, handle_open_browser};
@@ -139,8 +142,9 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "kill-all" => cmd_kill_all(),
         "start" => cmd_start(args, false),
         "check-start" => cmd_start(args, true),
-        "list" => cmd_list(args, false),
-        "list-all" => cmd_list(args, true),
+        "list" => cmd_list(args, false, ListView::Detail),
+        "ps" => cmd_list(args, false, ListView::PsTable),
+        "list-all" => cmd_list(args, true, ListView::FullTable),
         "wait-for-log" => cmd_wait_for_log(args),
         "logs" => cmd_logs(args),
         "clear-logs" => cmd_clear_logs(args),
@@ -388,13 +392,26 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
     }
 }
 
-/// `list` / `ls` (`show_all = false`) and `list-all` (`show_all = true`).
-fn cmd_list(args: &CommandArgs, show_all: bool) {
+/// Which renderer a listing command uses for its non-JSON output.
+enum ListView {
+    /// The multiline detail view (`candle list`).
+    Detail,
+    /// The compact NAME/STATUS/PID/UPTIME table (`candle ps`).
+    PsTable,
+    /// The full table, including COMMAND and DIRECTORY (`candle list-all`).
+    FullTable,
+}
+
+/// `list` / `ls`, `ps` / `status` (`show_all = false`) and `list-all`
+/// (`show_all = true`).
+fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
     let cwd = cwd();
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    let output = match handle_list(&conn, &cwd, show_all) {
+    let output = match handle_list(&conn, &cwd, show_all)
+        .and_then(|output| filter_by_service_names(output, &args.positionals))
+    {
         Ok(output) => output,
         Err(e) => fail_with(&e),
     };
@@ -402,7 +419,11 @@ fn cmd_list(args: &CommandArgs, show_all: bool) {
     if args.has("json") {
         println!("{}", list_output_to_json(&output));
     } else {
-        println!("{}", format_list_output(&output));
+        match view {
+            ListView::Detail => println!("{}", format_list_detail(&output)),
+            ListView::PsTable => println!("{}", format_ps_output(&output)),
+            ListView::FullTable => println!("{}", format_list_output(&output)),
+        }
     }
 }
 

@@ -79,6 +79,18 @@ fn has_config_drift(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> bo
     db_root != config_root
 }
 
+/// The shell string to report for a running process: prefer the shell recorded
+/// on the process row, fall back to the configured service's shell, then "".
+fn resolve_shell(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> String {
+    entry
+        .shell
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| service.map(|s| s.shell.clone()))
+        .unwrap_or_default()
+}
+
 /// Format a duration in milliseconds as `"1d 2h"`, `"3m 5s"`, `"0s"`, etc.
 /// Mirrors `formatUptime`: only non-zero components are shown, and an all-zero
 /// duration renders as `"0s"`.
@@ -108,6 +120,7 @@ pub fn format_uptime(milliseconds: i64) -> String {
 
 fn running_row(
     service_name: &str,
+    command: &str,
     working_dir: &str,
     start_time: i64,
     pid: i64,
@@ -115,7 +128,7 @@ fn running_row(
 ) -> ListProcess {
     ListProcess {
         service_name: service_name.to_string(),
-        command: service_name.to_string(),
+        command: command.to_string(),
         working_dir: working_dir.to_string(),
         uptime: format_uptime(now_millis() - start_time * 1000),
         pid,
@@ -143,6 +156,7 @@ pub fn handle_list(
             .map(|entry| {
                 running_row(
                     &entry.command_name,
+                    &resolve_shell(&entry, None),
                     &entry.project_dir,
                     entry.start_time,
                     entry.pid,
@@ -173,6 +187,7 @@ pub fn handle_list(
         match running_process {
             Some(entry) => processes.push(running_row(
                 &service.name,
+                &resolve_shell(entry, Some(service)),
                 &project_dir,
                 entry.start_time,
                 entry.pid,
@@ -180,7 +195,7 @@ pub fn handle_list(
             )),
             None => processes.push(ListProcess {
                 service_name: service.name.clone(),
-                command: service.name.clone(),
+                command: service.shell.clone(),
                 working_dir: project_dir.clone(),
                 uptime: "-".to_string(),
                 pid: 0,
@@ -198,6 +213,7 @@ pub fn handle_list(
         let config_service = find_service_by_name(&config, &entry.command_name);
         processes.push(running_row(
             &entry.command_name,
+            &resolve_shell(entry, config_service),
             &entry.project_dir,
             entry.start_time,
             entry.pid,
@@ -206,6 +222,68 @@ pub fn handle_list(
     }
 
     Ok(ListOutput { processes })
+}
+
+/// Restrict a listing to the named services (matched on service name), keeping
+/// the original listing order. An empty `names` slice is a no-op. A name that
+/// matches nothing is a usage error.
+pub fn filter_by_service_names(
+    output: ListOutput,
+    names: &[String],
+) -> Result<ListOutput, CandleError> {
+    if names.is_empty() {
+        return Ok(output);
+    }
+
+    for name in names {
+        if !output.processes.iter().any(|p| &p.service_name == name) {
+            return Err(CandleError::UsageError(format!(
+                "No service found with name: {name}"
+            )));
+        }
+    }
+
+    let processes = output
+        .processes
+        .into_iter()
+        .filter(|p| names.contains(&p.service_name))
+        .collect();
+    Ok(ListOutput { processes })
+}
+
+/// Render a [`ListOutput`] as the multiline detail view used by `candle list`.
+///
+/// Each entry is a header line (`name  STATUS  pid N  uptime T`) followed by
+/// two-space-indented `command:` and `directory:` lines carrying the full,
+/// untruncated values. Entries are separated by a blank line. `pid` and
+/// `uptime` are omitted for services that are not running, and
+/// ` [config changed]` is appended to the status on config drift.
+pub fn format_list_detail(output: &ListOutput) -> String {
+    if output.processes.is_empty() {
+        return "No services configured.".to_string();
+    }
+
+    let mut entries: Vec<String> = Vec::new();
+    for p in &output.processes {
+        let mut header = format!("{}  {}", p.service_name, p.status);
+        if p.config_changed == Some(true) {
+            header.push_str(" [config changed]");
+        }
+        if p.status == STATUS_RUNNING {
+            if p.pid > 0 {
+                header.push_str(&format!("  pid {}", p.pid));
+            }
+            if !p.uptime.is_empty() && p.uptime != "-" {
+                header.push_str(&format!("  uptime {}", p.uptime));
+            }
+        }
+        entries.push(format!(
+            "{header}\n  command:   {}\n  directory: {}",
+            p.command, p.working_dir
+        ));
+    }
+
+    entries.join("\n\n")
 }
 
 /// Serialize the processes array as pretty JSON (2-space indent), matching the
@@ -222,13 +300,28 @@ pub fn list_output_to_json(output: &ListOutput) -> String {
 /// column separators and a dashed separator row. ` [config changed]` is appended
 /// to STATUS where the process drifted from config; PID 0 renders as `-`.
 pub fn format_list_output(output: &ListOutput) -> String {
+    format_table(output, true)
+}
+
+/// Render a [`ListOutput`] as the compact `candle ps` table: the same style as
+/// [`format_list_output`] but with only `NAME STATUS PID UPTIME`, dropping the
+/// two widest columns so the table fits in a narrow terminal.
+pub fn format_ps_output(output: &ListOutput) -> String {
+    format_table(output, false)
+}
+
+fn format_table(output: &ListOutput, with_command_and_dir: bool) -> String {
     if output.processes.is_empty() {
         return "No services configured.".to_string();
     }
 
-    let headers = ["NAME", "STATUS", "PID", "UPTIME", "COMMAND", "DIRECTORY"];
+    let mut headers: Vec<&str> = vec!["NAME", "STATUS", "PID", "UPTIME"];
+    if with_command_and_dir {
+        headers.push("COMMAND");
+        headers.push("DIRECTORY");
+    }
 
-    let rows: Vec<[String; 6]> = output
+    let rows: Vec<Vec<String>> = output
         .processes
         .iter()
         .map(|p| {
@@ -236,7 +329,7 @@ pub fn format_list_output(output: &ListOutput) -> String {
             if p.config_changed == Some(true) {
                 status = format!("{status} [config changed]");
             }
-            [
+            let mut cells = vec![
                 p.service_name.clone(),
                 status,
                 if p.pid > 0 {
@@ -245,9 +338,12 @@ pub fn format_list_output(output: &ListOutput) -> String {
                     "-".to_string()
                 },
                 p.uptime.clone(),
-                p.command.clone(),
-                p.working_dir.clone(),
-            ]
+            ];
+            if with_command_and_dir {
+                cells.push(p.command.clone());
+                cells.push(p.working_dir.clone());
+            }
+            cells
         })
         .collect();
 
@@ -337,6 +433,132 @@ mod tests {
         assert!(!text.contains("WRAPPER_PID"));
         assert!(text.contains("[config changed]"));
         assert!(text.contains("42"));
+    }
+
+    fn sample() -> ListOutput {
+        ListOutput {
+            processes: vec![
+                ListProcess {
+                    service_name: "web".to_string(),
+                    command: "npm run dev".to_string(),
+                    working_dir: "/proj/web".to_string(),
+                    uptime: "3m 5s".to_string(),
+                    pid: 12345,
+                    status: STATUS_RUNNING.to_string(),
+                    config_changed: Some(false),
+                },
+                ListProcess {
+                    service_name: "api".to_string(),
+                    command: "npm run api".to_string(),
+                    working_dir: "/proj".to_string(),
+                    uptime: "-".to_string(),
+                    pid: 0,
+                    status: STATUS_NOT_RUNNING.to_string(),
+                    config_changed: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn detail_view_is_multiline_and_untruncated() {
+        assert_eq!(
+            format_list_detail(&sample()),
+            "web  RUNNING  pid 12345  uptime 3m 5s\n  command:   npm run dev\n  directory: /proj/web\n\napi  not running\n  command:   npm run api\n  directory: /proj"
+        );
+    }
+
+    #[test]
+    fn detail_view_marks_config_changed_and_handles_empty() {
+        let mut out = sample();
+        out.processes[0].config_changed = Some(true);
+        let text = format_list_detail(&out);
+        assert!(text.starts_with("web  RUNNING [config changed]  pid 12345"));
+        assert_eq!(
+            format_list_detail(&ListOutput { processes: vec![] }),
+            "No services configured."
+        );
+    }
+
+    #[test]
+    fn ps_table_omits_command_and_directory() {
+        let text = format_ps_output(&sample());
+        let header = text.lines().next().unwrap();
+        assert!(!header.contains("COMMAND"));
+        assert!(!header.contains("DIRECTORY"));
+        assert!(!text.contains("npm run dev"));
+        assert!(!text.contains("/proj"));
+        let name = header.find("NAME").unwrap();
+        let status = header.find("STATUS").unwrap();
+        let pid = header.find("PID").unwrap();
+        let uptime = header.find("UPTIME").unwrap();
+        assert!(name < status && status < pid && pid < uptime);
+        assert!(text.contains("12345"));
+        assert_eq!(
+            format_ps_output(&ListOutput { processes: vec![] }),
+            "No services configured."
+        );
+    }
+
+    #[test]
+    fn name_filter_selects_and_rejects() {
+        let filtered = filter_by_service_names(sample(), &["api".to_string()]).unwrap();
+        assert_eq!(filtered.processes.len(), 1);
+        assert_eq!(filtered.processes[0].service_name, "api");
+
+        // Empty filter is a no-op.
+        assert_eq!(
+            filter_by_service_names(sample(), &[]).unwrap().processes.len(),
+            2
+        );
+
+        let err = filter_by_service_names(sample(), &["nope".to_string()]).unwrap_err();
+        assert!(format!("{err}").contains("nope"), "got: {err}");
+    }
+
+    #[test]
+    fn command_field_carries_the_shell_string() {
+        let entry = ProcessEntry {
+            shell: Some("npm run dev".to_string()),
+            ..blank_entry()
+        };
+        assert_eq!(resolve_shell(&entry, None), "npm run dev");
+
+        // Falls back to the config service's shell when the row has none.
+        let service = ServiceConfig {
+            name: "web".to_string(),
+            shell: "npm run fallback".to_string(),
+            root: None,
+            enable_stdin: None,
+        };
+        let no_shell = ProcessEntry {
+            shell: None,
+            ..blank_entry()
+        };
+        assert_eq!(resolve_shell(&no_shell, Some(&service)), "npm run fallback");
+
+        // Nothing known at all.
+        assert_eq!(resolve_shell(&no_shell, None), "");
+
+        // The rendered row shows the shell string, not the service name.
+        let text = format_list_detail(&sample());
+        assert!(text.contains("command:   npm run dev"));
+        assert!(!text.contains("command:   web"));
+    }
+
+    fn blank_entry() -> ProcessEntry {
+        ProcessEntry {
+            id: 1,
+            command_name: "web".to_string(),
+            project_dir: "/proj".to_string(),
+            pid: 1,
+            log_collector_pid: None,
+            start_time: 0,
+            created_at: 0,
+            killed_at: None,
+            shell: None,
+            root: None,
+        }
     }
 
     #[test]

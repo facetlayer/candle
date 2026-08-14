@@ -14,7 +14,8 @@ pub fn canonical_command(token: &str) -> Option<&'static str> {
         "restart" => "restart",
         "kill" | "stop" => "kill",
         "kill-all" => "kill-all",
-        "list" | "ls" | "status" => "list",
+        "list" | "ls" => "list",
+        "ps" | "status" => "ps",
         "list-all" => "list-all",
         "logs" => "logs",
         "watch" => "watch",
@@ -52,7 +53,7 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
             &[("shell", true), ("root", true), ("enable-stdin", false)]
         }
         "restart" => &[("bg", false), ("watch", false), ("exit-after-ms", true)],
-        "list" | "list-all" => &[("json", false)],
+        "list" | "ps" | "list-all" => &[("json", false)],
         "logs" => &[("count", true), ("start-at", true)],
         "watch" => &[("exit-after-ms", true)],
         "wait-for-log" => &[("message", true), ("timeout", true)],
@@ -131,7 +132,8 @@ mod tests {
     fn aliases_resolve() {
         assert_eq!(canonical_command("run"), Some("start"));
         assert_eq!(canonical_command("ls"), Some("list"));
-        assert_eq!(canonical_command("status"), Some("list"));
+        assert_eq!(canonical_command("status"), Some("ps"));
+        assert_eq!(canonical_command("ps"), Some("ps"));
         assert_eq!(canonical_command("stop"), Some("kill"));
         assert_eq!(canonical_command("bogus"), None);
     }
