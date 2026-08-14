@@ -190,19 +190,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
 
     // 7. Success banner. Note the absolute-root special-case here diverges from
     //    the sidecar's cwd (which joins unconditionally) — preserved from Node.
-    let launch_dir = match &service.root {
-        Some(root) if !root.is_empty() => {
-            if Path::new(root).is_absolute() {
-                root.clone()
-            } else {
-                Path::new(&opts.project_dir)
-                    .join(root)
-                    .to_string_lossy()
-                    .into_owned()
-            }
-        }
-        _ => opts.project_dir.clone(),
-    };
+    //    Shared with `list` so the two always report the same directory.
+    let launch_dir = crate::dirs::resolve_launch_dir(&opts.project_dir, service.root.as_deref());
 
     output::out(&format!(
         "[Started process '{}'] $ {}",

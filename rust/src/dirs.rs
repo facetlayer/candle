@@ -1,9 +1,64 @@
-//! State / database directory resolution.
+//! State / database directory resolution, plus service launch-directory resolution.
 //!
 //! Ported from `src/dirs.ts`. Resolves the state directory where the SQLite
 //! database lives, using the same precedence as the Node implementation.
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+
+/// Resolve the directory a service runs in: `project_dir`, or the service's
+/// `root` joined onto it (an absolute `root` replaces it outright). The result
+/// is lexically normalized, so a `root` of `./sub` yields `<project>/sub`
+/// rather than `<project>/./sub`.
+///
+/// Both `start` (for its launch banner) and `list` go through this, so the
+/// directory the two report can never disagree.
+pub fn resolve_launch_dir(project_dir: &str, root: Option<&str>) -> String {
+    let joined = match root.filter(|r| !r.is_empty()) {
+        Some(root) if Path::new(root).is_absolute() => PathBuf::from(root),
+        Some(root) => Path::new(project_dir).join(root),
+        None => PathBuf::from(project_dir),
+    };
+    normalize_path(&joined).to_string_lossy().into_owned()
+}
+
+/// Lexically clean a path: drop `.` components and collapse `..` against a
+/// preceding normal component. Purely textual — it never touches the
+/// filesystem, since the directory may not exist yet.
+///
+/// A `..` that has nothing to pop (a leading `..`, or one directly after the
+/// root) is preserved rather than silently dropped, which would change which
+/// directory the path refers to.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    // Tracks how many trailing components are `..`, which must not be popped.
+    let mut pending_parents = 0usize;
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                // Pop a real directory name, but never one we just pushed as `..`.
+                Some(Component::Normal(_)) if pending_parents == 0 => {
+                    out.pop();
+                }
+                // The root is its own parent: `/..` is `/`, so drop the component.
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                // Nothing to pop (a leading `..`, or a run of them): keep it, or
+                // the path would come to mean a different directory.
+                _ => {
+                    out.push("..");
+                    pending_parents += 1;
+                }
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+
+    if out.as_os_str().is_empty() {
+        out.push(".");
+    }
+    out
+}
 
 /// Resolve the state directory, given the relevant environment values.
 ///
@@ -92,5 +147,28 @@ mod tests {
     fn candle_database_dir_wins_over_xdg() {
         let result = resolve_state_dir(Some("/verbatim"), Some("/xdg"), "/home/user");
         assert_eq!(result, PathBuf::from("/verbatim"));
+    }
+
+    #[test]
+    fn launch_dir_resolves_root() {
+        assert_eq!(resolve_launch_dir("/proj", None), "/proj");
+        assert_eq!(resolve_launch_dir("/proj", Some("")), "/proj");
+        assert_eq!(resolve_launch_dir("/proj", Some("sub")), "/proj/sub");
+        assert_eq!(resolve_launch_dir("/proj", Some("/elsewhere")), "/elsewhere");
+    }
+
+    #[test]
+    fn launch_dir_is_normalized() {
+        assert_eq!(resolve_launch_dir("/proj", Some("./sub")), "/proj/sub");
+        assert_eq!(resolve_launch_dir("/proj", Some("./a/./b")), "/proj/a/b");
+        assert_eq!(resolve_launch_dir("/proj", Some("../sibling")), "/sibling");
+        assert_eq!(resolve_launch_dir("/proj/nested", Some("../sub")), "/proj/sub");
+        assert_eq!(resolve_launch_dir("/proj/", Some("sub/")), "/proj/sub");
+        // A root that walks up to and past the filesystem root keeps its meaning
+        // rather than silently resolving to something else.
+        assert_eq!(resolve_launch_dir("/", Some("../..")), "/");
+        assert_eq!(resolve_launch_dir("relative", Some("../..")), "..");
+        // The project dir itself is normalized too.
+        assert_eq!(resolve_launch_dir("/proj/./nested", None), "/proj/nested");
     }
 }
