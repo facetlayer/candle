@@ -221,7 +221,7 @@ pub fn watch_started_services(
     command_names: &[String],
     exit_after_ms: Option<u64>,
 ) -> Result<(), CandleError> {
-    output::out("Watching logs. Press Ctrl+C to stop watching (the process will keep running).");
+    output::out("[Now watching console logs. Press Ctrl+C to stop watching.]");
     output::out("");
 
     watch_process(

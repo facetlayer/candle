@@ -118,6 +118,18 @@ pub fn format_uptime(milliseconds: i64) -> String {
     parts.join(" ")
 }
 
+/// Resolve the directory a service actually runs in: `project_dir`, or the
+/// service's `root` joined onto it (an absolute `root` replaces it outright).
+/// Mirrors the `launch_dir` computation in `start::start_one_service`, so the
+/// directory `list` reports matches the one the launch banner printed.
+fn resolve_working_dir(project_dir: &str, root: Option<&str>) -> String {
+    match root.filter(|r| !r.is_empty()) {
+        Some(root) if Path::new(root).is_absolute() => root.to_string(),
+        Some(root) => Path::new(project_dir).join(root).to_string_lossy().into_owned(),
+        None => project_dir.to_string(),
+    }
+}
+
 fn running_row(
     service_name: &str,
     command: &str,
@@ -188,7 +200,10 @@ pub fn handle_list(
             Some(entry) => processes.push(running_row(
                 &service.name,
                 &resolve_shell(entry, Some(service)),
-                &project_dir,
+                &resolve_working_dir(
+                    &project_dir,
+                    entry.root.as_deref().or(service.root.as_deref()),
+                ),
                 entry.start_time,
                 entry.pid,
                 has_config_drift(entry, Some(service)),
@@ -196,7 +211,7 @@ pub fn handle_list(
             None => processes.push(ListProcess {
                 service_name: service.name.clone(),
                 command: service.shell.clone(),
-                working_dir: project_dir.clone(),
+                working_dir: resolve_working_dir(&project_dir, service.root.as_deref()),
                 uptime: "-".to_string(),
                 pid: 0,
                 status: STATUS_NOT_RUNNING.to_string(),
@@ -398,6 +413,15 @@ mod tests {
         assert_eq!(format_uptime(5_000), "5s");
         assert_eq!(format_uptime(185_000), "3m 5s");
         assert_eq!(format_uptime((86400 + 2 * 3600) * 1000), "1d 2h");
+    }
+
+    #[test]
+    fn working_dir_resolves_root() {
+        assert_eq!(resolve_working_dir("/proj", None), "/proj");
+        assert_eq!(resolve_working_dir("/proj", Some("")), "/proj");
+        assert_eq!(resolve_working_dir("/proj", Some("./sub")), "/proj/./sub");
+        assert_eq!(resolve_working_dir("/proj", Some("sub")), "/proj/sub");
+        assert_eq!(resolve_working_dir("/proj", Some("/elsewhere")), "/elsewhere");
     }
 
     #[test]
