@@ -60,6 +60,15 @@ candle start
 candle start api
 ```
 
+Each launched service prints a two-line banner naming the shell command it ran
+and the directory it ran in:
+
+```
+$ candle start api
+[Started process 'api'] $ npm run api
+[With root directory: /Users/andy/proj]
+```
+
 ### Start multiple services
 
 ```bash

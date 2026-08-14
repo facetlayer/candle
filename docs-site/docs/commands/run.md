@@ -15,6 +15,15 @@ services in the background. When run interactively, they then watch the new
 process's logs until `Ctrl+C`; when run non-interactively (agents, scripts,
 pipes), they exit as soon as the services are running.
 
+Each launched service prints a two-line banner naming the shell command it ran
+and the directory it ran in:
+
+```
+$ candle run api
+[Started process 'api'] $ npm run api
+[With root directory: /Users/andy/proj]
+```
+
 See the [start](start) command documentation for the full list of arguments, options, and examples.
 
 ## See Also

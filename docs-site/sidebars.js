@@ -28,6 +28,7 @@ const sidebars = {
         {type: 'doc', id: 'commands/restart', label: 'restart'},
         {type: 'doc', id: 'commands/kill', label: 'kill'},
         {type: 'doc', id: 'commands/list', label: 'list / ls'},
+        {type: 'doc', id: 'commands/ps', label: 'ps / status'},
         {type: 'doc', id: 'commands/logs', label: 'logs'},
         {type: 'doc', id: 'commands/watch', label: 'watch'},
         {type: 'doc', id: 'commands/wait-for-log', label: 'wait-for-log'},

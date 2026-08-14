@@ -94,10 +94,16 @@ candle kill
 
 ## Listing Services
 
-List running services in current project:
+List the services in the current project, with each service's full command and directory:
 
 ```bash
 candle list
+```
+
+Or as a compact status table:
+
+```bash
+candle ps
 ```
 
 List all running services globally:

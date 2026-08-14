@@ -140,13 +140,48 @@ Alias for `candle start`.
 Similar to `start` but only starts the service(s) if they are not already running.
 If the service is running already, this command is a no-op.
 
-### `candle ls`
+### `candle list`
+
+    candle list
+    candle list [service name(s)]
+
+Alias: `candle ls`
+
+Show details for the services in this project directory, including running and inactive services.
+Each entry shows the service's full shell command and directory, untruncated:
 
 ```
-$ candle ls
+$ candle list
+web  RUNNING  pid 12345  uptime 3m 5s
+  command:   npm run dev
+  directory: /Users/andy/proj/web
+
+api  not running
+  command:   npm run api
+  directory: /Users/andy/proj
 ```
 
-List all services for this project directory, including running and inactive services.
+Pass one or more service names to show only those services. Add `--json` for machine-readable output.
+
+### `candle ps`
+
+    candle ps
+    candle ps [service name(s)]
+
+Alias: `candle status`
+
+The same services as `candle list`, but as a compact table. It leaves out the command and
+directory columns so it stays narrow:
+
+```
+$ candle ps
+NAME  STATUS       PID    UPTIME
+----  -----------  -----  ------
+web   RUNNING      12345  3m 5s
+api   not running  -      -
+```
+
+Also accepts service names to filter, and `--json`.
 
 ### `candle watch`
 

@@ -56,7 +56,8 @@ candle start server --shell "python -m http.server 8080"
 | [`run`](commands/run) | Alias for `start` |
 | [`restart`](commands/restart) | Restart running service(s) |
 | [`kill`](commands/kill) | Stop running service(s) |
-| [`list`](commands/list) | List active services |
+| [`list`](commands/list) | Show details for this project's services |
+| [`ps`](commands/ps) | Compact status table for this project's services |
 | [`logs`](commands/logs) | View recent logs |
 | [`watch`](commands/watch) | Watch live service output |
 | [`wait-for-log`](commands/wait-for-log) | Wait for a specific log message |
