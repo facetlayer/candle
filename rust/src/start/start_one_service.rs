@@ -205,9 +205,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     };
 
     output::out(&format!(
-        "[Started process '{}' (`{}`) in directory: '{}']",
-        service.name, service.shell, launch_dir
+        "[Started process '{}'] $ {}",
+        service.name, service.shell
     ));
+    output::out(&format!("[With root directory: {launch_dir}]"));
 
     Ok(StartResult {
         project_dir: opts.project_dir,
