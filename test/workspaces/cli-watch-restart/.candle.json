@@ -1,0 +1,8 @@
+{
+  "services": [
+    {
+      "name": "slow-stop",
+      "shell": "node ../../sampleServers/slowStopServer.js"
+    }
+  ]
+}

@@ -74,14 +74,15 @@ Options: `{ showPastLogsBehavior: 'show_logs_from_previous_launch' | 'only_show_
 ### 4.1 `checkLatestLaunchStatus(logs)` (called once with the initial batch)
 - Clears `recentCommandLaunch` map.
 - If `recentWindowMs` set: `minTimestamp = (now_unix_millis - recentWindowMs) / 1000` — **converts ms→seconds to match DB timestamps** (`LatestExecutionLogFilter.ts:64`). The Rust code keeps the float division (`(now_unix_millis - window_ms) as f64 / 1000.0`) and does not round.
-- Scans logs; for each `process_start_initiated` (type 3), records `recentCommandLaunch[command_name] = { startLogId: log.id }` (last one wins).
+- Scans logs; for each `process_start_initiated` (type 3), records `recentCommandLaunch[command_name] = { startLogId: log.id, reportedStartResult: false }` (last one wins). A later `process_started (5)` / `process_start_failed (4)` for that command sets `reportedStartResult = true`.
 
 ### 4.2 `filter(logs)` (called on every batch)
-Per log, look up `status = recentCommandLaunch[command_name]`:
-- If status exists: include iff `log.id >= status.startLogId && passesTimestampWindow(log)`.
+Per log, first advance the launch boundary: a `process_start_initiated (3)` whose id is **greater** than the recorded `startLogId` (or with no record yet) becomes the new launch. The greater-than check matters because `filter` is normally handed the same batch `checkLatestLaunchStatus` just analyzed — without it, replaying an older launch event would move the boundary backwards and let that launch's stale output through. Then look up `status = recentCommandLaunch[command_name]`:
+- If status exists:
+  - If `log_type == process_exited (6)` and `!status.reportedStartResult`: exclude. A monitor always writes `process_started` before `process_exited`, so an exit arriving before this launch's own start result came from the instance that was just killed — its shutdown can outlive the new launch row.
+  - Else include iff `log.id >= status.startLogId && passesTimestampWindow(log)`.
 - If no status:
-  - If `log_type == process_start_initiated (3)`: record it as the launch (`startLogId = log.id`), include iff `passesTimestampWindow`.
-  - Else if `showPastLogsBehavior == 'show_logs_from_previous_launch'`: include iff `passesTimestampWindow`.
+  - If `showPastLogsBehavior == 'show_logs_from_previous_launch'`: include iff `passesTimestampWindow`.
   - Else (`only_show_after_recent_launch`): exclude.
 
 `passesTimestampWindow(log)`: `true` if `minTimestamp` is unset, else `log.timestamp >= minTimestamp` (`LatestExecutionLogFilter.ts:78-83`).

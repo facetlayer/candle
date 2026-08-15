@@ -22,13 +22,19 @@ use crate::monitor::MonitorLaunchInfo;
 use crate::logs::process_logs::save_process_log;
 use crate::logs::{LogIterator, ProcessLogType};
 use crate::output;
-use crate::process_alive::filter_alive_processes;
+use crate::process_alive::{filter_alive_processes, is_process_alive};
 use crate::start::launch::launch_monitor;
 
 /// How long the CLI watches the log table for a start result before giving up.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// Poll interval while watching the log table (matches Node's `setTimeout(100)`).
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// How long to wait for a killed previous instance to finish exiting before
+/// recording the new launch. Bounded so a service that ignores SIGTERM can't
+/// block a start indefinitely.
+const PREVIOUS_INSTANCE_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// Poll interval while draining the previous instance.
+const DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Options for [`start_one_service`], mirroring the relevant fields of Node's
 /// `RunOptions`.
@@ -51,6 +57,51 @@ pub struct StartResult {
 
 fn db_err(e: rusqlite::Error) -> CandleError {
     CandleError::Generic(format!("database error: {e}"))
+}
+
+/// PIDs belonging to the currently-running instance of `command_name`: the
+/// supervised shell and the monitor sidecar that writes its log rows. Both must
+/// be gone before the old instance can be considered fully drained.
+fn previous_instance_pids(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+) -> Result<Vec<i64>, CandleError> {
+    let entries = find_processes_by_command_name_and_project_dir(conn, command_name, project_dir)
+        .map_err(db_err)?;
+
+    let mut pids = Vec::new();
+    for entry in entries.iter().filter(|e| e.killed_at.is_none()) {
+        if entry.pid > 0 {
+            pids.push(entry.pid);
+        }
+        if let Some(collector_pid) = entry.log_collector_pid {
+            if collector_pid > 0 {
+                pids.push(collector_pid);
+            }
+        }
+    }
+
+    Ok(pids)
+}
+
+/// Block until none of `pids` is alive, or until `timeout` elapses. Returns
+/// whether every PID exited within the timeout.
+fn wait_for_pids_to_exit(pids: &[i64], timeout: Duration) -> bool {
+    if pids.is_empty() {
+        return true;
+    }
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !pids.iter().copied().any(is_process_alive) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(DRAIN_POLL_INTERVAL);
+    }
 }
 
 /// Launch a single service as a detached subprocess and wait for it to report a
@@ -115,6 +166,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
 
     // 3. Kill any existing instance (start == restart). quiet_failure suppresses
     //    "no running processes" noise.
+    let previous_pids = previous_instance_pids(conn, &opts.project_dir, &service.name)?;
+
     handle_kill_command(
         conn,
         &opts.project_dir,
@@ -123,6 +176,15 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         false,
     )
     .map_err(db_err)?;
+
+    // `kill_process_tree` only fires SIGTERM; it does not wait. If we recorded the
+    // new launch while the old instance was still shutting down, the old shell's
+    // dying output and its monitor's `process_exited` row would be written to the
+    // log table *after* the new `process_start_initiated` row — and log consumers,
+    // which treat that row as the launch boundary, would replay them as if they
+    // belonged to the new instance. Wait for the old shell and its monitor to be
+    // gone first so every stale row lands before the boundary.
+    wait_for_pids_to_exit(&previous_pids, PREVIOUS_INSTANCE_DRAIN_TIMEOUT);
 
     // 4. Seed the log watch position, then record process_start_initiated.
     let mut log_iterator = LogIterator::new(opts.project_dir.clone(), vec![service.name.clone()]);

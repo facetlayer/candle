@@ -19,6 +19,7 @@ candle start NAME
         - check-start dedup
         - resolve ServiceConfig (transient or from config file)
         - handle_kill_command (kill existing)
+        - wait_for_pids_to_exit (drain the previous instance, max 2s)
         - save_process_log(process_start_initiated)
         - launch_monitor            (rust/src/start/launch.rs)
             → spawn `candle --monitor` detached, write LaunchInfo JSON to its stdin, end stdin
@@ -89,6 +90,8 @@ Subtlety: dedup uses **both** `killed_at IS NULL` filtering **and** a liveness p
 ### 4.3 Kill existing
 
 `handle_kill_command({ project_dir, command_names: [service_config.name], quiet_failure: true })`. Always kills any current instance before starting (so `start` = restart). See §8.
+
+Because `kill_process_tree` only fires SIGTERM and returns (§8), the old instance may still be shutting down. `start_one_service` therefore snapshots the running entry's `pid` and `log_collector_pid` **before** killing, then calls `wait_for_pids_to_exit(pids, 2s)` — a 20ms signal-0 poll — before recording `process_start_initiated`. Otherwise the dying shell's last output and its monitor's `process_exited` row land in `process_output` *after* the new launch row, and every log consumer that uses that row's id as the launch boundary (`LatestExecutionLogFilter`, §`watch-wait.md`) replays them as the new instance's output. The wait is bounded so a service that ignores SIGTERM can't block a start; `LatestExecutionLogFilter` covers that residual case by refusing to attribute a `process_exited` row to a launch that hasn't logged `process_started` yet.
 
 ### 4.4 Set up log watch position
 

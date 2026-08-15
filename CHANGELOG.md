@@ -1,5 +1,6 @@
 
 # Unreleased
+ - Fix watch mode showing output from the instance it just replaced. A restart only signals the old process and returns immediately, so a service that shuts down slowly wrote its last lines — including `[Process was stopped]` — after the new launch had already been recorded, and `candle start` / `run` / `restart` replayed them as if they belonged to the new instance. Starting a service now waits (up to 2s) for the previous instance and its monitor to actually exit before recording the new launch, and the log filter no longer attributes an exit event to a launch that hasn't reported starting yet.
  - `candle list` (alias `ls`) is now a multiline detail view: one entry per service with a `name STATUS pid uptime` header line, followed by the service's full `command:` and `directory:`, neither of them truncated. An empty project still prints `No services configured.`
  - Add `candle ps` for the old table view, minus the COMMAND and DIRECTORY columns so it fits a narrow terminal: just `NAME STATUS PID UPTIME`. `status` is now an alias of `ps` instead of `list`.
  - `candle list` and `candle ps` both accept optional service names to filter the listing, and both still support `--json`. An unknown service name is an error naming that service, with a non-zero exit.
