@@ -119,9 +119,7 @@ pub fn kill_one_running_process(
         return Ok(false);
     }
 
-    let killed;
-
-    match kill_process_tree(entry.pid) {
+    let killed = match kill_process_tree(entry.pid) {
         KillResult::Success => {
             if !quiet {
                 output::out(&format!(
@@ -153,7 +151,7 @@ pub fn kill_one_running_process(
                 )?;
             }
 
-            killed = true;
+            true
         }
         KillResult::ProcessNotFound => {
             if !quiet {
@@ -163,7 +161,7 @@ pub fn kill_one_running_process(
                 ));
             }
             delete_process_entry(conn, &entry.command_name, &entry.project_dir, entry.pid)?;
-            killed = false;
+            false
         }
         KillResult::Error => {
             if !quiet {
@@ -176,9 +174,9 @@ pub fn kill_one_running_process(
 
             // The process was there but would not die; the error message above
             // already told the user, so this counts as handled.
-            killed = true;
+            true
         }
-    }
+    };
 
     Ok(killed)
 }
