@@ -1,6 +1,6 @@
 # CLI & miscellaneous subsystem
 
-Covers errors, debug logging, run context, doc files, command-name validation, the public library API, version handling, and the `wait-for-log` command.
+Covers errors, debug logging, run context, doc files, project-scope resolution, command-name validation, the public library API, version handling, and the `wait-for-log` command.
 
 The Rust implementation lives in `rust/src/` — `errors.rs`, `debug.rs`, `run_context.rs`, `doc_files.rs`, `commands/mod.rs` (command-name validation), `commands/wait_for_log.rs`, and `lib.rs` (module surface) — with CLI dispatch in `main.rs` and help/parsing in `cli/{help,parser}.rs`. It mirrors the original `src/errors.ts`, `src/debug.ts`, `src/runContext.ts`, `src/docFiles/DocFilesHelper.ts`, `src/index.ts`, `src/cli/assertValidCommandName.ts`, `src/wait-for-log-command.ts`, plus `src/findPackageJson.ts` and version handling in `src/main-cli.ts`.
 
@@ -161,6 +161,63 @@ Available doc files:
 
 ### Rust implementation
 Module `doc_files`. `parse_frontmatter(&str) -> ParsedDocument`. Struct `DocFilesHelper { file_map: IndexMap<String, PathBuf>, get_doc_subcommand: Option<String> }` (an order-preserving `indexmap` to match insertion-order iteration). The `regex` crate handles the frontmatter regex. Stdout strings match exactly for test parity.
+
+## 4b. Project scope (`project_scope.rs`)
+
+New in the Rust implementation — the Node original had no equivalent, since every command took its
+project from the CWD.
+
+`ProjectScope` is how a command decides which project directory it acts on. It has two variants:
+
+- `Discover(cwd)` — the default. `resolve()` walks up from the CWD to the nearest config file, the
+  same behavior every command had before.
+- `Explicit(dir)` — `--project-dir <dir>`. The named directory *is* the project. `resolve()` returns
+  it verbatim: no ancestor walk, no existence check.
+
+The flag value is made absolute against the CWD and lexically normalized (`dirs::normalize_path`),
+so `--project-dir .` produces the same string discovery would, and the result matches the
+`project_dir` column on existing rows. Normalization is textual — the path is never canonicalized,
+because it may no longer exist.
+
+### The two checks, and why they differ
+
+`resolve()` never fails for an explicit dir. That is deliberate: `candle kill --project-dir
+/gone/project` is the intended way to clean up after a project that has been deleted, so the
+DB-keyed commands (`kill`, `logs`, `clear-logs`, `wait-for-log`) call only `resolve()`.
+
+`require_own_config()` is the second check, for commands that need service definitions (`start`,
+`check-start`, `restart`, `list`, `ps`, `watch`, `list-ports`, `open-browser`). It requires an
+explicit dir to contain a config file itself. Without it, config discovery would walk up and resolve
+services from an *ancestor* project while the process rows stayed keyed to the directory the user
+named — one command silently acting on two projects. For `Discover` it is always `Ok`, since walking
+up is the point there.
+
+`kill` additionally skips `assert_valid_command_names` under an explicit scope: there is no config
+left to validate against, so an unknown name reports "No running processes found" rather than
+failing.
+
+`list-all`, `list-ports-all`, `kill-all`, and `find-orphans` do not accept the flag at all — the
+parser rejects it as `Unknown argument` — because they are already system-wide.
+
+## 4c. find-orphans (`commands/find_orphans.rs`)
+
+Also new. A system-wide diagnostic in the same family as `kill-all`: it reports every *live* tracked
+process whose project no longer accounts for it. `classify(project_dir, service_name)` returns the
+first applicable `OrphanReason`:
+
+| Reason | Condition |
+|---|---|
+| `MissingProjectDir` | `project_dir` is not a directory |
+| `MissingConfigFile` | no name in `CONFIG_FILENAMES` exists **in that directory** (ancestors deliberately don't count — an ancestor's config describes a different project) |
+| `ServiceNotInConfig` | the config parses but has no service by that name |
+
+A config file that exists but fails to parse yields `None` (not an orphan): it almost certainly still
+lists the service, and reporting it would invite killing a healthy process over a JSON typo.
+
+Only rows that pass `filter_alive_processes` are considered — a dead row is stale bookkeeping for the
+reaper, not an orphan. Output is the human report from `format_find_orphans` or, with `--json`, the
+serialized `FindOrphansOutput` (reasons serialize camelCase: `missingProjectDir`,
+`missingConfigFile`, `serviceNotInConfig`).
 
 ## 5. assertValidCommandName (`commands/mod.rs`, mirrors `src/cli/assertValidCommandName.ts`)
 

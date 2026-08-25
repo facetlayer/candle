@@ -325,6 +325,17 @@ List all processes (across the entire system) that were launched by Candle.
 
 Kill all processes (across the entire system) that were launched by Candle.
 
+### `candle find-orphans`
+
+List running services whose project no longer accounts for them: the project directory was
+deleted, its config file was removed, or the service was dropped from the config. Scans every
+project on the system.
+
+Supports `--json`.
+
+Clean one up with `candle kill --project-dir <project> <service>`, which accepts a project
+directory that no longer exists.
+
 ### `candle list-ports-all`
 
 Like `list-ports` but shows open ports for all Candle-managed processes across the entire system.
@@ -338,6 +349,34 @@ This command can help if the database is corrupted or it needs a full SQL schema
 Warning: If there are any existing processes, then running `erase-database` will leave those processes 'orphaned'
 (they will still be running but they won't be tracked by Candle). It's recommended to run `candle kill-all`
 before doing this.
+
+# Targeting another project #
+
+By default Candle finds your project by looking for a `.candle.json` in the current directory,
+then in each parent directory. `--project-dir <dir>` overrides that: the named directory *is*
+the project, and the current directory is ignored. The path may be relative.
+
+    candle ps --project-dir ~/work/api
+    candle start --project-dir ~/work/api web
+
+Accepted by the commands that act on a single project: `start`, `run`, `check-start`, `restart`,
+`kill`, `list`, `ps`, `logs`, `watch`, `wait-for-log`, `clear-logs`, `list-ports`, and
+`open-browser`. The system-wide commands (`list-all`, `list-ports-all`, `kill-all`,
+`find-orphans`) don't take it.
+
+Unlike the default search, `--project-dir` never falls back to a parent directory — naming a
+subdirectory of a project is an error rather than a silent match on the parent.
+
+## Projects that no longer exist ##
+
+`kill`, `logs`, `clear-logs`, and `wait-for-log` work purely from Candle's own records, so they
+accept a `--project-dir` that has been deleted or no longer has a config file:
+
+    candle kill --project-dir /path/to/deleted-project api
+
+Because there's no config left to check the name against, an unrecognized service name there
+reports that nothing is running instead of failing. Use `candle find-orphans` to list the
+services in this situation.
 
 # Interactive mode detection #
 

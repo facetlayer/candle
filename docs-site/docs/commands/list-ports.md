@@ -26,6 +26,10 @@ The command outputs a table with the following columns:
 | ADDRESS | Network address (e.g., 127.0.0.1, 0.0.0.0) |
 | PROTOCOL | Network protocol (TCP/UDP), with "(child)" suffix for child processes |
 
+## Options
+
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
+
 ## Examples
 
 ### List ports in current project

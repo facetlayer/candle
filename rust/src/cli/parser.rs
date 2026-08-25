@@ -14,6 +14,7 @@ pub fn canonical_command(token: &str) -> Option<&'static str> {
         "restart" => "restart",
         "kill" | "stop" => "kill",
         "kill-all" => "kill-all",
+        "find-orphans" => "find-orphans",
         "list" | "ls" => "list",
         "ps" | "status" => "ps",
         "list-all" => "list-all",
@@ -48,15 +49,33 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
             ("bg", false),
             ("watch", false),
             ("exit-after-ms", true),
+            ("project-dir", true),
         ],
-        "check-start" | "add-service" => {
-            &[("shell", true), ("root", true), ("enable-stdin", false)]
-        }
-        "restart" => &[("bg", false), ("watch", false), ("exit-after-ms", true)],
-        "list" | "ps" | "list-all" => &[("json", false)],
-        "logs" => &[("count", true), ("start-at", true)],
-        "watch" => &[("exit-after-ms", true)],
-        "wait-for-log" => &[("message", true), ("timeout", true)],
+        "check-start" => &[
+            ("shell", true),
+            ("root", true),
+            ("enable-stdin", false),
+            ("project-dir", true),
+        ],
+        "add-service" => &[("shell", true), ("root", true), ("enable-stdin", false)],
+        "restart" => &[
+            ("bg", false),
+            ("watch", false),
+            ("exit-after-ms", true),
+            ("project-dir", true),
+        ],
+        "list" | "ps" => &[("json", false), ("project-dir", true)],
+        // list-all is already system-wide, so a project has nothing to say here.
+        "list-all" => &[("json", false)],
+        "logs" => &[("count", true), ("start-at", true), ("project-dir", true)],
+        "watch" => &[("exit-after-ms", true), ("project-dir", true)],
+        "wait-for-log" => &[
+            ("message", true),
+            ("timeout", true),
+            ("project-dir", true),
+        ],
+        "kill" | "clear-logs" | "list-ports" | "open-browser" => &[("project-dir", true)],
+        "find-orphans" => &[("json", false)],
         _ => &[],
     }
 }

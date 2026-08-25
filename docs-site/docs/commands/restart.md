@@ -31,6 +31,7 @@ exits as soon as the restart is confirmed.
 
 - `--watch` - Force interactive mode: watch logs after restarting
 - `--bg` - Force non-interactive mode: exit as soon as the restart is confirmed
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
 

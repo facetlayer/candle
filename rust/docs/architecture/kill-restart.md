@@ -52,16 +52,28 @@ Control flow:
 1. `command_names = req.command_names` or `[]`.
 2. **If names given**: dedupe via a set, then for each unique name call `kill_by_command_name`:
    - `find_processes_by_command_name_and_project_dir(name, project_dir)` (all matching entries, including already-killed).
-   - For each, `kill_one_running_process(process, options)`; increment counter.
+   - For each, `kill_one_running_process(process, options)`; increment the counter **only when it returns `true`** (see below).
    - If counter == 0 and `!quiet_failure`: print `No running processes found for service '<name>' in project '<projectDir>'`.
 3. **If no names given**: `find_running_processes_by_project_dir(project_dir)` (only `killed_at is null`). Kill each.
    - If counter == 0 and `!quiet_failure`: print `No running processes found in project '<projectDir>'`.
 
 Note the asymmetry: name-based kill queries **all** entries (incl. killed), while killing-all-in-project queries only running entries.
 
+**The counter counts kills, not rows.** Because the name-based query includes already-killed rows, a
+row left over from a previous kill gets swept here — `kill_process_tree` on its dead pid returns
+`process_not_found`, and the row is deleted. That sweep is garbage collection, not a kill, and
+`kill_one_running_process` returns `false` for it. Counting it would suppress the "No running
+processes found" message, making the output of `candle kill <name>` depend on whether the reaper had
+already cleared the previous kill's row — the message would silently vanish (the sweep's own notice
+goes to *stderr*), which is exactly the flake this rule prevents.
+
 ## 3. `kill_one_running_process` (`rust/src/kill/mod.rs`) — core kill logic
 
-Signature: `kill_one_running_process(process, options { quiet? })`. The process value carries `{ command_name, project_dir, pid: Option<i32>, killed_at: Option<i64> }`.
+Signature: `kill_one_running_process(process, options { quiet? }) -> rusqlite::Result<bool>`. The process value carries `{ command_name, project_dir, pid: Option<i32>, killed_at: Option<i64> }`.
+
+The returned `bool` is **"was there a live process to signal"**, which callers use as their kill
+counter (see above): `success` and `error` return `true`, while a zero pid or `process_not_found`
+returns `false`.
 
 Logic:
 1. If `process.pid` is falsy (null/0), **do nothing** (no output, no DB change).
@@ -89,7 +101,7 @@ Subtle: in the success path, the row is normally only *marked* `killed_at`, not 
 `handle_kill_all(options { quiet? })`.
 
 - `find_all_processes()` → `select * from processes` — **every row across every project on the system**, with **no `killed_at` filter**. So it will also re-process already-killed-but-not-yet-reaped rows (`kill_process_tree` on a dead pid returns `process_not_found` → deletes the row, which is harmless cleanup).
-- For each: `kill_one_running_process(process, options)`, count.
+- For each: `kill_one_running_process(process, options)`, counting only real kills (same rule as above).
 - If count == 0: print `No running processes found` (no project qualifier). No `quiet_failure` concept here.
 - No name validation, no project_dir. This is the system-wide nuke.
 

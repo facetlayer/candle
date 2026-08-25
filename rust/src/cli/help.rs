@@ -56,6 +56,7 @@ Documentation:
 Troubleshooting & Maintenance:
   list-all                  List all managed processes on this system
   kill-all                  Kill all managed processes on this system
+  find-orphans              List running processes whose project is gone
   list-ports-all            List currently active ports for all managed processes
   clear-logs [name]         Clear logs for process(es)
   erase-database            Erase the Candle database
@@ -64,6 +65,8 @@ Options:
   help                      Show help
   mcp                       Enter MCP server mode
   --version                 Show version number
+  --project-dir <dir>       Act on the given project instead of the current
+                            directory (most project commands)
 
 Run 'candle <command> --help' for more information on a command."
     )
@@ -74,38 +77,39 @@ Run 'candle <command> --help' for more information on a command."
 pub fn command_help(command: &str) -> String {
     match command {
         "start" | "run" => {
-            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database".to_string()
+            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "check-start" => {
-            "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database".to_string()
+            "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "restart" => {
-            "candle restart [name...]   Restart running process(es)\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted".to_string()
+            "candle restart [name...]   Restart running process(es)\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
-        "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory".to_string(),
+        "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory\n\nOptions:\n  --project-dir <dir>  Kill process(es) in this project instead\n\nUnlike other commands, kill accepts a --project-dir that no longer exists or\nhas no config file, so processes from a deleted project can still be cleaned\nup. Use 'candle find-orphans' to find them.".to_string(),
         "kill-all" => "candle kill-all   Kill all running processes".to_string(),
-        "list" | "ls" => "candle list [names...]   Show details for the services in the current directory\n\nPrints a multiline entry per service with its status and the full command\nand directory. With one or more names, only those services are shown.\n\nOptions:\n  --json   Output as JSON".to_string(),
-        "ps" | "status" => "candle ps [names...]   Compact status table for the current directory\n\nPrints a NAME/STATUS/PID/UPTIME table. Use 'candle list' to also see each\nservice's command and directory. With one or more names, only those\nservices are shown.\n\nOptions:\n  --json   Output as JSON".to_string(),
+        "find-orphans" => "candle find-orphans   List running processes whose project is gone\n\nReports every live process Candle tracks whose project no longer accounts for\nit: the project directory was deleted, its config file was removed, or the\nservice was dropped from the config. Kill one with:\n\n  candle kill --project-dir <project> <service>\n\nOptions:\n  --json   Output as JSON".to_string(),
+        "list" | "ls" => "candle list [names...]   Show details for the services in the current directory\n\nPrints a multiline entry per service with its status and the full command\nand directory. With one or more names, only those services are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
+        "ps" | "status" => "candle ps [names...]   Compact status table for the current directory\n\nPrints a NAME/STATUS/PID/UPTIME table. Use 'candle list' to also see each\nservice's command and directory. With one or more names, only those\nservices are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "list-all" => "candle list-all   List all processes\n\nOptions:\n  --json   Output as JSON".to_string(),
         "logs" => {
-            "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100)\n  --start-at <id>  Only show logs after this log ID".to_string()
+            "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100)\n  --start-at <id>  Only show logs after this log ID\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "watch" => {
-            "candle watch [name...]   Watch live output from running process(es)\n\nWatch never launches processes. With no name, it watches every process in\nthe project (including ones that haven't launched yet). With a name, the\nnamed process must already be running. Press Ctrl+C to stop watching.".to_string()
+            "candle watch [name...]   Watch live output from running process(es)\n\nWatch never launches processes. With no name, it watches every process in\nthe project (including ones that haven't launched yet). With a name, the\nnamed process must already be running. Press Ctrl+C to stop watching.\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "wait-for-log" => {
-            "candle wait-for-log [name]   Wait for a specific log message\n\nOptions:\n  --message <text>   The log message to wait for (required)\n  --timeout <secs>   Timeout in seconds (default: 30)".to_string()
+            "candle wait-for-log [name]   Wait for a specific log message\n\nOptions:\n  --message <text>   The log message to wait for (required)\n  --timeout <secs>   Timeout in seconds (default: 30)\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
-        "list-ports" => "candle list-ports [names...]   List open ports for running services".to_string(),
+        "list-ports" => "candle list-ports [names...]   List open ports for running services\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "list-ports-all" => "candle list-ports-all   List open ports for all services".to_string(),
-        "open-browser" => "candle open-browser [name]   Open a browser to a running service".to_string(),
+        "open-browser" => "candle open-browser [name]   Open a browser to a running service\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "setup-project" => "candle setup-project   Create a new .candle.json in the current directory".to_string(),
         "add-service" => {
             "candle add-service <name>   Add a new service to .candle.json\n\nOptions:\n  --shell <cmd>      Shell command to run the service (required)\n  --root <dir>       Root directory for the service\n  --enable-stdin     Enable stdin message polling from database".to_string()
         }
         "remove-service" => "candle remove-service <name>   Remove a service from .candle.json".to_string(),
         "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json".to_string(),
-        "clear-logs" => "candle clear-logs [name]   Clear logs for process(es)".to_string(),
+        "clear-logs" => "candle clear-logs [name]   Clear logs for process(es)\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "erase-database" => "candle erase-database   Erase the Candle database".to_string(),
         "list-docs" => "candle list-docs   List available documentation".to_string(),
         "get-doc" => "candle get-doc <name>   Display a documentation file".to_string(),

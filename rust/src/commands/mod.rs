@@ -4,6 +4,7 @@
 
 pub mod clear_logs;
 pub mod erase_database;
+pub mod find_orphans;
 pub mod list;
 pub mod list_ports;
 pub mod logs;

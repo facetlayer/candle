@@ -33,6 +33,7 @@ For a compact one-line-per-service table, use [ps](ps) instead.
 ## Options
 
 - `--json` - Print the listing as a JSON array instead of the detail view.
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Output
 

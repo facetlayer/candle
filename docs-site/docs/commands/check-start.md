@@ -25,6 +25,7 @@ Unlike `start`, `check-start` never enters watch mode — it always exits as soo
 - `--shell <command>` - Start a transient service with the specified shell command
 - `--root <directory>` - Set the working directory for a transient service
 - `--enable-stdin` - Enable stdin message polling from database
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
 

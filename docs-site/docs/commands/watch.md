@@ -26,6 +26,10 @@ The `watch` command displays real-time output from running services. Press
 
 - `name` - Name of the service(s) to watch. Can specify multiple services. Each named service must be running.
 
+## Options
+
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
+
 ## Examples
 
 ### Watch a single running service

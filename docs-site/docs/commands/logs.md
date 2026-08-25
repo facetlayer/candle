@@ -22,6 +22,7 @@ This can include logs from previous launches, or logs for services that aren't r
 
 - `--count <number>` - Number of log lines to show. Default: 100.
 - `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
 

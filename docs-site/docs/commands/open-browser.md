@@ -23,6 +23,10 @@ If no service name is provided, the command will auto-detect the target:
 - If no processes are running, an error is thrown
 - If multiple processes are running, an error is thrown (ambiguous)
 
+## Options
+
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
+
 ## Examples
 
 ### Open browser to a running service

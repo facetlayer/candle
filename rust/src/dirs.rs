@@ -28,7 +28,7 @@ pub fn resolve_launch_dir(project_dir: &str, root: Option<&str>) -> String {
 /// A `..` that has nothing to pop (a leading `..`, or one directly after the
 /// root) is preserved rather than silently dropped, which would change which
 /// directory the path refers to.
-fn normalize_path(path: &Path) -> PathBuf {
+pub fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     // Tracks how many trailing components are `..`, which must not be popped.
     let mut pending_parents = 0usize;

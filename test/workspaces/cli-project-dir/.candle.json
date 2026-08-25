@@ -1,0 +1,8 @@
+{
+  "services": [
+    {
+      "name": "echo",
+      "shell": "node ../../sampleServers/echoServer.js"
+    }
+  ]
+}

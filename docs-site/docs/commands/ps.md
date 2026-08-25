@@ -31,6 +31,7 @@ values, so the table stays narrow enough to read in a small terminal. Use
 - `--json` - Print the listing as a JSON array instead of the table. This is the
   same JSON that `candle list --json` emits, including the command and directory
   fields that the table leaves out.
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Output
 

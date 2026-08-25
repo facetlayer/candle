@@ -16,6 +16,7 @@ use candle::commands::list::{
     filter_by_service_names, format_list_detail, format_list_output, format_ps_output, handle_list,
     list_output_to_json,
 };
+use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list_ports::{format_list_ports_output, handle_list_ports};
 use candle::commands::logs::handle_logs_command;
 use candle::commands::open_browser::{format_open_browser_output, handle_open_browser};
@@ -26,12 +27,12 @@ use candle::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
 };
-use candle::config::find_project_dir;
 use candle::db::cleanup::maybe_run_cleanup;
 use candle::db::get_database;
 use candle::doc_files::{self, DocLookupError};
 use candle::errors::CandleError;
 use candle::kill::{handle_kill_all, handle_kill_command};
+use candle::project_scope::ProjectScope;
 use candle::start::{handle_start_command, StartCommandOptions};
 use candle::cli::help;
 use candle::cli::monitor_mode::run_monitor_mode;
@@ -140,6 +141,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "get-doc" => cmd_get_doc(args),
         "kill" => cmd_kill(args),
         "kill-all" => cmd_kill_all(),
+        "find-orphans" => cmd_find_orphans(args),
         "start" => cmd_start(args, false),
         "check-start" => cmd_start(args, true),
         "list" => cmd_list(args, false, ListView::Detail),
@@ -160,6 +162,30 @@ fn dispatch(command: &str, args: &CommandArgs) {
 
 fn cwd() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// The project a command acts on: the CWD, or whatever `--project-dir` names.
+fn scope_of(args: &CommandArgs) -> ProjectScope {
+    ProjectScope::new(cwd(), args.value("project-dir"))
+}
+
+/// Resolve a command's project directory, exiting with the usage error if the
+/// CWD is not inside a project.
+fn project_dir_or_exit(scope: &ProjectScope) -> String {
+    match scope.resolve() {
+        Ok(dir) => dir,
+        Err(e) => fail_with(&e),
+    }
+}
+
+/// Same, for commands that need the project's service definitions: an explicit
+/// `--project-dir` must be a project in its own right. See
+/// [`ProjectScope::require_own_config`].
+fn configured_project_dir_or_exit(scope: &ProjectScope) -> String {
+    if let Err(e) = scope.require_own_config() {
+        fail_with(&e);
+    }
+    project_dir_or_exit(scope)
 }
 
 /// Print a handler's success message, or render its error to stderr and exit 1.
@@ -286,18 +312,22 @@ fn fail_with(err: &CandleError) -> ! {
 }
 
 /// `kill` / `stop`: resolve the project dir, validate names, then mark/kill.
+///
+/// With an explicit `--project-dir`, name validation is skipped: that form
+/// exists to clean up after a project that is gone, so there is no config left
+/// to validate against. An unrecognized name simply reports that nothing by
+/// that name is running.
 fn cmd_kill(args: &CommandArgs) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let scope = scope_of(args);
+    let project_dir = project_dir_or_exit(&scope);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    if let Err(e) = assert_valid_command_names(&conn, &cwd, &args.positionals) {
-        fail_with(&e);
+    if !scope.is_explicit() {
+        if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
+            fail_with(&e);
+        }
     }
 
     if let Err(e) = handle_kill_command(&conn, &project_dir, &args.positionals, false, false) {
@@ -353,11 +383,7 @@ fn print_logs_hint(started: &[String]) {
 /// logs until Ctrl+C (the process keeps running). In non-interactive mode (and
 /// always for `check-start`), it exits as soon as the launch is confirmed.
 fn cmd_start(args: &CommandArgs, check_start: bool) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let project_dir = configured_project_dir_or_exit(&scope_of(args));
 
     let watch_after = !check_start && should_watch_after_launch(args);
 
@@ -405,11 +431,14 @@ enum ListView {
 /// `list` / `ls`, `ps` / `status` (`show_all = false`) and `list-all`
 /// (`show_all = true`).
 fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
-    let cwd = cwd();
+    let scope = scope_of(args);
+    if let Err(e) = scope.require_own_config() {
+        fail_with(&e);
+    }
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    let output = match handle_list(&conn, &cwd, show_all)
+    let output = match handle_list(&conn, scope.base_dir(), show_all)
         .and_then(|output| filter_by_service_names(output, &args.positionals))
     {
         Ok(output) => output,
@@ -430,11 +459,7 @@ fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
 /// `wait-for-log`: poll the named command's logs for a substring until it
 /// appears, the process exits, or the timeout elapses.
 fn cmd_wait_for_log(args: &CommandArgs) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let project_dir = project_dir_or_exit(&scope_of(args));
 
     // --message is required (yargs demandOption).
     let message = match args.value("message") {
@@ -465,11 +490,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
 }
 
 fn cmd_logs(args: &CommandArgs) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let project_dir = project_dir_or_exit(&scope_of(args));
 
     let limit: i64 = args.value("count").and_then(|s| s.parse().ok()).unwrap_or(100);
     let start_at_id: Option<i64> = args.value("start-at").and_then(|s| s.parse().ok());
@@ -484,10 +505,7 @@ fn cmd_logs(args: &CommandArgs) {
 
 /// `clear-logs`: delete stored output for the named command(s) in the project.
 fn cmd_clear_logs(args: &CommandArgs) {
-    let project_dir = match find_project_dir(&cwd()) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let project_dir = project_dir_or_exit(&scope_of(args));
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -509,18 +527,15 @@ fn cmd_clear_logs(args: &CommandArgs) {
 /// error from the handler. Follows the same interactive/non-interactive behavior
 /// as `start` (see [`cmd_start`]).
 fn cmd_restart(args: &CommandArgs) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let scope = scope_of(args);
+    let project_dir = configured_project_dir_or_exit(&scope);
 
     let watch_after = should_watch_after_launch(args);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    if let Err(e) = assert_valid_command_names(&conn, &cwd, &args.positionals) {
+    if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
         fail_with(&e);
     }
 
@@ -550,11 +565,14 @@ fn cmd_watch(args: &CommandArgs) {
         );
         exit(1);
     }
-    let cwd = cwd();
+    let scope = scope_of(args);
+    if let Err(e) = scope.require_own_config() {
+        fail_with(&e);
+    }
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
     let exit_after_ms: Option<u64> = args.value("exit-after-ms").and_then(|s| s.parse().ok());
-    match handle_watch(&conn, &cwd, &args.positionals, exit_after_ms) {
+    match handle_watch(&conn, scope.base_dir(), &args.positionals, exit_after_ms) {
         Ok(()) => {}
         Err(e) => fail_with(&e),
     }
@@ -567,12 +585,15 @@ fn cmd_watch(args: &CommandArgs) {
 /// reads `argv.name` (singular), so positional names never reach
 /// `handleListPorts`; `list-ports foo` lists all project ports. We preserve that
 /// behavior — positionals are ignored — so this stays a drop-in replacement.
-fn cmd_list_ports(_args: &CommandArgs, show_all: bool) {
-    let cwd = cwd();
+fn cmd_list_ports(args: &CommandArgs, show_all: bool) {
+    let scope = scope_of(args);
+    if let Err(e) = scope.require_own_config() {
+        fail_with(&e);
+    }
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    let output = match handle_list_ports(&conn, &cwd, show_all, &[]) {
+    let output = match handle_list_ports(&conn, scope.base_dir(), show_all, &[]) {
         Ok(output) => output,
         Err(e) => fail_with(&e),
     };
@@ -582,19 +603,34 @@ fn cmd_list_ports(_args: &CommandArgs, show_all: bool) {
 /// `open-browser`: resolve a service (explicit or sole running), open a browser
 /// to its lowest listening port.
 fn cmd_open_browser(args: &CommandArgs) {
-    let cwd = cwd();
-    let project_dir = match find_project_dir(&cwd) {
-        Ok(dir) => dir.display().to_string(),
-        Err(e) => fail_with(&e),
-    };
+    let scope = scope_of(args);
+    let project_dir = configured_project_dir_or_exit(&scope);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
     let service_name = args.positionals.first().map(String::as_str);
-    match handle_open_browser(&conn, &cwd, &project_dir, service_name) {
+    match handle_open_browser(&conn, scope.base_dir(), &project_dir, service_name) {
         Ok(output) => println!("{}", format_open_browser_output(&output)),
         Err(e) => fail_with(&e),
+    }
+}
+
+/// `find-orphans`: report live tracked processes whose project no longer
+/// accounts for them. System-wide, like `kill-all`, so it takes no project.
+fn cmd_find_orphans(args: &CommandArgs) {
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+
+    let output = match handle_find_orphans(&conn) {
+        Ok(output) => output,
+        Err(e) => fail_with(&e),
+    };
+
+    if args.has("json") {
+        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+    } else {
+        println!("{}", format_find_orphans(&output));
     }
 }
 

@@ -21,6 +21,7 @@ candle wait-for-log <name> --message <message> [--timeout <seconds>]
 
 - `--message <string>` - The exact log message substring to wait for (required)
 - `--timeout <number>` - Timeout in seconds (default: 30)
+- `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
 
