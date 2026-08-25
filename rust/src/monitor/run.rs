@@ -18,6 +18,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use rusqlite::Connection;
+
 use crate::db::cleanup::maybe_run_cleanup;
 use crate::db::open_database_at;
 use crate::db::process_table::{create_process_entry, delete_process_entry, CreateProcessEntry};
@@ -47,6 +49,27 @@ fn exit_message(code: Option<i32>) -> String {
         Some(c) => format!("Process exited with code {c}"),
         None => "Process was stopped".to_string(),
     }
+}
+
+/// Persist one grace-period event.
+///
+/// Returns `Some(code)` when the event was the child exiting, `None` for output
+/// lines (which are written to `process_output` as they arrive).
+fn record_grace_event(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+    event: LineEvent,
+) -> Option<Option<i32>> {
+    let (log_type, line) = match event {
+        LineEvent::Exit(code) => return Some(code),
+        LineEvent::Stdout(line) => (ProcessLogType::Stdout, line),
+        LineEvent::Stderr(line) => (ProcessLogType::Stderr, line),
+    };
+
+    debug_log(&format!("[monitor] {log_type:?}: {line}"));
+    let _ = save_process_log(conn, command_name, project_dir, log_type, Some(&line));
+    None
 }
 
 /// Human-readable message for a process that died during the startup grace
@@ -235,32 +258,26 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             break;
         }
         match rx.recv_timeout(remaining) {
-            Ok(LineEvent::Stdout(line)) => {
-                debug_log(&format!("[monitor] stdout: {line}"));
-                let _ = save_process_log(
-                    &conn,
-                    &command_name,
-                    &project_dir,
-                    ProcessLogType::Stdout,
-                    Some(&line),
-                );
-            }
-            Ok(LineEvent::Stderr(line)) => {
-                debug_log(&format!("[monitor] stderr: {line}"));
-                let _ = save_process_log(
-                    &conn,
-                    &command_name,
-                    &project_dir,
-                    ProcessLogType::Stderr,
-                    Some(&line),
-                );
-            }
-            Ok(LineEvent::Exit(code)) => {
-                exited_during_grace = true;
-                exit_code = code;
-                break;
+            Ok(event) => {
+                if let Some(code) = record_grace_event(&conn, &command_name, &project_dir, event) {
+                    exited_during_grace = true;
+                    exit_code = code;
+                    break;
+                }
             }
             Err(_) => break,
+        }
+    }
+
+    // The deadline can expire with events already queued: a process that dies
+    // instantly still emits its error output first, and writing those lines can
+    // outlast the window on a loaded machine. Drain what has already arrived
+    // before deciding, or a fast failure gets misreported as a successful start.
+    while !exited_during_grace {
+        let Ok(event) = rx.try_recv() else { break };
+        if let Some(code) = record_grace_event(&conn, &command_name, &project_dir, event) {
+            exited_during_grace = true;
+            exit_code = code;
         }
     }
 

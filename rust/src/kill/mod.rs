@@ -105,15 +105,21 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
 /// - **ProcessNotFound**: warn + hard-delete the row (the OS process is gone).
 /// - **Error**: print `Error killing process ...` (to stdout, matching Node) and
 ///   leave the row unchanged.
+///
+/// Returns whether this was a real kill — i.e. there was a live process to
+/// signal. Sweeping a leftover row whose OS process had already exited returns
+/// `false`, so callers do not mistake garbage collection for a kill.
 pub fn kill_one_running_process(
     conn: &Connection,
     entry: &ProcessEntry,
     quiet: bool,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<bool> {
     // Falsy PID (Node `if (process.pid)`): nothing to kill.
     if entry.pid == 0 {
-        return Ok(());
+        return Ok(false);
     }
+
+    let killed;
 
     match kill_process_tree(entry.pid) {
         KillResult::Success => {
@@ -146,6 +152,8 @@ pub fn kill_one_running_process(
                     now,
                 )?;
             }
+
+            killed = true;
         }
         KillResult::ProcessNotFound => {
             if !quiet {
@@ -155,6 +163,7 @@ pub fn kill_one_running_process(
                 ));
             }
             delete_process_entry(conn, &entry.command_name, &entry.project_dir, entry.pid)?;
+            killed = false;
         }
         KillResult::Error => {
             if !quiet {
@@ -164,10 +173,14 @@ pub fn kill_one_running_process(
                     entry.command_name, entry.pid
                 ));
             }
+
+            // The process was there but would not die; the error message above
+            // already told the user, so this counts as handled.
+            killed = true;
         }
     }
 
-    Ok(())
+    Ok(killed)
 }
 
 /// Handle `candle kill [name...]`.
@@ -175,8 +188,9 @@ pub fn kill_one_running_process(
 /// Mirrors `handleKillCommand`:
 /// - With names: dedupe (first-occurrence order) and kill each name's entries,
 ///   querying **all** matching rows (including already-killed). A name with no
-///   rows prints the per-service "No running processes" message unless
-///   `quiet_failure`.
+///   *live* process prints the per-service "No running processes" message unless
+///   `quiet_failure` — leftover rows swept along the way do not count as kills,
+///   so the message does not depend on how promptly the reaper has run.
 /// - Without names: kill every running row in the project; if none, print the
 ///   project-wide "No running processes" message unless `quiet_failure`.
 pub fn handle_kill_command(
@@ -200,8 +214,9 @@ pub fn handle_kill_command(
     let running = find_running_processes_by_project_dir(conn, project_dir)?;
     let mut killed = 0usize;
     for entry in &running {
-        kill_one_running_process(conn, entry, quiet)?;
-        killed += 1;
+        if kill_one_running_process(conn, entry, quiet)? {
+            killed += 1;
+        }
     }
 
     if killed == 0 && !quiet_failure {
@@ -225,8 +240,9 @@ fn kill_by_command_name(
 
     let mut killed = 0usize;
     for entry in &processes {
-        kill_one_running_process(conn, entry, quiet)?;
-        killed += 1;
+        if kill_one_running_process(conn, entry, quiet)? {
+            killed += 1;
+        }
     }
 
     if killed == 0 && !quiet_failure {
@@ -247,8 +263,9 @@ pub fn handle_kill_all(conn: &Connection, quiet: bool) -> rusqlite::Result<()> {
     let processes = find_all_processes(conn)?;
     let mut killed = 0usize;
     for entry in &processes {
-        kill_one_running_process(conn, entry, quiet)?;
-        killed += 1;
+        if kill_one_running_process(conn, entry, quiet)? {
+            killed += 1;
+        }
     }
 
     if killed == 0 {
@@ -359,6 +376,30 @@ mod tests {
     }
 
     #[test]
+    fn stale_rows_do_not_count_as_kills() {
+        // A leftover row for an already-exited process is swept, but the sweep is
+        // garbage collection, not a kill: the user still gets told nothing was
+        // running. Regression test for a flake where `kill <name>` printed nothing
+        // at all when a prior kill's row had not been reaped yet.
+        let dir = temp_db_dir("kill-stale-row");
+        let conn = get_database(Some(&dir)).unwrap();
+        insert(&conn, "svc", 2_000_000_000);
+
+        let names = vec!["svc".to_string()];
+        let (_, captured) =
+            capture(|| handle_kill_command(&conn, "/proj", &names, false, true).unwrap());
+
+        assert_eq!(
+            captured.stdout,
+            vec!["No running processes found for service 'svc' in project '/proj'".to_string()]
+        );
+        assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn kill_command_dedupes_names() {
         let dir = temp_db_dir("kill-dedupe");
         let conn = get_database(Some(&dir)).unwrap();
@@ -369,8 +410,12 @@ mod tests {
         let names = vec!["ghost".to_string(), "ghost".to_string()];
         let (_, captured) =
             capture(|| handle_kill_command(&conn, "/proj", &names, false, true).unwrap());
-        // quiet=true suppresses the cleanup warning; row deleted exactly once.
-        assert!(captured.stdout.is_empty());
+        // quiet=true suppresses the cleanup warning, so the only line is the
+        // "nothing was running" report — emitted once, not once per duplicate.
+        assert_eq!(
+            captured.stdout,
+            vec!["No running processes found for service 'ghost' in project '/proj'".to_string()]
+        );
         assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
 
         drop(conn);
