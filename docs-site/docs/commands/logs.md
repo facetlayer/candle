@@ -12,7 +12,17 @@ candle logs [name...] [--count <number>] [--start-at <id>]
 
 The `logs` command displays the most recent log output from one or more services. By default, it shows the last 100 lines and then exits (non-interactive).
 
-This can include logs from previous launches, or logs for services that aren't running.
+It shows output from each service's most recent run. That works for services that aren't running anymore too, which is handy for seeing why one crashed. Output from earlier runs is left out.
+
+`--count` counts the lines that are printed. When there are more lines from the latest run than `--count` allows, the output starts with a hint:
+
+```
+$ candle logs api --count 3
+-- showing the last 3 lines; use --count to see more --
+listening on port 3000
+GET /health 200
+GET /api/users 200
+```
 
 ## Arguments
 

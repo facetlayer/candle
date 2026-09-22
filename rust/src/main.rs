@@ -155,7 +155,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "list-ports" => cmd_list_ports(args, false),
         "list-ports-all" => cmd_list_ports(args, true),
         "open-browser" => cmd_open_browser(args),
-        "erase-database" => cmd_erase_database(),
+        "erase-database" => cmd_erase_database(args),
         _ => not_implemented(command),
     }
 }
@@ -634,10 +634,18 @@ fn cmd_find_orphans(args: &CommandArgs) {
     }
 }
 
-/// `erase-database`: delete candle.db (+ WAL/SHM) from the state dir.
-fn cmd_erase_database() {
-    match candle::commands::erase_database::handle_erase_database_command() {
-        Ok(()) => {}
+/// `erase-database [--force]`: delete candle.db (+ WAL/SHM) from the state dir,
+/// refusing while tracked processes are alive unless `--force`.
+fn cmd_erase_database(args: &CommandArgs) {
+    use candle::commands::erase_database::{
+        format_refusal, handle_erase_database_command, EraseOutcome,
+    };
+    match handle_erase_database_command(args.has("force")) {
+        Ok(EraseOutcome::Erased) => {}
+        Ok(EraseOutcome::RefusedLiveProcesses(live)) => {
+            eprintln!("{}", format_refusal(&live));
+            exit(1);
+        }
         Err(e) => {
             eprintln!("Error clearing database: {e}");
             exit(1);

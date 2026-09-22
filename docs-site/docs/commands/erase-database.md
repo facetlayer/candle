@@ -5,12 +5,28 @@ Completely erase the Candle database.
 ## Syntax
 
 ```bash
-candle erase-database
+candle erase-database [--force]
 ```
 
 ## Description
 
 The `erase-database` command deletes the SQLite database and all associated files. A new database will be created automatically on the next Candle command.
+
+If any Candle-managed services are still running, the command refuses and lists them, then exits with status 1 without deleting anything. Erasing would leave those processes running with nothing in Candle able to see or stop them. Stop them first with `candle kill-all`.
+
+```
+$ candle erase-database
+Refusing to erase the database: 1 Candle-managed process is still running.
+Erasing now would leave them running with no way for Candle to stop them.
+  api (pid 12345) in /Users/you/projects/my-app
+Run 'candle kill-all' first, or pass --force to erase anyway.
+```
+
+If the database is corrupted and can't be read, the running-services check is skipped with a warning and the erase goes ahead.
+
+## Options
+
+- `--force` - Erase even while services are running. They keep running, untracked.
 
 ## Database Location
 
@@ -31,9 +47,9 @@ candle erase-database
 This command will:
 - Delete all log history
 - Remove all service tracking data
-- Orphan any currently running services (they will continue running but Candle won't be able to manage them)
+- With `--force`, orphan any currently running services (they will continue running but Candle won't be able to manage them)
 
-Make sure to stop all services before erasing the database:
+Stop all services before erasing the database:
 
 ```bash
 candle kill-all

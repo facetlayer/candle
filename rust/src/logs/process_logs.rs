@@ -32,6 +32,13 @@ pub struct LogSearchOptions {
     pub limit: Option<i64>,
     pub since_timestamp: Option<i64>,
     pub after_log_id: Option<i64>,
+    /// Only rows with `id >= min_log_id`.
+    pub min_log_id: Option<i64>,
+    /// Only rows of these `log_type`s. Empty matches every type.
+    pub log_types: Vec<i64>,
+    /// Drop rows older than each command's latest `process_start_initiated`,
+    /// i.e. rows from a previous run.
+    pub latest_launch_only: bool,
 }
 
 /// Insert a new process log line.
@@ -57,54 +64,8 @@ pub fn save_process_log(
 /// Returns rows in newest-first order (`timestamp desc, id desc`); callers that
 /// want chronological order should reverse the result (see [`get_process_logs`]).
 fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
-    let mut sql = String::new();
-    let mut params: Vec<Value> = Vec::new();
-
-    let has_command_names = !options.command_names.is_empty();
-
-    match (&options.project_dir, has_command_names) {
-        (Some(project_dir), true) => {
-            if options.command_names.len() == 1 {
-                sql.push_str(
-                    "select po.* from process_output po where po.project_dir = ? and po.command_name = ?",
-                );
-                params.push(Value::Text(project_dir.clone()));
-                params.push(Value::Text(options.command_names[0].clone()));
-            } else {
-                let placeholders = vec!["?"; options.command_names.len()].join(", ");
-                sql.push_str(&format!(
-                    "select po.* from process_output po where po.project_dir = ? and po.command_name in ({placeholders})"
-                ));
-                params.push(Value::Text(project_dir.clone()));
-                for name in &options.command_names {
-                    params.push(Value::Text(name.clone()));
-                }
-            }
-        }
-        (Some(project_dir), false) => {
-            sql.push_str("select po.* from process_output po where po.project_dir = ?");
-            params.push(Value::Text(project_dir.clone()));
-        }
-        (None, true) => {
-            if options.command_names.len() == 1 {
-                sql.push_str("select po.* from process_output po where po.command_name = ?");
-                params.push(Value::Text(options.command_names[0].clone()));
-            } else {
-                let placeholders = vec!["?"; options.command_names.len()].join(", ");
-                sql.push_str(&format!(
-                    "select po.* from process_output po where po.command_name in ({placeholders})"
-                ));
-                for name in &options.command_names {
-                    params.push(Value::Text(name.clone()));
-                }
-            }
-        }
-        (None, false) => {
-            // Caller error; mirrors the JS `throw`. Returns a query that yields
-            // nothing rather than panicking.
-            sql.push_str("select po.* from process_output po where 1 = 0");
-        }
-    }
+    let (scope, mut params) = scope_clause(options);
+    let mut sql = format!("select po.* from process_output po where {scope}");
 
     if let Some(since) = options.since_timestamp {
         sql.push_str(" and po.timestamp > ?");
@@ -116,6 +77,17 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
         params.push(Value::Integer(after));
     }
 
+    if let Some(min_id) = options.min_log_id {
+        sql.push_str(" and po.id >= ?");
+        params.push(Value::Integer(min_id));
+    }
+
+    push_log_type_filter(&mut sql, &mut params, &options.log_types);
+
+    if options.latest_launch_only {
+        push_latest_launch_filter(&mut sql, &mut params);
+    }
+
     sql.push_str(" order by po.timestamp desc, po.id desc");
 
     if let Some(limit) = options.limit {
@@ -124,6 +96,62 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
     }
 
     (sql, params)
+}
+
+/// The project/command part of a `where` clause over `process_output po`.
+fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
+    let mut params: Vec<Value> = Vec::new();
+    let names_clause = |params: &mut Vec<Value>| {
+        if options.command_names.len() == 1 {
+            params.push(Value::Text(options.command_names[0].clone()));
+            "po.command_name = ?".to_string()
+        } else {
+            let placeholders = vec!["?"; options.command_names.len()].join(", ");
+            for name in &options.command_names {
+                params.push(Value::Text(name.clone()));
+            }
+            format!("po.command_name in ({placeholders})")
+        }
+    };
+
+    let clause = match (&options.project_dir, options.command_names.is_empty()) {
+        (Some(project_dir), false) => {
+            params.push(Value::Text(project_dir.clone()));
+            let names = names_clause(&mut params);
+            format!("po.project_dir = ? and {names}")
+        }
+        (Some(project_dir), true) => {
+            params.push(Value::Text(project_dir.clone()));
+            "po.project_dir = ?".to_string()
+        }
+        (None, false) => names_clause(&mut params),
+        // Caller error; mirrors the JS `throw`. Yields nothing rather than panicking.
+        (None, true) => "1 = 0".to_string(),
+    };
+    (clause, params)
+}
+
+/// Keep only rows at or after the row's command's latest launch marker.
+fn push_latest_launch_filter(sql: &mut String, params: &mut Vec<Value>) {
+    sql.push_str(
+        " and po.id >= coalesce((select max(p2.id) from process_output p2 \
+         where p2.project_dir = po.project_dir and p2.command_name = po.command_name \
+         and p2.log_type = ?), 0)",
+    );
+    params.push(Value::Integer(
+        ProcessLogType::ProcessStartInitiated.as_i64(),
+    ));
+}
+
+fn push_log_type_filter(sql: &mut String, params: &mut Vec<Value>, log_types: &[i64]) {
+    if log_types.is_empty() {
+        return;
+    }
+    let placeholders = vec!["?"; log_types.len()].join(", ");
+    sql.push_str(&format!(" and po.log_type in ({placeholders})"));
+    for t in log_types {
+        params.push(Value::Integer(*t));
+    }
 }
 
 fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
@@ -186,8 +214,7 @@ pub fn get_process_logs_with_eviction_info(
             let count_sql = format!("select count(*) as total from ({inner_sql})");
             let count_refs: Vec<&dyn ToSql> =
                 count_params.iter().map(|v| v as &dyn ToSql).collect();
-            let total: i64 =
-                conn.query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))?;
+            let total: i64 = conn.query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))?;
             if total > logs.len() as i64 {
                 logs_were_evicted = true;
             }
@@ -202,6 +229,104 @@ pub fn get_process_logs_with_eviction_info(
     })
 }
 
+/// Log types that `candle logs` prints. The launch markers
+/// (`process_start_initiated`, `process_started`) render as nothing.
+fn printable_log_types() -> Vec<i64> {
+    vec![
+        ProcessLogType::Stdout.as_i64(),
+        ProcessLogType::Stderr.as_i64(),
+        ProcessLogType::ProcessStartFailed.as_i64(),
+        ProcessLogType::ProcessExited.as_i64(),
+    ]
+}
+
+/// Result of [`get_log_tail`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LogTail {
+    /// Chronological rows: the newest `limit` printable rows, plus the launch
+    /// markers a [`LatestExecutionLogFilter`](crate::log_filters::LatestExecutionLogFilter)
+    /// needs to tell this launch's rows from the previous one's.
+    pub logs: Vec<ProcessLog>,
+    /// Whether printable rows from the *latest* launch were left out by `limit`.
+    /// Rows from a previous launch are excluded up front and never count.
+    pub truncated: bool,
+}
+
+/// Fetch the last `limit` printable log rows, for `candle logs --count`.
+///
+/// The limit applies only to printable rows from each command's latest run.
+/// Counting marker rows against it made `--count 3` print two lines whenever
+/// `process_started`, which the monitor writes after the first output, fell
+/// inside the window; counting a previous run's rows did the same after a
+/// restart.
+pub fn get_log_tail(
+    conn: &Connection,
+    options: &LogSearchOptions,
+    limit: i64,
+) -> rusqlite::Result<LogTail> {
+    let printable = LogSearchOptions {
+        limit: Some(limit),
+        log_types: printable_log_types(),
+        latest_launch_only: true,
+        ..options.clone()
+    };
+    let mut logs = get_process_logs(conn, &printable)?;
+    let Some(window_min_id) = logs.iter().map(|l| l.id).min() else {
+        return Ok(LogTail::default());
+    };
+
+    // Latest launch boundary per command, even if it predates the window.
+    let (scope, mut params) = scope_clause(options);
+    let mut boundary_sql =
+        format!("select max(po.id) from process_output po where {scope} and po.log_type = ?");
+    params.push(Value::Integer(
+        ProcessLogType::ProcessStartInitiated.as_i64(),
+    ));
+    if let Some(after) = options.after_log_id {
+        boundary_sql.push_str(" and po.id > ?");
+        params.push(Value::Integer(after));
+    }
+    boundary_sql.push_str(" group by po.command_name");
+    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
+    let mut stmt = conn.prepare(&boundary_sql)?;
+    let oldest_boundary: Option<i64> = stmt
+        .query_map(refs.as_slice(), |row| row.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .min();
+
+    let markers = LogSearchOptions {
+        limit: None,
+        min_log_id: Some(oldest_boundary.map_or(window_min_id, |b| b.min(window_min_id))),
+        log_types: vec![
+            ProcessLogType::ProcessStartInitiated.as_i64(),
+            ProcessLogType::ProcessStarted.as_i64(),
+        ],
+        ..options.clone()
+    };
+    logs.extend(get_process_logs(conn, &markers)?);
+    logs.sort_by_key(|l| l.id);
+
+    // Were printable rows from the latest launch cut off by the limit?
+    let (scope, mut params) = scope_clause(options);
+    let mut count_sql =
+        format!("select count(*) from process_output po where {scope} and po.id < ?");
+    params.push(Value::Integer(window_min_id));
+    if let Some(after) = options.after_log_id {
+        count_sql.push_str(" and po.id > ?");
+        params.push(Value::Integer(after));
+    }
+    push_log_type_filter(&mut count_sql, &mut params, &printable_log_types());
+    push_latest_launch_filter(&mut count_sql, &mut params);
+    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
+    let hidden: i64 = conn.query_row(&count_sql, refs.as_slice(), |row| row.get(0))?;
+
+    Ok(LogTail {
+        logs,
+        truncated: hidden > 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,8 +338,22 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
 
         save_process_log(&conn, "api", "/proj", ProcessLogType::ProcessStarted, None).unwrap();
-        save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some("line one")).unwrap();
-        save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some("line two")).unwrap();
+        save_process_log(
+            &conn,
+            "api",
+            "/proj",
+            ProcessLogType::Stdout,
+            Some("line one"),
+        )
+        .unwrap();
+        save_process_log(
+            &conn,
+            "api",
+            "/proj",
+            ProcessLogType::Stdout,
+            Some("line two"),
+        )
+        .unwrap();
 
         let logs = get_process_logs(
             &conn,
@@ -245,8 +384,14 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
 
         for i in 0..5 {
-            save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some(&format!("l{i}")))
-                .unwrap();
+            save_process_log(
+                &conn,
+                "api",
+                "/proj",
+                ProcessLogType::Stdout,
+                Some(&format!("l{i}")),
+            )
+            .unwrap();
         }
 
         // after_log_id = 2 -> ids 3,4,5.
@@ -290,8 +435,14 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
 
         for i in 0..5 {
-            save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some(&format!("l{i}")))
-                .unwrap();
+            save_process_log(
+                &conn,
+                "api",
+                "/proj",
+                ProcessLogType::Stdout,
+                Some(&format!("l{i}")),
+            )
+            .unwrap();
         }
 
         // limit 2 with 5 rows present -> eviction detected.

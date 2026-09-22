@@ -122,6 +122,7 @@ Launch the service(s).
 If no `service names` are provided: then launch all services in the project.
 
 If the service(s) are already running then the existing instances are killed first.
+Concurrent starts of the same service are serialized, so they never leave duplicate instances.
 
 If called in interactive mode (see "interactive mode detection" below), `start` will
 then start watching the service and printing console messages. Press Ctrl-C to leave this mode.
@@ -207,7 +208,7 @@ Example:
 
 ### `candle logs [names] [--count <number>] [--start-at <id>]`
 
-Show the recent logs for the given service.
+Show the recent logs for the given service, from its most recent run.
 
 If `[name]` is not provided: Show recent logs across all services in the project directory.
 
@@ -224,6 +225,9 @@ Options:
 Kill named service(s)
 
 If no `service names` are provided: Kill all services for this project directory.
+
+Candle sends `SIGTERM` to the service and its child processes, and escalates to `SIGKILL` if the
+service is still running 5 seconds later.
 
 ### `candle restart`
 
@@ -346,9 +350,8 @@ Delete the database stored in `~/.local/state/candle`.
 
 This command can help if the database is corrupted or it needs a full SQL schema rebuild.
 
-Warning: If there are any existing processes, then running `erase-database` will leave those processes 'orphaned'
-(they will still be running but they won't be tracked by Candle). It's recommended to run `candle kill-all`
-before doing this.
+It refuses to run while Candle-managed services are still running, since erasing would leave them
+running untracked. Run `candle kill-all` first, or pass `--force` to erase anyway.
 
 # Targeting another project #
 

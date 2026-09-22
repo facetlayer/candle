@@ -110,7 +110,7 @@ pub fn command_help(command: &str) -> String {
         "remove-service" => "candle remove-service <name>   Remove a service from .candle.json".to_string(),
         "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json".to_string(),
         "clear-logs" => "candle clear-logs [name]   Clear logs for process(es)\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
-        "erase-database" => "candle erase-database   Erase the Candle database".to_string(),
+        "erase-database" => "candle erase-database   Erase the Candle database\n\nRefuses while Candle-managed processes are still running, since erasing\nwould leave them running with no way for Candle to stop them.\nRun 'candle kill-all' first.\n\nOptions:\n  --force            Erase even if processes are still running".to_string(),
         "list-docs" => "candle list-docs   List available documentation".to_string(),
         "get-doc" => "candle get-doc <name>   Display a documentation file".to_string(),
         "mcp" => "candle mcp   Enter MCP server mode".to_string(),

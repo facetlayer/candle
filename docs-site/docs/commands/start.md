@@ -21,6 +21,11 @@ The flow of running `start`:
 2. Launch and wait for the service to successfully start.
 3. Wait for a 'grace period' (default of 500ms) to make sure the service stays running.
 
+Starts of the same service are serialized. If two `start` commands for one service run at
+the same time, for example from parallel agents or scripts, the second waits for the first
+to finish and then restarts it, so you always end up with one instance. Two racing
+`check-start` commands launch the service once.
+
 What happens next depends on how `start` was invoked:
 
 - **Interactive mode** (a human at a terminal): `start` stays attached and streams

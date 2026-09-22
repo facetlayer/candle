@@ -18,9 +18,9 @@ use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::dirs::candle_db_path;
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
-use crate::monitor::MonitorLaunchInfo;
 use crate::logs::process_logs::save_process_log;
 use crate::logs::{LogIterator, ProcessLogType};
+use crate::monitor::MonitorLaunchInfo;
 use crate::output;
 use crate::process_alive::{filter_alive_processes, is_process_alive};
 use crate::start::launch::launch_monitor;
@@ -107,11 +107,19 @@ fn wait_for_pids_to_exit(pids: &[i64], timeout: Duration) -> bool {
 /// Launch a single service as a detached subprocess and wait for it to report a
 /// start result. See module docs for the full sequence.
 pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartResult, CandleError> {
+    // 0. Serialize starts of this service. Held until return, so a concurrent
+    //    start sees this launch's row (and kills it, or check-start skips it)
+    //    instead of racing it into a duplicate instance.
+    let _start_lock = crate::start::service_lock::acquire(&opts.project_dir, &opts.command_name)
+        .map_err(|e| CandleError::Generic(format!("Failed to acquire start lock: {e}")))?;
+
     // 1. check-start dedup — runs BEFORE config resolution so it works for
     //    transient names that aren't in the config file.
     if opts.check_start {
         if opts.command_name.is_empty() {
-            return Err(CandleError::UsageError("Command name is required".to_string()));
+            return Err(CandleError::UsageError(
+                "Command name is required".to_string(),
+            ));
         }
         let existing = find_processes_by_command_name_and_project_dir(
             conn,
@@ -142,7 +150,9 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     let service: ServiceConfig = if let Some(shell) = &opts.shell {
         // Transient process.
         if opts.command_name.is_empty() {
-            return Err(CandleError::UsageError("Command name is required".to_string()));
+            return Err(CandleError::UsageError(
+                "Command name is required".to_string(),
+            ));
         }
         if let Some(root) = &opts.root {
             if !is_valid_root_path(root) {
@@ -177,7 +187,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     )
     .map_err(db_err)?;
 
-    // `kill_process_tree` only fires SIGTERM; it does not wait. If we recorded the
+    // The kill above waits for the old shell (escalating to SIGKILL), but its
+    // monitor exits a moment later. If we recorded the
     // new launch while the old instance was still shutting down, the old shell's
     // dying output and its monitor's `process_exited` row would be written to the
     // log table *after* the new `process_start_initiated` row — and log consumers,
@@ -225,7 +236,9 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
                 break 'watch;
             }
             if log.log_type == ProcessLogType::ProcessStartFailed.as_i64() {
-                let recent = initial_log_position.get_next_logs(conn, None).map_err(db_err)?;
+                let recent = initial_log_position
+                    .get_next_logs(conn, None)
+                    .map_err(db_err)?;
                 let recent_logs = recent
                     .iter()
                     .map(|l| l.content.clone().unwrap_or_default())

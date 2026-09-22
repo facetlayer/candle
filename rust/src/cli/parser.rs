@@ -76,6 +76,7 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         ],
         "kill" | "clear-logs" | "list-ports" | "open-browser" => &[("project-dir", true)],
         "find-orphans" => &[("json", false)],
+        "erase-database" => &[("force", false)],
         _ => &[],
     }
 }

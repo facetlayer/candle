@@ -11,7 +11,8 @@
 //! 5-minute-stale paths delete the row outright.
 
 use std::collections::HashSet;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -20,7 +21,16 @@ use crate::db::process_table::{
     find_running_processes_by_project_dir, update_process_killed_at, ProcessEntry,
 };
 use crate::output;
+use crate::process_alive::is_process_alive;
 use crate::process_tree::get_process_tree;
+
+/// How long a signalled process gets to exit on `SIGTERM` before the tree is
+/// escalated to `SIGKILL`.
+pub const KILL_GRACE_PERIOD: Duration = Duration::from_secs(5);
+/// How long to wait for a `SIGKILL`ed root to disappear before giving up.
+const SIGKILL_WAIT: Duration = Duration::from_secs(1);
+/// Poll interval while waiting for a signalled process to exit.
+const KILL_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// How long after `killed_at` an entry is considered stale and hard-deleted on a
 /// repeat kill (5 minutes), matching `killOneRunningProcess`.
@@ -49,7 +59,8 @@ fn now_unix_seconds() -> i64 {
 ///   pursued.
 /// - Order is deepest-descendant-first, root shell last.
 /// - `ESRCH` (no such process) is ignored; any other errno is a warning + error.
-/// - There is **no wait/timeout**: SIGTERM is fired and the function returns.
+/// - There is **no wait/timeout** here; see [`kill_process_tree_and_wait`] for
+///   the grace-period + `SIGKILL` escalation used by `kill`.
 ///
 /// # Panics
 /// Panics on `pid <= 0` (an internal-invariant violation; callers guard a
@@ -96,6 +107,65 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
     }
 }
 
+/// Wait until `pid` is gone or `timeout` elapses. Returns whether it exited.
+fn wait_for_exit(pid: i64, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !is_process_alive(pid) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(KILL_POLL_INTERVAL);
+    }
+}
+
+/// `SIGTERM` the tree rooted at `pid`, wait up to `grace` for the root to exit,
+/// and escalate to `SIGKILL` on the whole (re-snapshotted) tree if it hasn't.
+///
+/// A service that traps or ignores `SIGTERM` would otherwise keep running while
+/// Candle's records said it was dead. Returns `Escalated` when `SIGKILL` was
+/// needed, so callers can tell the user. Other outcomes match
+/// [`kill_process_tree`].
+pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
+    match kill_process_tree(pid) {
+        KillResult::Success => {}
+        KillResult::ProcessNotFound => return KillOutcome::ProcessNotFound,
+        KillResult::Error => return KillOutcome::Error,
+    }
+
+    if wait_for_exit(pid, grace) {
+        return KillOutcome::Terminated;
+    }
+
+    // Children first again: a re-snapshot picks up anything forked since the
+    // SIGTERM pass.
+    for child_pid in get_process_tree(pid).into_iter().rev() {
+        unsafe {
+            libc::kill(child_pid as libc::pid_t, libc::SIGKILL);
+        }
+    }
+
+    if wait_for_exit(pid, SIGKILL_WAIT) {
+        KillOutcome::Escalated
+    } else {
+        KillOutcome::Error
+    }
+}
+
+/// Outcome of [`kill_process_tree_and_wait`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KillOutcome {
+    /// Exited on `SIGTERM` within the grace period.
+    Terminated,
+    /// Ignored `SIGTERM`; exited only after `SIGKILL`.
+    Escalated,
+    ProcessNotFound,
+    /// Could not be signalled, or survived even `SIGKILL`.
+    Error,
+}
+
 /// Kill one process entry and update its database row accordingly.
 ///
 /// Mirrors `killOneRunningProcess`. A falsy (zero) PID is a no-op. Otherwise:
@@ -119,9 +189,17 @@ pub fn kill_one_running_process(
         return Ok(false);
     }
 
-    let killed = match kill_process_tree(entry.pid) {
-        KillResult::Success => {
+    let killed = match kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD) {
+        outcome @ (KillOutcome::Terminated | KillOutcome::Escalated) => {
             if !quiet {
+                if outcome == KillOutcome::Escalated {
+                    output::err(&format!(
+                        "[Process '{}' (PID {}) ignored SIGTERM for {}s; sent SIGKILL]",
+                        entry.command_name,
+                        entry.pid,
+                        KILL_GRACE_PERIOD.as_secs()
+                    ));
+                }
                 output::out(&format!(
                     "[Killed '{}' process with PID: {}]",
                     entry.command_name, entry.pid
@@ -153,7 +231,7 @@ pub fn kill_one_running_process(
 
             true
         }
-        KillResult::ProcessNotFound => {
+        KillOutcome::ProcessNotFound => {
             if !quiet {
                 output::err(&format!(
                     "[Cleaning up stale process entry for '{}' with PID: {}]",
@@ -163,7 +241,7 @@ pub fn kill_one_running_process(
             delete_process_entry(conn, &entry.command_name, &entry.project_dir, entry.pid)?;
             false
         }
-        KillResult::Error => {
+        KillOutcome::Error => {
             if !quiet {
                 // Note: Node emits this on stdout (console.log), not stderr.
                 output::out(&format!(
@@ -276,9 +354,7 @@ pub fn handle_kill_all(conn: &Connection, quiet: bool) -> rusqlite::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::process_table::{
-        create_process_entry, find_all_processes, CreateProcessEntry,
-    };
+    use crate::db::process_table::{create_process_entry, find_all_processes, CreateProcessEntry};
     use crate::db::{get_database, temp_db_dir};
     use crate::output::capture;
 
@@ -305,7 +381,10 @@ mod tests {
 
     #[test]
     fn dead_pid_reports_not_found() {
-        assert_eq!(kill_process_tree(2_000_000_000), KillResult::ProcessNotFound);
+        assert_eq!(
+            kill_process_tree(2_000_000_000),
+            KillResult::ProcessNotFound
+        );
     }
 
     #[test]
@@ -367,7 +446,10 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
 
         let (_, captured) = capture(|| handle_kill_all(&conn, false).unwrap());
-        assert_eq!(captured.stdout, vec!["No running processes found".to_string()]);
+        assert_eq!(
+            captured.stdout,
+            vec!["No running processes found".to_string()]
+        );
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

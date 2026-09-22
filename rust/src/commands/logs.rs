@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 use crate::log_filters::{LatestExecutionLogFilter, ShowPastLogsBehavior};
 use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
-use crate::logs::process_logs::{get_process_logs_with_eviction_info, LogSearchOptions};
+use crate::logs::process_logs::{get_log_tail, LogSearchOptions};
 use crate::output;
 
 /// Display logs for the given command(s) in the project.
@@ -25,20 +25,20 @@ pub fn handle_logs_command(
 ) {
     let is_blended_mode = command_names.len() != 1;
 
-    // Get logs and filter to only show logs from the most recent process run.
-    let result = get_process_logs_with_eviction_info(
+    // The newest `limit` printable rows, plus the launch markers the filter
+    // needs to drop rows from a previous run.
+    let result = get_log_tail(
         conn,
         &LogSearchOptions {
             project_dir: Some(project_dir.to_string()),
             command_names: command_names.to_vec(),
-            limit: Some(limit),
             after_log_id: start_at_id,
             ..Default::default()
         },
+        limit,
     )
     .unwrap_or_default();
     let all_logs = result.logs;
-    let logs_were_evicted = result.logs_were_evicted;
 
     let mut log_filter =
         LatestExecutionLogFilter::new(ShowPastLogsBehavior::ShowLogsFromPreviousLaunch, None);
@@ -60,9 +60,17 @@ pub fn handle_logs_command(
         return;
     }
 
-    // Show eviction indicator if older logs were removed.
-    if logs_were_evicted {
-        output::out("-- older logs have been removed --");
+    // Only when --count cut off lines from this run; a previous run's lines
+    // are hidden on purpose and aren't worth a hint.
+    if result.truncated {
+        let what = if limit == 1 {
+            "line".to_string()
+        } else {
+            format!("{limit} lines")
+        };
+        output::out(&format!(
+            "-- showing the last {what}; use --count to see more --"
+        ));
     }
 
     // Display logs with prefix in blended mode.
@@ -126,8 +134,14 @@ mod tests {
         let dir = temp_db_dir("logs-single-rows");
         let conn = get_database(Some(&dir)).unwrap();
 
-        save_process_log(&conn, "svc", "/proj", ProcessLogType::ProcessStartInitiated, None)
-            .unwrap();
+        save_process_log(
+            &conn,
+            "svc",
+            "/proj",
+            ProcessLogType::ProcessStartInitiated,
+            None,
+        )
+        .unwrap();
         save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("alpha")).unwrap();
         save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("beta")).unwrap();
 
@@ -136,7 +150,10 @@ mod tests {
         });
 
         // Start lines are hidden; no eviction line.
-        assert_eq!(captured.stdout, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            captured.stdout,
+            vec!["alpha".to_string(), "beta".to_string()]
+        );
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

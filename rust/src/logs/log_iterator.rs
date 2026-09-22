@@ -45,6 +45,7 @@ impl LogIterator {
             limit,
             since_timestamp: None,
             after_log_id: self.current_log_id,
+            ..Default::default()
         }
     }
 
@@ -59,6 +60,7 @@ impl LogIterator {
             limit: Some(1),
             since_timestamp: None,
             after_log_id: None,
+            ..Default::default()
         };
         let logs = get_process_logs(conn, &options)?;
         if let Some(latest) = logs.last() {
@@ -225,7 +227,8 @@ mod tests {
         assert_eq!(it.current_log_id, Some(5));
 
         // A per-call override takes precedence over the constructor limit.
-        let mut it2 = LogIterator::with_limit("/proj".to_string(), vec!["api".to_string()], Some(2));
+        let mut it2 =
+            LogIterator::with_limit("/proj".to_string(), vec!["api".to_string()], Some(2));
         let one = it2.get_next_logs(&conn, Some(1)).unwrap();
         assert_eq!(one.len(), 1);
         assert_eq!(one[0].id, 5);
