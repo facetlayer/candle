@@ -17,8 +17,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 use crate::db::process_table::{
-    delete_process_entry, find_all_processes, find_processes_by_command_name_and_project_dir,
-    find_running_processes_by_project_dir, update_process_killed_at, ProcessEntry,
+    clear_process_killed_at, delete_process_entry, find_all_processes,
+    find_processes_by_command_name_and_project_dir, find_running_processes_by_project_dir,
+    update_process_killed_at, ProcessEntry,
 };
 use crate::output;
 use crate::process_alive::is_process_alive;
@@ -181,7 +182,9 @@ pub enum KillOutcome {
 
 /// Kill one process entry and update its database row accordingly.
 ///
-/// Mirrors `killOneRunningProcess`. A falsy (zero) PID is a no-op. Otherwise:
+/// Mirrors `killOneRunningProcess`. A falsy (zero) PID is a no-op. Otherwise
+/// the row is marked `killed_at = now` *before* the process is signalled (so the
+/// monitor can tell a deliberate stop from a failed start), and then:
 /// - **Success**: print `[Killed ...]` (unless `quiet`); then if the row was
 ///   already marked killed over 5 minutes ago, warn + hard-delete it; otherwise
 ///   mark `killed_at = now`.
@@ -189,8 +192,8 @@ pub enum KillOutcome {
 ///   warning is printed only for a row that still claimed to be running; a row
 ///   already marked killed is expected to be gone (e.g. the second kill inside
 ///   `restart`), so sweeping it is silent.
-/// - **Error**: print `Error killing process ...` (to stdout, matching Node) and
-///   leave the row unchanged.
+/// - **Error**: print `Could not kill process ...` and undo the early mark,
+///   leaving the row as it was.
 ///
 /// Returns whether this was a real kill — i.e. there was a live process to
 /// signal. Sweeping a leftover row whose OS process had already exited returns
@@ -203,6 +206,19 @@ pub fn kill_one_running_process(
     // Falsy PID (Node `if (process.pid)`): nothing to kill.
     if entry.pid == 0 {
         return Ok(false);
+    }
+
+    // Mark the row killed *before* signalling. The monitor checks this when its
+    // process dies during the startup grace period, to tell a deliberate stop
+    // (kill / restart) from a failed start; marking afterwards would race it.
+    if entry.killed_at.is_none() {
+        update_process_killed_at(
+            conn,
+            &entry.command_name,
+            &entry.project_dir,
+            entry.pid,
+            now_unix_seconds(),
+        )?;
     }
 
     let killed = match kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD) {
@@ -263,6 +279,11 @@ pub fn kill_one_running_process(
                     "Could not kill process '{}' with PID: {}",
                     entry.command_name, entry.pid
                 ));
+            }
+
+            // It is still running: undo the mark set above.
+            if entry.killed_at.is_none() {
+                clear_process_killed_at(conn, &entry.command_name, &entry.project_dir, entry.pid)?;
             }
 
             // The process was there but would not die; the error message above

@@ -35,7 +35,7 @@ $ candle logs --count 3
 [api] GET /api/users 200
 ```
 
-Naming a service that isn't configured, and that has no stored logs, is an error: `logs` prints `No service '<name>' configured` and exits with status 1.
+Naming a service that isn't configured, and that has no stored logs, is an error: `logs` prints `No service '<name>' configured for directory: <dir>` and exits with status 1.
 
 ## Arguments
 

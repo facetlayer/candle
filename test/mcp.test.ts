@@ -253,4 +253,43 @@ describe('MCP Integration Tests', () => {
         await app.close();
     });
 
+    it('GetLogs errors for a service that is not configured', async () => {
+        app = workspace.createMcpApp();
+
+        const result = await app.callTool('GetLogs', { name: 'nope' });
+        expect(result.isError).toBe(true);
+        expect(result.getTextContent()).toContain(
+            `Error: No service 'nope' configured for directory: ${workspace.dbDir}`,
+        );
+
+        await app.close();
+    });
+
+    it('GetLogs still works for a finished transient service', async () => {
+        app = workspace.createMcpApp();
+
+        const start = await app.callTool('StartTransientService', {
+            name: 'mcp-finished',
+            shell: 'node ../../sampleServers/burstServer.js 3 mcpfinished',
+        });
+        await expect(start).toBeSuccessful();
+        await app.callTool('KillService', { name: 'mcp-finished' });
+
+        const logs = await app.callTool('GetLogs', { name: 'mcp-finished' });
+        await expect(logs).toBeSuccessful();
+
+        await app.close();
+    });
+
+    it('KillService errors for a service that is not configured', async () => {
+        app = workspace.createMcpApp();
+
+        const result = await app.callTool('KillService', { name: 'nope' });
+        expect(result.isError).toBe(true);
+        expect(result.getTextContent()).toContain(
+            `Error: No service 'nope' configured for directory: ${workspace.dbDir}`,
+        );
+
+        await app.close();
+    });
 });

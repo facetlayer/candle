@@ -21,6 +21,7 @@ use crate::config::{find_project_dir, get_service_config_by_name};
 use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::errors::CandleError;
 use crate::logs::process_logs::has_logs_for_command;
+use crate::project_scope::ProjectScope;
 
 /// Validate that each name refers to a known service for the project, erroring
 /// (as a usage error) on the first that does not.
@@ -91,13 +92,25 @@ pub fn assert_known_service_names(
                 Err(e) => return Err(e),
             };
         if !configured {
-            return Err(CandleError::MissingServiceWithName {
-                command_name: name.clone(),
-                cwd: project_dir.to_string(),
-            });
+            return Err(CandleError::unknown_service(name, project_dir));
         }
     }
     Ok(())
+}
+
+/// [`assert_known_service_names`] for a command's [`ProjectScope`]: config is
+/// read from the scope's base directory, and only consulted when the project
+/// has a config file of its own (an explicit `--project-dir` / MCP `projectDir`
+/// may name a project that is gone). Shared by the CLI (`logs`, `wait-for-log`,
+/// `clear-logs`) and the MCP `GetLogs` tool so they accept the same names.
+pub fn assert_known_service_names_in_scope(
+    conn: &Connection,
+    scope: &ProjectScope,
+    project_dir: &str,
+    names: &[String],
+) -> Result<(), CandleError> {
+    let check_config = scope.require_own_config().is_ok();
+    assert_known_service_names(conn, scope.base_dir(), project_dir, names, check_config)
 }
 
 #[cfg(test)]
@@ -167,6 +180,45 @@ mod tests {
         .unwrap();
 
         assert!(assert_valid_command_names(&conn, proj.path(), &["transient".to_string()]).is_ok());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&db);
+    }
+
+    #[test]
+    fn known_names_in_scope_accept_config_logs_and_rows() {
+        use crate::logs::{save_process_log, ProcessLogType};
+
+        let proj = TempDir::new();
+        write_config(proj.path());
+        let db = temp_db_dir("assert-known-scope");
+        let conn = get_database(Some(&db)).unwrap();
+        let project_dir = proj.path().display().to_string();
+        let scope = ProjectScope::new(proj.path().to_path_buf(), None);
+        let check = |name: &str| {
+            assert_known_service_names_in_scope(&conn, &scope, &project_dir, &[name.to_string()])
+        };
+
+        // Configured.
+        assert!(check("echo").is_ok());
+
+        // A finished transient service: only stored logs remain.
+        save_process_log(
+            &conn,
+            "done",
+            &project_dir,
+            ProcessLogType::Stdout,
+            Some("x"),
+        )
+        .unwrap();
+        assert!(check("done").is_ok());
+
+        // Unknown: the shared full-form error.
+        let err = check("ghost").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("No service 'ghost' configured for directory: {project_dir}")
+        );
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&db);

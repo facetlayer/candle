@@ -325,7 +325,7 @@ Algorithm:
 ### Rust implementation
 `fn handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms) -> WaitForLogResult { success: bool }` (synchronous; the TS failure `message` was never read, so it is dropped). It uses the logs subsystem (`LogIterator::with_limit(.., Some(1000))`, `LatestExecutionLogFilter`, `get_process_logs`, `console_log_row`, `ProcessLogType`) and `std::thread::sleep` for the 200ms poll. `print_recent_logs` does not call `check_latest_launch_status` on its fresh filter; the filter picks up the launch boundary as it streams.
 
-`cmd_wait_for_log` in `main.rs`: `--message` is required (else stderr `Missing required argument: message`, exit 1); `--timeout` is in **seconds** (default 30, fractional allowed) and converted to ms; names are not validated; a `success: false` result exits 1.
+`cmd_wait_for_log` in `main.rs`: `--message` is required (else stderr `Missing required argument: message`, exit 1); `--timeout` is in **seconds** (default 30, fractional allowed) and converted to ms; names are validated with `assert_known_service_names_in_scope` (unknown → `No service '<name>' configured for directory: <dir>`, exit 1); a `success: false` result exits 1.
 
 ## 9. External npm dependencies & Rust crate equivalents
 

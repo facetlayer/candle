@@ -94,6 +94,39 @@ pub fn update_process_killed_at(
     Ok(())
 }
 
+/// Clear `killed_at` on a row, undoing [`update_process_killed_at`] when the
+/// kill it announced did not happen.
+pub fn clear_process_killed_at(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+    pid: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "update processes set killed_at = null where command_name = ?1 and project_dir = ?2 and pid = ?3",
+        params![command_name, project_dir, pid],
+    )?;
+    Ok(())
+}
+
+/// The row keyed on `(command_name, project_dir, pid)`, if it still exists.
+pub fn find_process_entry(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+    pid: i64,
+) -> rusqlite::Result<Option<ProcessEntry>> {
+    Ok(query_entries(
+        conn,
+        &format!(
+            "select {SELECT_COLS} from processes where command_name = ?1 and project_dir = ?2 and pid = ?3"
+        ),
+        params![command_name, project_dir, pid],
+    )?
+    .into_iter()
+    .next())
+}
+
 /// Delete a process row keyed on `(command_name, project_dir, pid)`.
 pub fn delete_process_entry(
     conn: &Connection,

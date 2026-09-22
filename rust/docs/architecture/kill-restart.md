@@ -77,7 +77,8 @@ counter (see above): the terminated/escalated and error outcomes return `true`, 
 
 Logic:
 1. If `entry.pid == 0`, **do nothing** (no output, no DB change; returns `false`).
-2. `outcome = kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD)` (see §5.2). Outcomes:
+2. If the row has no `killed_at`, mark it `killed_at = now_secs` **before** signalling, so a monitor whose process dies during its startup grace period can tell the stop was deliberate (see start-flow.md, monitor step 5) and doesn't log a failed start that `ps` would show as `FAILED`.
+3. `outcome = kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD)` (see §5.2). Outcomes:
 
    **`Terminated` / `Escalated`:**
    - If `!quiet` and the outcome is `Escalated`: print to stderr `[Process '<command_name>' (PID <pid>) did not exit 5s after SIGTERM; sent SIGKILL]` (before the `[Killed ...]` line).
@@ -93,6 +94,7 @@ Logic:
 
    **`Error`** (a signal failed, or a process survived even `SIGKILL`):
    - If `!quiet`: print `Error killing process '<command_name>' with PID: <pid>` (note: via stdout, not stderr).
+   - Undo the early `killed_at` mark from step 2 (`clear_process_killed_at`), since the process is still running.
    - **No DB change.**
 
 Subtle: in the success path, the row is normally only *marked* `killed_at`, not deleted. Actual deletion is done later by the monitor on child exit, or by `cleanup_stale_processes` (§6). The success path does not delete except in the stale branch.

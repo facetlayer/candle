@@ -38,6 +38,8 @@ Get recent logs for a specific service.
 - `limit` (number, optional) - Maximum number of log lines to return (default: 200)
 - `projectDir` (string, optional) - Project directory for cross-directory access
 
+A name that isn't configured in the project, and has no stored logs or process, is an error: `No service '<name>' configured for directory: <dir>`, the same as `candle logs`. A finished transient service still has its logs, so its name keeps working.
+
 When earlier lines from the latest run were left out, the output starts with a hint to pass a larger `limit`.
 
 ### StartService
@@ -62,6 +64,8 @@ Kill a running service.
 
 **Parameters:**
 - `name` (string, required) - Name of the service to kill
+
+An unknown name is an error, `No service '<name>' configured for directory: <dir>`, like `candle kill`.
 
 ### RestartService
 

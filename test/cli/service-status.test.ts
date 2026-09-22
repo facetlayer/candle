@@ -74,6 +74,64 @@ describe('service status and directories', () => {
         });
     });
 
+    describe('failed starts', () => {
+        beforeAll(async () => {
+            for (const name of ['missing-root', 'self-signal', 'start-exit']) {
+                const result = await workspace.runCli(['start', name], { ignoreExitCode: true });
+                expect(result.failed(), `start ${name} should fail`).toBe(true);
+            }
+        });
+
+        it('ps shows FAILED for a start that failed without an exit code', async () => {
+            const output = (await workspace.runCli(['ps'])).stdoutAsString();
+            expect(rowFor(output, 'missing-root')).toContain('FAILED');
+            expect(rowFor(output, 'self-signal')).toContain('FAILED');
+        });
+
+        it('a start that exited non-zero keeps EXITED (<code>)', async () => {
+            const output = (await workspace.runCli(['ps'])).stdoutAsString();
+            expect(rowFor(output, 'start-exit')).toContain('EXITED (4)');
+        });
+
+        it('list shows FAILED too', async () => {
+            const result = await workspace.runCli(['list', 'missing-root']);
+            expect(result.stdoutAsString().split('\n')[0]).toBe('missing-root  FAILED');
+        });
+
+        it('--json has status FAILED and a null exitCode', async () => {
+            const rows = await listJson(['ps']);
+            for (const name of ['missing-root', 'self-signal']) {
+                const row = jsonRowFor(rows, name);
+                expect(row.status).toBe('FAILED');
+                expect(row.exitCode).toBeNull();
+                expect(row.pid).toBeNull();
+            }
+            expect(jsonRowFor(rows, 'start-exit').exitCode).toBe(4);
+        });
+
+        it('logs explains why the start failed', async () => {
+            const result = await workspace.runCli(['logs', 'missing-root']);
+            expect(result.stdoutAsString()).toContain('root directory does not exist');
+        });
+
+        it('a deliberate kill, even during startup, is not FAILED', async () => {
+            const starting = workspace.runCli(['start', 'killed-early'], { ignoreExitCode: true });
+            // Kill as soon as the monitor has registered the process.
+            for (let i = 0; i < 100; i++) {
+                const row = jsonRowFor(await listJson(['ps']), 'killed-early');
+                if (row.pid !== null) break;
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            await workspace.runCli(['kill', 'killed-early'], { ignoreExitCode: true });
+            await starting;
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            const row = jsonRowFor(await listJson(['ps']), 'killed-early');
+            expect(row.status).toBe('not running');
+            expect(row.exitCode).toBeNull();
+        });
+    });
+
     describe('list --json schema', () => {
         it('a stopped service has pid null and every key present', async () => {
             const idle = jsonRowFor(await listJson(['list']), 'idle');

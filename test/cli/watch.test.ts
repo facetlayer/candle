@@ -7,11 +7,20 @@ afterAll(() => workspace.cleanup());
 
 describe('CLI Watch Command', () => {
   it('fails when the named process is not running', async () => {
-    // 'web' is configured but has not been started in this test.
-    const result = await workspace.runCli(['watch', 'not-started-name'], { ignoreExitCode: true });
+    // 'echo' is configured but has not been started in this test.
+    const result = await workspace.runCli(['watch', 'echo'], { ignoreExitCode: true });
 
     expect(result.failed()).toBe(true);
     expect(result.stderrAsString()).toContain("not running");
+  });
+
+  it('fails with the shared error for a name that is not configured', async () => {
+    const result = await workspace.runCli(['watch', 'not-a-service'], { ignoreExitCode: true });
+
+    expect(result.failed()).toBe(true);
+    expect(result.stderrAsString()).toContain(
+      `No service 'not-a-service' configured for directory: ${workspace.dbDir}`,
+    );
   });
 
   it('succeeds with no names even when nothing is running', async () => {

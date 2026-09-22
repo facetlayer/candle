@@ -27,7 +27,7 @@ use candle::commands::open_browser::{format_open_browser_output, handle_open_bro
 use candle::commands::restart::handle_restart;
 use candle::commands::wait_for_log::handle_wait_for_log;
 use candle::commands::watch::{handle_watch, watch_started_services};
-use candle::commands::{assert_known_service_names, assert_valid_command_names};
+use candle::commands::{assert_known_service_names_in_scope, assert_valid_command_names};
 use candle::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
@@ -424,9 +424,15 @@ fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    let output = match handle_list(&conn, scope.base_dir(), show_all)
-        .and_then(|output| filter_by_service_names(output, &args.positionals))
-    {
+    // `list-all` is system-wide, so an unknown name there has no project to name.
+    let project_dir = if show_all || args.positionals.is_empty() {
+        None
+    } else {
+        Some(project_dir_or_exit(&scope))
+    };
+    let output = match handle_list(&conn, scope.base_dir(), show_all).and_then(|output| {
+        filter_by_service_names(output, &args.positionals, project_dir.as_deref())
+    }) {
         Ok(output) => output,
         Err(e) => fail_with(&e),
     };
@@ -483,10 +489,7 @@ fn exit_on_unknown_service_names(
     project_dir: &str,
     names: &[String],
 ) {
-    let check_config = scope.require_own_config().is_ok();
-    if let Err(e) =
-        assert_known_service_names(conn, scope.base_dir(), project_dir, names, check_config)
-    {
+    if let Err(e) = assert_known_service_names_in_scope(conn, scope, project_dir, names) {
         fail_with(&e);
     }
 }
@@ -516,12 +519,14 @@ fn cmd_logs(args: &CommandArgs) {
 
 /// `clear-logs`: delete stored output for the named command(s) in the project.
 fn cmd_clear_logs(args: &CommandArgs) {
-    let project_dir = project_dir_or_exit(&scope_of(args));
+    let scope = scope_of(args);
+    let project_dir = project_dir_or_exit(&scope);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    // Don't validate command names.
+    // Same rule as `logs`: stored logs, a process row, or a config entry.
+    exit_on_unknown_service_names(&conn, &scope, &project_dir, &args.positionals);
 
     match handle_clear_logs_command(&conn, &project_dir, &args.positionals) {
         Ok(()) => {}
@@ -578,6 +583,9 @@ fn cmd_watch(args: &CommandArgs) {
     }
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
+    if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
+        fail_with(&e);
+    }
     let exit_after_ms: Option<u64> = args.value("exit-after-ms").and_then(|s| s.parse().ok());
     match handle_watch(&conn, scope.base_dir(), &args.positionals, exit_after_ms) {
         Ok(()) => {}

@@ -22,9 +22,12 @@ use rusqlite::Connection;
 
 use crate::db::cleanup::maybe_run_cleanup;
 use crate::db::open_database_at;
-use crate::db::process_table::{create_process_entry, delete_process_entry, CreateProcessEntry};
+use crate::db::process_table::{
+    create_process_entry, delete_process_entry, find_process_entry, CreateProcessEntry,
+};
 use crate::db::stdin_messages::{clear_stdin_messages, pop_stdin_message};
 use crate::debug::debug_log;
+use crate::logs::log_type::STOPPED_WHILE_STARTING_MESSAGE;
 use crate::logs::process_logs::save_process_log;
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
@@ -33,9 +36,12 @@ const GRACE_PERIOD_MS: u64 = 500;
 const STDIN_POLL_INTERVAL_MS: u64 = 500;
 const CLEANUP_INTERVAL_MS: u128 = 60 * 1000;
 /// After the child exits, how long to keep collecting output the reader threads
-/// haven't forwarded yet. Bounded because a background grandchild can inherit
-/// the pipes and hold them open indefinitely.
-const POST_EXIT_DRAIN_MS: u64 = 2000;
+/// haven't forwarded yet. Normally both pipes close right after the exit and
+/// the drain ends at once; the timeout only matters when a background
+/// grandchild inherited the pipes and holds them open, possibly forever. Losing
+/// a few lines written after the timeout in that case is acceptable, and
+/// keeping it short means the exit (and `ps` / `kill`) isn't held up.
+const POST_EXIT_DRAIN_MS: u64 = 500;
 
 /// Events forwarded from the reader / wait threads to the supervisor.
 enum LineEvent {
@@ -108,11 +114,25 @@ fn drain_after_exit(
 }
 
 /// Human-readable message for a process that died during the startup grace
-/// period.
-fn start_failed_message(code: Option<i32>) -> String {
+/// period. `stopped_by_candle` is set when Candle itself signalled it (see
+/// [`stopped_by_candle`]); that is a deliberate stop, not a failed start.
+fn start_failed_message(code: Option<i32>, stopped_by_candle: bool) -> String {
     match code {
         Some(c) => format!("Process failed to start: exited with code {c}"),
+        None if stopped_by_candle => STOPPED_WHILE_STARTING_MESSAGE.to_string(),
         None => "Process failed to start: stopped by a signal".to_string(),
+    }
+}
+
+/// Whether Candle stopped this process on purpose. `kill` marks the row
+/// `killed_at` before it sends any signal, and cleanup / `erase-database`
+/// delete rows outright, so a row that is marked killed or already gone means
+/// a deliberate stop. Only this monitor otherwise removes its own row.
+fn stopped_by_candle(conn: &Connection, command_name: &str, project_dir: &str, pid: i64) -> bool {
+    match find_process_entry(conn, command_name, project_dir, pid) {
+        Ok(Some(entry)) => entry.killed_at.is_some(),
+        Ok(None) => true,
+        Err(_) => false,
     }
 }
 
@@ -340,7 +360,11 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             &command_name,
             &project_dir,
             ProcessLogType::ProcessStartFailed,
-            Some(&start_failed_message(exit_code)),
+            Some(&start_failed_message(
+                exit_code,
+                exit_code.is_none()
+                    && stopped_by_candle(&conn, &command_name, &project_dir, child_pid),
+            )),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
         done.store(true, Ordering::Relaxed);
@@ -479,5 +503,63 @@ mod tests {
         assert_eq!(saved, 1);
         assert!(start.elapsed() < Duration::from_secs(2));
         drop(tx);
+    }
+
+    #[test]
+    fn post_exit_drain_is_bounded_to_half_a_second() {
+        assert_eq!(POST_EXIT_DRAIN_MS, 500);
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        let start = Instant::now();
+        drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |_| {});
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(450), "{elapsed:?}");
+        assert!(elapsed < Duration::from_millis(1500), "{elapsed:?}");
+        drop(tx);
+    }
+
+    #[test]
+    fn start_failed_message_distinguishes_a_deliberate_stop() {
+        assert_eq!(
+            start_failed_message(Some(2), false),
+            "Process failed to start: exited with code 2"
+        );
+        assert_eq!(
+            start_failed_message(None, false),
+            "Process failed to start: stopped by a signal"
+        );
+        assert_eq!(
+            start_failed_message(None, true),
+            STOPPED_WHILE_STARTING_MESSAGE
+        );
+    }
+
+    #[test]
+    fn stopped_by_candle_reads_the_kill_mark() {
+        use crate::db::process_table::update_process_killed_at;
+        use crate::db::{get_database, temp_db_dir};
+
+        let dir = temp_db_dir("monitor-stopped-by-candle");
+        let conn = get_database(Some(&dir)).unwrap();
+        create_process_entry(
+            &conn,
+            &CreateProcessEntry {
+                command_name: "svc".to_string(),
+                project_dir: "/proj".to_string(),
+                pid: 4242,
+                log_collector_pid: None,
+                shell: None,
+                root: None,
+            },
+        )
+        .unwrap();
+
+        assert!(!stopped_by_candle(&conn, "svc", "/proj", 4242));
+        update_process_killed_at(&conn, "svc", "/proj", 4242, 1).unwrap();
+        assert!(stopped_by_candle(&conn, "svc", "/proj", 4242));
+        delete_process_entry(&conn, "svc", "/proj", 4242).unwrap();
+        assert!(stopped_by_candle(&conn, "svc", "/proj", 4242));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

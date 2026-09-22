@@ -85,10 +85,13 @@ describe('CLI Clear-Logs Command', () => {
     });
 
     describe('clear-logs for unknown service', () => {
-        it('should succeed with no logs to clear message', async () => {
-            const result = await workspace.runCli(['clear-logs', 'nonexistent-service']);
+        it('errors like logs does', async () => {
+            const result = await workspace.runCli(['clear-logs', 'nonexistent-service'], { ignoreExitCode: true });
 
-            expect(result.stdoutAsString()).toContain('No logs found to clear');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderrAsString()).toContain(
+                `No service 'nonexistent-service' configured for directory: ${workspace.dbDir}`,
+            );
         });
     });
 

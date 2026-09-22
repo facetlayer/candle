@@ -28,7 +28,7 @@ candle wait-for-log [name] --message <message> [--timeout <seconds>]
 `wait-for-log` doesn't wait out the timeout when the message can't arrive. It fails at once when:
 
 - the service isn't running, or its latest run has already exited, and that run never printed the message (`Service '<name>' is not running`);
-- the service isn't configured and has no stored logs (`No service '<name>' configured`).
+- the service isn't configured and has no stored logs (`No service '<name>' configured for directory: <dir>`).
 
 A message that a finished run did print still counts, so `wait-for-log` succeeds for a short-lived job that has already exited.
 

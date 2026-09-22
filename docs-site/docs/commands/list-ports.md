@@ -12,7 +12,7 @@ candle list-ports [names...] [--json]
 
 The `list-ports` command displays all open (listening) ports used by running services that were started from the current project directory. It also shows ports opened by child processes spawned by those services.
 
-If `[names]` are provided, only show ports for those services. Otherwise, show ports for all running services in the current project. A name that is neither a configured service nor a transient service in this project is an error (`No service '<name>' configured ...`, exit code 1).
+If `[names]` are provided, only show ports for those services. Otherwise, show ports for all running services in the current project. A name that is neither a configured service nor a transient service in this project is an error (`No service '<name>' configured for directory: <dir>`, exit code 1).
 
 ## Output Format
 

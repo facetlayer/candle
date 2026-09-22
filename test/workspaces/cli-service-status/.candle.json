@@ -16,6 +16,23 @@
       "name": "rooted",
       "shell": "node ../../../sampleServers/testProcess.js",
       "root": "sub"
+    },
+    {
+      "name": "missing-root",
+      "shell": "node ../../sampleServers/testProcess.js",
+      "root": "does-not-exist"
+    },
+    {
+      "name": "self-signal",
+      "shell": "kill -9 $$"
+    },
+    {
+      "name": "start-exit",
+      "shell": "exit 4"
+    },
+    {
+      "name": "killed-early",
+      "shell": "node ../../sampleServers/testProcess.js"
     }
   ]
 }

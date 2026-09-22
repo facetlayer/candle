@@ -23,7 +23,8 @@ instead of blocking, and points at `candle logs`.
   process in the project — including services that haven't launched yet, whose
   output will appear once they start.
 - If called with service names, each named process must currently be running;
-  otherwise `watch` fails with an error.
+  otherwise `watch` fails with an error. A name that isn't configured in the
+  project fails with `No service '<name>' configured for directory: <dir>`.
 
 ## Arguments
 

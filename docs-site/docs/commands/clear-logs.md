@@ -44,7 +44,7 @@ candle clear-logs
 
 ## Behavior
 
-1. Deletes log entries for the named services, or for every service in the project when no names are given
+1. Deletes log entries for the named services, or for every service in the project when no names are given. A name that isn't configured and has no stored logs is an error, `No service '<name>' configured for directory: <dir>`, exit 1 (the same rule as `logs`)
 2. Removes orphaned log entries (logs for any service, in any project, that Candle no longer tracks)
 3. Optimizes the database to reclaim space
 

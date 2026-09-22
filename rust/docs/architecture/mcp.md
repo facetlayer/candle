@@ -81,7 +81,7 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `Get recent logs for a specific service`
 - properties: `name` (string), `limit` (number, "Maximum number of log lines to return (optional)"), `projectDir` (string, "Project directory where the service is defined (optional - for cross-directory access)")
 - required: `["name"]`
-- handler: validates `name` is present (else error `Service name is required`); resolves the project dir (from `projectDir` if given, else `find_project_dir(cwd)`); calls `handle_logs_command(conn, projectDir, [name], limit, None)`.
+- handler: validates `name` is present (else error `Service name is required`); resolves the project dir through a `ProjectScope` (`projectDir` if given — made absolute and normalized like `--project-dir` — else `find_project_dir(cwd)`); validates the name with `assert_known_service_names_in_scope`, the same check `candle logs` uses (stored logs or a process row in the project, or a config entry when the project has its own config), so an unknown name is an `isError: true` response `Error: No service '<name>' configured for directory: <dir>`; then calls `handle_logs_command(conn, projectDir, [name], limit, None)`.
   - `DEFAULT_LOGS_LIMIT = 200`. The limit is nullish-defaulted: an explicit `0` passes through (the code only falls back to 200 when `limit` is absent or `null`, not when it is a falsy number; a non-integer value also falls back to 200).
   - The limit has the same meaning as `logs --count`: it counts only printable lines from the service's latest run (`get_log_tail`, see [logs.md](logs.md) §6), and when lines were cut off the captured output starts with `-- showing the last N lines; use --count to see more --`.
   - `handle_logs_command` returns nothing — it **emits logs through [`crate::output`]**, so the actual log output is captured and surfaced through the response's `logs`, not through `result` (the handler returns `Ok(None)`). This is the one tool whose output flows entirely through the output-capture path.
@@ -102,7 +102,7 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `Kill a running service`
 - properties: `name` (string)
 - required: `["name"]`
-- handler: validate `name`; resolve project dir; `handle_kill_command(conn, projectDir, [name], false, false)`. **Returns nothing** (`Ok(None)`) — the response contains only captured logs (if any) with `isError: false`. The call can block for up to about 6s if the service ignores SIGTERM (5s grace, then SIGKILL; see [kill-restart.md](kill-restart.md)).
+- handler: validate `name`; resolve project dir; `assert_valid_command_names(conn, cwd, [name])` (as `candle kill`: an unknown name is an error); `handle_kill_command(conn, projectDir, [name], false, false)`. **Returns nothing** (`Ok(None)`) — the response contains only captured logs (if any) with `isError: false`. The call can block for up to about 6s if the service ignores SIGTERM (5s grace, then SIGKILL; see [kill-restart.md](kill-restart.md)).
 
 ### 5.7 `RestartService`
 - description: `Restart a running service. If no name provided, restarts all running services in the project.`

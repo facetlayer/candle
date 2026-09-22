@@ -20,6 +20,7 @@ use crate::db::process_table::{
 };
 use crate::dirs::resolve_launch_dir;
 use crate::errors::CandleError;
+use crate::logs::log_type::STOPPED_WHILE_STARTING_MESSAGE;
 use crate::logs::ProcessLogType;
 use crate::process_alive::filter_alive_processes;
 
@@ -41,7 +42,8 @@ pub struct ListProcess {
     #[serde(rename = "configChanged")]
     pub config_changed: bool,
     /// Exit code of the service's latest run, when that run exited non-zero
-    /// (status `EXITED (<code>)`). `None` (JSON `null`) otherwise.
+    /// (status `EXITED (<code>)`). `None` (JSON `null`) otherwise, including
+    /// for `FAILED`, which has no exit code.
     #[serde(rename = "exitCode")]
     pub exit_code: Option<i64>,
 }
@@ -54,6 +56,9 @@ pub struct ListOutput {
 
 const STATUS_RUNNING: &str = "RUNNING";
 const STATUS_NOT_RUNNING: &str = "not running";
+/// Status for a stopped service whose latest run failed to start without an
+/// exit code (spawn failure, missing root, signal during startup).
+const STATUS_FAILED: &str = "FAILED";
 
 /// Status for a stopped service whose latest run exited with a non-zero code.
 fn exited_status(code: i64) -> String {
@@ -157,15 +162,27 @@ fn parse_exit_code(content: &str) -> Option<i64> {
     code.trim().parse().ok()
 }
 
-/// The exit code of a service's latest run, if that run has ended with a
-/// non-zero code. Looks at the newest lifecycle row (start initiated / failed /
-/// started / exited) for the service: a stopped-by-signal exit, a clean exit, or
-/// a run still in progress all yield `None`.
-fn latest_nonzero_exit_code(
+/// How a stopped service's latest run ended, as far as `ps` / `list` care.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LatestRun {
+    /// Still going, stopped deliberately, exited cleanly, or never ran.
+    Unremarkable,
+    /// Ended with a non-zero exit code (a crash, or a start that exited
+    /// non-zero): status `EXITED (<code>)`.
+    Exited(i64),
+    /// Failed to start without an exit code: the shell couldn't be spawned, the
+    /// root directory was missing, or it was killed by a signal Candle didn't
+    /// send during the startup grace period. Status `FAILED`.
+    Failed,
+}
+
+/// Classify a service's latest run from its newest lifecycle row (start
+/// initiated / failed / started / exited).
+fn latest_run(
     conn: &Connection,
     project_dir: &str,
     command_name: &str,
-) -> Result<Option<i64>, CandleError> {
+) -> Result<LatestRun, CandleError> {
     let row: Option<(i64, Option<String>)> = conn
         .query_row(
             "select log_type, content from process_output \
@@ -185,17 +202,26 @@ fn latest_nonzero_exit_code(
         .map_err(db_err)?;
 
     let Some((log_type, content)) = row else {
-        return Ok(None);
+        return Ok(LatestRun::Unremarkable);
     };
-    if log_type != ProcessLogType::ProcessExited.as_i64()
-        && log_type != ProcessLogType::ProcessStartFailed.as_i64()
-    {
-        return Ok(None);
+    let content = content.unwrap_or_default();
+    let nonzero_code = parse_exit_code(&content).filter(|code| *code != 0);
+
+    if log_type == ProcessLogType::ProcessExited.as_i64() {
+        return Ok(match nonzero_code {
+            Some(code) => LatestRun::Exited(code),
+            None => LatestRun::Unremarkable,
+        });
     }
-    Ok(content
-        .as_deref()
-        .and_then(parse_exit_code)
-        .filter(|code| *code != 0))
+    if log_type == ProcessLogType::ProcessStartFailed.as_i64() {
+        return Ok(match nonzero_code {
+            Some(code) => LatestRun::Exited(code),
+            // Candle itself stopped it mid-start (kill / restart): not a failure.
+            None if content == STOPPED_WHILE_STARTING_MESSAGE => LatestRun::Unremarkable,
+            None => LatestRun::Failed,
+        });
+    }
+    Ok(LatestRun::Unremarkable)
 }
 
 /// Build a `list` / `list-all` result.
@@ -261,17 +287,18 @@ pub fn handle_list(
                 has_config_drift(entry, Some(service)),
             )),
             None => {
-                let exit_code = latest_nonzero_exit_code(conn, &project_dir, &service.name)?;
+                let (status, exit_code) = match latest_run(conn, &project_dir, &service.name)? {
+                    LatestRun::Exited(code) => (exited_status(code), Some(code)),
+                    LatestRun::Failed => (STATUS_FAILED.to_string(), None),
+                    LatestRun::Unremarkable => (STATUS_NOT_RUNNING.to_string(), None),
+                };
                 processes.push(ListProcess {
                     service_name: service.name.clone(),
                     command: service.shell.clone(),
                     working_dir: resolve_launch_dir(&project_dir, service.root.as_deref()),
                     uptime: "-".to_string(),
                     pid: None,
-                    status: match exit_code {
-                        Some(code) => exited_status(code),
-                        None => STATUS_NOT_RUNNING.to_string(),
-                    },
+                    status,
                     config_changed: false,
                     exit_code,
                 })
@@ -300,10 +327,13 @@ pub fn handle_list(
 
 /// Restrict a listing to the named services (matched on service name), keeping
 /// the original listing order. An empty `names` slice is a no-op. A name that
-/// matches nothing is a usage error.
+/// matches nothing is a usage error: in a project (`project_dir` set) the shared
+/// `No service '<name>' configured for directory: <dir>`; for the system-wide
+/// `list-all` (`None`) `No running service named '<name>'`.
 pub fn filter_by_service_names(
     output: ListOutput,
     names: &[String],
+    project_dir: Option<&str>,
 ) -> Result<ListOutput, CandleError> {
     if names.is_empty() {
         return Ok(output);
@@ -311,9 +341,10 @@ pub fn filter_by_service_names(
 
     for name in names {
         if !output.processes.iter().any(|p| &p.service_name == name) {
-            return Err(CandleError::UsageError(format!(
-                "No service '{name}' configured"
-            )));
+            return Err(match project_dir {
+                Some(dir) => CandleError::unknown_service(name, dir),
+                None => CandleError::UsageError(format!("No running service named '{name}'")),
+            });
         }
     }
 
@@ -585,21 +616,29 @@ mod tests {
 
     #[test]
     fn name_filter_selects_and_rejects() {
-        let filtered = filter_by_service_names(sample(), &["api".to_string()]).unwrap();
+        let filtered =
+            filter_by_service_names(sample(), &["api".to_string()], Some("/proj")).unwrap();
         assert_eq!(filtered.processes.len(), 1);
         assert_eq!(filtered.processes[0].service_name, "api");
 
         // Empty filter is a no-op.
         assert_eq!(
-            filter_by_service_names(sample(), &[])
+            filter_by_service_names(sample(), &[], Some("/proj"))
                 .unwrap()
                 .processes
                 .len(),
             2
         );
 
-        let err = filter_by_service_names(sample(), &["nope".to_string()]).unwrap_err();
-        assert!(format!("{err}").contains("nope"), "got: {err}");
+        let err =
+            filter_by_service_names(sample(), &["nope".to_string()], Some("/proj")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "No service 'nope' configured for directory: /proj"
+        );
+
+        let err = filter_by_service_names(sample(), &["nope".to_string()], None).unwrap_err();
+        assert_eq!(err.to_string(), "No running service named 'nope'");
     }
 
     #[test]
@@ -704,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_run_exit_code_from_logs() {
+    fn latest_run_from_logs() {
         use crate::db::{get_database, temp_db_dir};
         use crate::logs::process_logs::save_process_log;
         let dir = temp_db_dir("list-exit-code");
@@ -712,11 +751,9 @@ mod tests {
         let log = |t: ProcessLogType, c: Option<&str>| {
             save_process_log(&conn, "svc", "/proj", t, c).unwrap();
         };
+        let latest = || latest_run(&conn, "/proj", "svc").unwrap();
 
-        assert_eq!(
-            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
-            None
-        );
+        assert_eq!(latest(), LatestRun::Unremarkable);
 
         log(ProcessLogType::ProcessStartInitiated, None);
         log(ProcessLogType::ProcessStarted, None);
@@ -725,25 +762,59 @@ mod tests {
             ProcessLogType::ProcessExited,
             Some("Process exited with code 3"),
         );
-        assert_eq!(
-            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
-            Some(3)
-        );
+        assert_eq!(latest(), LatestRun::Exited(3));
 
         // A newer run that is still going (or stopped cleanly) clears it.
         log(ProcessLogType::ProcessStartInitiated, None);
-        assert_eq!(
-            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
-            None
-        );
+        assert_eq!(latest(), LatestRun::Unremarkable);
         log(ProcessLogType::ProcessStarted, None);
         log(ProcessLogType::ProcessExited, Some("Process was stopped"));
-        assert_eq!(
-            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
-            None
+        assert_eq!(latest(), LatestRun::Unremarkable);
+
+        // A start that exited non-zero keeps its code.
+        log(ProcessLogType::ProcessStartInitiated, None);
+        log(
+            ProcessLogType::ProcessStartFailed,
+            Some("Process failed to start: exited with code 127"),
         );
+        assert_eq!(latest(), LatestRun::Exited(127));
+
+        // Start failures without an exit code are FAILED...
+        for reason in [
+            "Process failed to start: root directory does not exist: /proj/sub",
+            "Process failed to start: could not run 'sh': boom",
+            "Process failed to start: stopped by a signal",
+        ] {
+            log(ProcessLogType::ProcessStartInitiated, None);
+            log(ProcessLogType::ProcessStartFailed, Some(reason));
+            assert_eq!(latest(), LatestRun::Failed, "{reason}");
+        }
+
+        // ...but a deliberate kill during startup is not.
+        log(ProcessLogType::ProcessStartInitiated, None);
+        log(
+            ProcessLogType::ProcessStartFailed,
+            Some(STOPPED_WHILE_STARTING_MESSAGE),
+        );
+        assert_eq!(latest(), LatestRun::Unremarkable);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_row_json_has_null_exit_code() {
+        let failed = ListProcess {
+            service_name: "web".to_string(),
+            command: "web".to_string(),
+            working_dir: "/proj".to_string(),
+            uptime: "-".to_string(),
+            pid: None,
+            status: STATUS_FAILED.to_string(),
+            config_changed: false,
+            exit_code: None,
+        };
+        let json = serde_json::to_string(&failed).unwrap();
+        assert!(json.contains(r#""status":"FAILED","configChanged":false,"exitCode":null"#));
     }
 }

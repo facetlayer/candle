@@ -219,6 +219,8 @@ CLI flags map to: `--count` (limit, default 100), `--start-at` (id), `--json`. `
 
 `rust/src/commands/clear_logs.rs` (ported from `src/clear-logs-command.ts`).
 
+`cmd_clear_logs` first validates any names with `assert_known_service_names_in_scope` (the same rule as `logs`), so an unknown name is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
+
 `handle_clear_logs_command({ projectDir, commandNames })`:
 1. Print `Clearing logs for project: <projectDir>`.
 2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each `commandName`: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[commandName, projectDir]`; accumulate `result.changes || 0` into `clearedCount`.

@@ -53,7 +53,10 @@ api  not running
 
 `pid` and `uptime` are omitted for services that aren't running. A service
 whose latest run exited with a non-zero code shows `EXITED (<code>)` instead of
-`not running`:
+`not running`, and one whose latest start failed without an exit code (missing
+`root` directory, shell couldn't be launched, killed by a signal during startup)
+shows `FAILED`. A service stopped with `candle kill` or `candle restart` is never
+`FAILED`:
 
 ```
 jobs  EXITED (1)
@@ -112,9 +115,9 @@ service's state:
 | `workingDir` | The directory the service runs in |
 | `uptime` | Uptime, or `"-"` when not running |
 | `pid` | The process ID, or `null` when not running |
-| `status` | `RUNNING`, `not running`, or `EXITED (<code>)` |
+| `status` | `RUNNING`, `not running`, `EXITED (<code>)`, or `FAILED` |
 | `configChanged` | `true` if a running process was started from a since-edited definition; always `false` when not running |
-| `exitCode` | The latest run's exit code when it exited non-zero, otherwise `null` |
+| `exitCode` | The latest run's exit code when it exited non-zero, otherwise `null` (including `FAILED`, which has no exit code) |
  Passing service names filters the JSON the same way
 it filters the detail view.
 

@@ -114,6 +114,45 @@ fn database_file_identity(conn: &Connection) -> Option<(u64, u64)> {
     Some((meta.dev(), meta.ino()))
 }
 
+/// Record a start that failed before any monitor was launched, the way the
+/// monitor records one (`process_start_initiated` + `process_start_failed`), so
+/// `ps` / `list` show `FAILED` and `logs` shows why. Skipped while an instance
+/// is still running: that instance was left alone, and a new launch boundary
+/// would hide its output from `logs`.
+fn record_start_failure_if_idle(
+    conn: &Connection,
+    project_dir: &str,
+    service_name: &str,
+    reason: &str,
+) -> Result<(), CandleError> {
+    let rows = find_processes_by_command_name_and_project_dir(conn, service_name, project_dir)
+        .map_err(db_err)?;
+    let not_killed: Vec<_> = rows.into_iter().filter(|p| p.killed_at.is_none()).collect();
+    if !filter_alive_processes(conn, not_killed)
+        .map_err(db_err)?
+        .is_empty()
+    {
+        return Ok(());
+    }
+    save_process_log(
+        conn,
+        service_name,
+        project_dir,
+        ProcessLogType::ProcessStartInitiated,
+        None,
+    )
+    .map_err(db_err)?;
+    save_process_log(
+        conn,
+        service_name,
+        project_dir,
+        ProcessLogType::ProcessStartFailed,
+        Some(&format!("Process failed to start: {reason}")),
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
 /// Launch a single service as a detached subprocess and wait for it to report a
 /// start result. See module docs for the full sequence.
 pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartResult, CandleError> {
@@ -201,8 +240,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     // running instance on its way to failing.
     let launch_dir = crate::dirs::resolve_launch_dir(&opts.project_dir, service.root.as_deref());
     if !Path::new(&launch_dir).is_dir() {
+        let reason = format!("root directory does not exist: {launch_dir}");
+        record_start_failure_if_idle(conn, &opts.project_dir, &service.name, &reason)?;
         return Err(CandleError::UsageError(format!(
-            "Process '{}' failed to start: root directory does not exist: {launch_dir}",
+            "Process '{}' failed to start: {reason}",
             service.name
         )));
     }

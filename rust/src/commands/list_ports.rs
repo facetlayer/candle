@@ -77,10 +77,7 @@ pub fn handle_list_ports(
             let configured = find_service_by_name(&found.config, name).is_some();
             let has_row = entries.iter().any(|e| &e.command_name == name);
             if !configured && !has_row {
-                return Err(CandleError::MissingServiceWithName {
-                    command_name: name.clone(),
-                    cwd: project_dir,
-                });
+                return Err(CandleError::unknown_service(name, &project_dir));
             }
         }
         entries

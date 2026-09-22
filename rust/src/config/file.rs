@@ -276,10 +276,10 @@ pub fn get_service_config_by_name(
             service_config,
             project_dir,
         }),
-        None => Err(CandleError::MissingServiceWithName {
-            command_name: command_name.to_string(),
-            cwd: project_dir.display().to_string(),
-        }),
+        None => Err(CandleError::unknown_service(
+            command_name,
+            project_dir.display(),
+        )),
     }
 }
 

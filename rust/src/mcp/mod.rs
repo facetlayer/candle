@@ -19,9 +19,11 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
+use crate::commands::{assert_known_service_names_in_scope, assert_valid_command_names};
 use crate::config::commands::{add_server_config, AddServerConfigArgs};
 use crate::config::file::find_project_dir;
 use crate::errors::CandleError;
+use crate::project_scope::ProjectScope;
 use crate::start::start_one_service::{start_one_service, RunOptions};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -219,15 +221,18 @@ fn tool_get_logs(
         Some(v) if !v.is_null() => v.as_i64().unwrap_or(DEFAULT_LOGS_LIMIT),
         _ => DEFAULT_LOGS_LIMIT,
     };
-    let project_dir = match arg_str(args, "projectDir") {
-        Some(p) => p.to_string(),
-        None => resolve_project_dir(cwd)?,
-    };
+    // Same project resolution and name check as `candle logs [--project-dir]`:
+    // a name with stored logs or a process row (e.g. a finished transient
+    // service) is known even when it isn't configured.
+    let scope = ProjectScope::new(cwd.to_path_buf(), arg_str(args, "projectDir"));
+    let project_dir = scope.resolve()?;
+    let names = [name];
+    assert_known_service_names_in_scope(conn, &scope, &project_dir, &names)?;
     let options = crate::commands::logs::LogsCommandOptions {
         more_hint: "pass a larger `limit` to see more".to_string(),
         ..crate::commands::logs::LogsCommandOptions::cli(limit)
     };
-    crate::commands::logs::handle_logs_command(conn, &project_dir, &[name], &options);
+    crate::commands::logs::handle_logs_command(conn, &project_dir, &names, &options);
     Ok(None)
 }
 
@@ -299,7 +304,10 @@ fn tool_kill_service(
         .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?
         .to_string();
     let project_dir = resolve_project_dir(cwd)?;
-    crate::kill::handle_kill_command(conn, &project_dir, &[name], false, false).map_err(db_err)?;
+    let names = [name];
+    // Same check as `candle kill <name>`.
+    assert_valid_command_names(conn, cwd, &names)?;
+    crate::kill::handle_kill_command(conn, &project_dir, &names, false, false).map_err(db_err)?;
     Ok(None)
 }
 
@@ -612,5 +620,63 @@ mod tests {
         let res = build_call_result(outcome);
         assert_eq!(res["isError"], json!(true));
         assert_eq!(res["content"][0]["text"], "Error: boom");
+    }
+
+    fn get_logs_fixture(tag: &str) -> (crate::config::test_support::TempDir, std::path::PathBuf) {
+        let proj = crate::config::test_support::TempDir::new();
+        std::fs::write(
+            proj.path().join(".candle.json"),
+            "{\n  \"services\": [ { \"name\": \"web\", \"shell\": \"x\" } ]\n}",
+        )
+        .unwrap();
+        (proj, crate::db::temp_db_dir(tag))
+    }
+
+    #[test]
+    fn get_logs_unknown_service_is_an_error() {
+        let (proj, db) = get_logs_fixture("mcp-getlogs-unknown");
+        let conn = crate::db::get_database(Some(&db)).unwrap();
+
+        let err = tool_get_logs(&conn, proj.path(), &json!({ "name": "nope" })).unwrap_err();
+        let project_dir = crate::config::find_project_dir(proj.path()).unwrap();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "No service 'nope' configured for directory: {}",
+                project_dir.display()
+            )
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&db);
+    }
+
+    #[test]
+    fn get_logs_accepts_configured_and_finished_transient_services() {
+        use crate::logs::{save_process_log, ProcessLogType};
+
+        let (proj, db) = get_logs_fixture("mcp-getlogs-known");
+        let conn = crate::db::get_database(Some(&db)).unwrap();
+        let project_dir = crate::config::find_project_dir(proj.path())
+            .unwrap()
+            .display()
+            .to_string();
+
+        // Configured, never started.
+        assert!(tool_get_logs(&conn, proj.path(), &json!({ "name": "web" })).is_ok());
+
+        // Not configured, but it has stored logs (a finished transient service).
+        save_process_log(
+            &conn,
+            "tmp",
+            &project_dir,
+            ProcessLogType::Stdout,
+            Some("hi"),
+        )
+        .unwrap();
+        assert!(tool_get_logs(&conn, proj.path(), &json!({ "name": "tmp" })).is_ok());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&db);
     }
 }

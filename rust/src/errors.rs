@@ -32,6 +32,18 @@ pub enum CandleError {
 }
 
 impl CandleError {
+    /// The error every command reports for a service name it doesn't know:
+    /// `No service '<name>' configured for directory: <project_dir>`.
+    ///
+    /// All unknown-name checks (CLI commands and MCP tools alike) build their
+    /// error through this, so the text is identical everywhere.
+    pub fn unknown_service(name: &str, project_dir: impl fmt::Display) -> CandleError {
+        CandleError::MissingServiceWithName {
+            command_name: name.to_string(),
+            cwd: project_dir.to_string(),
+        }
+    }
+
     /// Whether this error is a user-facing usage error.
     ///
     /// True for everything except `ConfigFileError`, matching the `isUsageError`
@@ -164,6 +176,16 @@ mod tests {
         );
         assert!(err.is_usage_error());
         assert_eq!(err.name(), "NeedRunCommandError");
+    }
+
+    #[test]
+    fn unknown_service_uses_the_full_form() {
+        let err = CandleError::unknown_service("nope", "/proj");
+        assert_eq!(
+            err.to_string(),
+            "No service 'nope' configured for directory: /proj"
+        );
+        assert!(matches!(err, CandleError::MissingServiceWithName { .. }));
     }
 
     #[test]

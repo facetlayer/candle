@@ -126,7 +126,7 @@ That exact stderr string and exit code 1 are load-bearing. Agent mode also hides
 `watch` **never launches processes** (the Node original ran `startOneService({ checkStart: true })` for each name first; the Rust command does not).
 1. `project_dir = find_project_dir(cwd)` (searches up for the config file from the scope's base dir).
 2. **No names**: print `Watching all processes in this project.` and watch every command in the project (the empty name list is passed straight through, so services that haven't launched yet show up when they do). Names are not expanded from config.
-3. **With names**: each must be running (`killed_at is null` rows filtered through `filter_alive_processes`, which also deletes dead rows). Otherwise → `UsageError("Process '<name>' is not running. Start it with: candle start <name>")` (stderr, exit 1). Then print the header:
+3. **With names**: `cmd_watch` first rejects an unknown name with `assert_valid_command_names` (`No service '<name>' configured for directory: <dir>`); then each must be running (`killed_at is null` rows filtered through `filter_alive_processes`, which also deletes dead rows). Otherwise → `UsageError("Process '<name>' is not running. Start it with: candle start <name>")` (stderr, exit 1). Then print the header:
    - 1 name: `Watching process '<name>'`
    - N names: `Watching <N> processes:` then for each `  - '<name>'`
 4. Print `Press Ctrl+C to stop watching.` and a blank line.

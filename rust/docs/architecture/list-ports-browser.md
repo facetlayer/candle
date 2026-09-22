@@ -58,7 +58,7 @@ struct ListProcess {          // serialized in this field order, camelCase
   working_dir: String,        // "workingDir"
   uptime: String,             // formatted, see §2.3
   pid: Option<i64>,           // null when not running
-  status: String,             // "RUNNING" | "not running" | "EXITED (<code>)"
+  status: String,             // "RUNNING" | "not running" | "EXITED (<code>)" | "FAILED"
   config_changed: bool,       // "configChanged", always present; false when not running
   exit_code: Option<i64>,     // "exitCode": latest run's non-zero exit code, else null
 }
@@ -77,7 +77,7 @@ CLI (`cmd_list` in `main.rs`): with `--json`, prints `list_output_to_json` = pre
 4. `runningByName` = Map `command_name → entry`.
 5. **First** iterate `config.services` in file order, marking each name `seen`:
    - If a running process matches the name: `status='RUNNING'`, real `pid`, `uptime` from `start_time`, `configChanged = has_config_drift(entry, service)`, `command` = the row's `shell` (falling back to the config's), `workingDir = resolve_launch_dir(project_dir, entry.root or service.root)`.
-   - Else: `pid=null`, `uptime='-'`, `command = service.shell`, `workingDir = resolve_launch_dir(project_dir, service.root)`, `configChanged=false`. `status` is `EXITED (<code>)` (with `exitCode = code`) when the service's newest lifecycle log row (`process_start_initiated` / `process_start_failed` / `process_started` / `process_exited`) is an exit or start failure whose message ends in a non-zero `exited with code N`; otherwise `not running` (`exitCode = null`). A signal exit ("Process was stopped") is not a crash.
+   - Else: `pid=null`, `uptime='-'`, `command = service.shell`, `workingDir = resolve_launch_dir(project_dir, service.root)`, `configChanged=false`. `status` is `EXITED (<code>)` (with `exitCode = code`) when the service's newest lifecycle log row (`process_start_initiated` / `process_start_failed` / `process_started` / `process_exited`) is an exit or start failure whose message ends in a non-zero `exited with code N`; `FAILED` (`exitCode = null`) when it is a `process_start_failed` row with no exit code (spawn failure, missing root, signal during the grace period) other than `STOPPED_WHILE_STARTING_MESSAGE` (a deliberate kill during startup); otherwise `not running` (`exitCode = null`). A signal exit ("Process was stopped") is not a crash. `start`'s up-front missing-root check also writes `process_start_initiated` + `process_start_failed` rows (only when no instance is running), so that case shows `FAILED` too. `list-all` lists only running processes, so it never shows `EXITED` or `FAILED`. Name filtering (`filter_by_service_names`) errors with `CandleError::unknown_service` (`No service '<name>' configured for directory: <dir>`); for `list-all`, which has no project, `No running service named '<name>'`.
 6. **Then** iterate running entries again; for any whose `command_name` was not in config (transient/orphan), append with `status='RUNNING'`, real pid/uptime, `workingDir = resolve_launch_dir(project_dir, entry.root)` (so `--root` shows), `configChanged = has_config_drift(entry, find_service_by_name(...))`.
 
 `resolve_launch_dir` (`rust/src/dirs.rs`) is the same helper the start banner uses: absolute root wins, relative root is joined, and the result is lexically normalized. (The Node `list` reported the bare project dir.)
