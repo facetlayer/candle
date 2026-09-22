@@ -8,7 +8,8 @@ use rusqlite::Connection;
 
 use crate::output;
 
-/// Clear logs for the given command(s) in the project.
+/// Clear logs for the given command(s) in the project, or for every service in
+/// the project when `command_names` is empty.
 ///
 /// Returns the `rusqlite::Result` so the CLI layer can map a database error to
 /// the `console.error` + exit 1 path (matching the TS `catch`).
@@ -20,6 +21,15 @@ pub fn handle_clear_logs_command(
     output::out(&format!("Clearing logs for project: {project_dir}"));
 
     let mut cleared_count: usize = 0;
+
+    // No names: every service with logs in this project, including transient
+    // services and ones since removed from .candle.json.
+    if command_names.is_empty() {
+        cleared_count += conn.execute(
+            "DELETE FROM process_output WHERE project_dir = ?1",
+            rusqlite::params![project_dir],
+        )?;
+    }
 
     for command_name in command_names {
         // Clear logs for this specific project directory and command.
@@ -119,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_command_names_is_noop() {
+    fn empty_command_names_on_empty_project_finds_nothing() {
         let dir = temp_db_dir("clear-logs-empty-names");
         let conn = get_database(Some(&dir)).unwrap();
 
@@ -136,6 +146,51 @@ mod tests {
             .iter()
             .any(|l| l == "\nLogs cleared successfully!"));
         assert!(!captured.stdout.iter().any(|l| l.starts_with('\u{2713}')));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_command_names_clears_every_service_in_project_only() {
+        let dir = temp_db_dir("clear-logs-all");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        save_process_log(&conn, "a", "/proj", ProcessLogType::Stdout, Some("1")).unwrap();
+        save_process_log(&conn, "b", "/proj", ProcessLogType::Stdout, Some("2")).unwrap();
+        save_process_log(&conn, "a", "/other", ProcessLogType::Stdout, Some("3")).unwrap();
+        // Keep /other's row from being swept as orphaned.
+        crate::db::process_table::create_process_entry(
+            &conn,
+            &crate::db::process_table::CreateProcessEntry {
+                command_name: "a".to_string(),
+                project_dir: "/other".to_string(),
+                pid: 99_999_999,
+                log_collector_pid: None,
+                shell: None,
+                root: None,
+            },
+        )
+        .unwrap();
+
+        let (_, captured) = output::capture(|| {
+            handle_clear_logs_command(&conn, "/proj", &[]).unwrap();
+        });
+        assert!(captured
+            .stdout
+            .iter()
+            .any(|l| l == "\u{2713} Cleared 2 log entries"));
+
+        let count = |project: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM process_output WHERE project_dir = ?1",
+                [project],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(count("/proj"), 0);
+        assert_eq!(count("/other"), 1);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

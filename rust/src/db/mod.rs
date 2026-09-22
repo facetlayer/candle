@@ -19,11 +19,13 @@ use std::path::Path;
 
 use crate::dirs::get_state_directory;
 
-/// Schema DDL, matching `src/database/database.ts` exactly (column order, types,
+/// Table DDL, matching `src/database/database.ts` exactly (column order, types,
 /// nullability, defaults, autoincrement). Run additively/idempotently with
 /// `if not exists` so it is safe on every startup.
-const SCHEMA_STATEMENTS: &[&str] = &[
-    "create table if not exists processes(
+const TABLE_STATEMENTS: &[(&str, &str)] = &[
+    (
+        "processes",
+        "create table if not exists processes(
             id integer primary key autoincrement,
             command_name text not null,
             project_dir text not null,
@@ -35,7 +37,10 @@ const SCHEMA_STATEMENTS: &[&str] = &[
             shell text,
             root text
         )",
-    "create table if not exists process_output(
+    ),
+    (
+        "process_output",
+        "create table if not exists process_output(
             id integer primary key autoincrement,
             command_name text not null,
             project_dir text not null,
@@ -43,10 +48,16 @@ const SCHEMA_STATEMENTS: &[&str] = &[
             log_type integer not null,
             timestamp integer not null default (strftime('%s', 'now'))
         )",
-    "create table if not exists process_last_cleanup(
+    ),
+    (
+        "process_last_cleanup",
+        "create table if not exists process_last_cleanup(
            timestamp integer not null
         )",
-    "create table if not exists stdin_messages(
+    ),
+    (
+        "stdin_messages",
+        "create table if not exists stdin_messages(
             id integer primary key autoincrement,
             command_name text not null,
             project_dir text not null,
@@ -54,6 +65,12 @@ const SCHEMA_STATEMENTS: &[&str] = &[
             encoding text not null default 'utf8',
             created_at integer not null default (strftime('%s', 'now'))
         )",
+    ),
+];
+
+/// Index DDL, run after the tables exist (and after any table rebuild, which
+/// drops the old table's indexes).
+const INDEX_STATEMENTS: &[&str] = &[
     "create index if not exists idx_process_output_command_name on process_output(command_name)",
     "create index if not exists idx_process_output_project_dir on process_output(project_dir)",
     "create index if not exists idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)",
@@ -105,11 +122,134 @@ pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Run the additive, idempotent schema migration on an open connection.
+///
+/// `create table if not exists` leaves an existing table alone, so a database
+/// written by a much older candle can lack columns the current code queries.
+/// Any table missing columns is rebuilt to the current schema, keeping its rows.
 fn run_migration(conn: &Connection) -> rusqlite::Result<()> {
-    for statement in SCHEMA_STATEMENTS {
+    for (_, statement) in TABLE_STATEMENTS {
+        conn.execute_batch(statement)?;
+    }
+    for (table, statement) in TABLE_STATEMENTS {
+        if !missing_columns(conn, table)?.is_empty() {
+            rebuild_table(conn, table, statement)?;
+        }
+    }
+    for statement in INDEX_STATEMENTS {
         conn.execute_batch(statement)?;
     }
     Ok(())
+}
+
+/// One column as reported by `PRAGMA table_info`.
+#[derive(Debug, Clone)]
+struct ColumnInfo {
+    name: String,
+    col_type: String,
+    not_null: bool,
+    has_default: bool,
+}
+
+fn table_columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<ColumnInfo>> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ColumnInfo {
+            name: row.get(1)?,
+            col_type: row.get(2)?,
+            not_null: row.get::<_, i64>(3)? != 0,
+            has_default: row.get::<_, Option<String>>(4)?.is_some(),
+        })
+    })?;
+    rows.collect()
+}
+
+/// Columns of each table in the current schema, read once from an in-memory
+/// database built with the same DDL (so the list can't drift from it).
+fn expected_columns(table: &str) -> Vec<ColumnInfo> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static EXPECTED: OnceLock<HashMap<String, Vec<ColumnInfo>>> = OnceLock::new();
+    EXPECTED
+        .get_or_init(|| {
+            let mem = Connection::open_in_memory().expect("in-memory sqlite");
+            TABLE_STATEMENTS
+                .iter()
+                .map(|(name, ddl)| {
+                    mem.execute_batch(ddl).expect("schema DDL is valid");
+                    let cols = table_columns(&mem, name).expect("table_info");
+                    (name.to_string(), cols)
+                })
+                .collect()
+        })
+        .get(table)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn missing_columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<ColumnInfo>> {
+    let actual = table_columns(conn, table)?;
+    Ok(expected_columns(table)
+        .into_iter()
+        .filter(|c| !actual.iter().any(|a| a.name.eq_ignore_ascii_case(&c.name)))
+        .collect())
+}
+
+/// Rebuild `table` with the current DDL, copying rows across.
+///
+/// `ALTER TABLE ... ADD COLUMN` can't add a column whose default is an
+/// expression (`strftime(...)`), so the table is recreated instead. Columns the
+/// old table lacks take their schema default; a `not null` one with no default
+/// gets a zero value so old rows still fit.
+fn rebuild_table(conn: &Connection, table: &str, create_statement: &str) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        // Another process may have migrated it while we waited for the lock.
+        let missing = missing_columns(conn, table)?;
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let actual = table_columns(conn, table)?;
+        let expected = expected_columns(table);
+
+        let mut targets = Vec::new();
+        let mut sources = Vec::new();
+        for col in &expected {
+            if actual
+                .iter()
+                .any(|a| a.name.eq_ignore_ascii_case(&col.name))
+            {
+                targets.push(col.name.clone());
+                sources.push(col.name.clone());
+            } else if col.not_null && !col.has_default {
+                let zero = if col.col_type.to_ascii_lowercase().contains("text") {
+                    "''"
+                } else {
+                    "0"
+                };
+                targets.push(col.name.clone());
+                sources.push(zero.to_string());
+            }
+        }
+
+        let old = format!("{table}__candle_migrate_old");
+        conn.execute_batch(&format!("ALTER TABLE {table} RENAME TO {old}"))?;
+        conn.execute_batch(create_statement)?;
+        conn.execute_batch(&format!(
+            "INSERT INTO {table} ({}) SELECT {} FROM {old}",
+            targets.join(", "),
+            sources.join(", ")
+        ))?;
+        // Dropping the old table drops its indexes; the caller recreates them.
+        conn.execute_batch(&format!("DROP TABLE {old}"))?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +368,83 @@ mod tests {
             .query_row("PRAGMA journal_mode", [], |row| row.get(0))
             .unwrap();
         assert_eq!(mode.to_lowercase(), "wal");
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn old_database_missing_columns_is_upgraded() {
+        let dir = temp_db_dir("old-schema");
+        {
+            // A very old candle.db: no log_collector_pid/killed_at/shell/root on
+            // processes, no timestamp on process_output.
+            let old = Connection::open(dir.join("candle.db")).unwrap();
+            old.execute_batch(
+                "create table processes(
+                    id integer primary key autoincrement,
+                    command_name text not null,
+                    project_dir text not null,
+                    pid integer not null,
+                    start_time integer not null,
+                    created_at integer not null default (strftime('%s', 'now'))
+                );
+                create table process_output(
+                    id integer primary key autoincrement,
+                    command_name text not null,
+                    project_dir text not null,
+                    content text,
+                    log_type integer not null
+                );
+                create index idx_process_output_command_name on process_output(command_name);
+                insert into processes(command_name, project_dir, pid, start_time) values('api', '/proj', 123, 456);
+                insert into process_output(command_name, project_dir, content, log_type) values('api', '/proj', 'hello', 1);",
+            )
+            .unwrap();
+        }
+
+        let conn = get_database(Some(&dir)).unwrap();
+        for table in ["processes", "process_output"] {
+            assert!(
+                missing_columns(&conn, table).unwrap().is_empty(),
+                "{table} still missing columns"
+            );
+        }
+
+        let (name, pid, shell): (String, i64, Option<String>) = conn
+            .query_row("select command_name, pid, shell from processes", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!((name.as_str(), pid, shell), ("api", 123, None));
+
+        let (content, ts): (String, i64) = conn
+            .query_row("select content, timestamp from process_output", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(content, "hello");
+        assert!(ts > 0, "rebuilt rows take the schema default timestamp");
+
+        // Indexes exist again after the rebuild dropped them.
+        let idx: i64 = conn
+            .query_row(
+                "select count(*) from sqlite_master where type='index' and name='idx_process_output_lookup'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
+
+        // New writes work against the upgraded tables.
+        crate::logs::process_logs::save_process_log(
+            &conn,
+            "api",
+            "/proj",
+            crate::logs::ProcessLogType::Stdout,
+            Some("after"),
+        )
+        .unwrap();
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

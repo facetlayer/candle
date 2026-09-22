@@ -14,7 +14,7 @@ use crate::config::model::{
     LOG_EVICTION_DEFAULTS,
 };
 use crate::config::paths::path_resolve;
-use crate::config::validate::validate_config;
+use crate::config::validate::{unknown_key_warnings, validate_config};
 use crate::errors::CandleError;
 
 /// Result of locating a config file in the directory tree.
@@ -53,7 +53,30 @@ pub fn read_config_file(config_file_path: &Path) -> Result<CandleSetupConfig, Ca
     let value: Value =
         serde_json::from_str(trimmed).map_err(|e| CandleError::ConfigFileError(e.to_string()))?;
 
+    let filename = config_file_path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    for warning in unknown_key_warnings(&value, &filename) {
+        warn_once(&warning);
+    }
+
     validate_config(value)
+}
+
+/// Print a config warning to stderr, once per process. A single command often
+/// reads the config several times.
+fn warn_once(message: &str) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if seen
+        .get_or_insert_with(HashSet::new)
+        .insert(message.to_string())
+    {
+        crate::output::err(message);
+    }
 }
 
 /// Make a path absolute lexically (mirrors `path.resolve(currentDir)`), without
@@ -99,6 +122,7 @@ pub fn find_config_file(start_dir: &Path) -> Result<FoundConfig, CandleError> {
 
     Err(CandleError::MissingSetupFile {
         cwd: starting_dir.display().to_string(),
+        explicit: false,
     })
 }
 
@@ -299,7 +323,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             format!(
-                "No .candle.json file found in (or above) current directory: {}",
+                "No .candle.json file found in (or above) current directory: {}\nTo create one, run `candle add-service <name> --shell <cmd>` or `candle setup-project`.",
                 start.display()
             )
         );

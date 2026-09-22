@@ -104,14 +104,33 @@ fn wait_for_pids_to_exit(pids: &[i64], timeout: Duration) -> bool {
     }
 }
 
+/// (device, inode) of the file at the connection's database path, or `None`
+/// for an in-memory database or a path that no longer exists.
+fn database_file_identity(conn: &Connection) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let path = conn.path().filter(|p| !p.is_empty())?;
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.dev(), meta.ino()))
+}
+
 /// Launch a single service as a detached subprocess and wait for it to report a
 /// start result. See module docs for the full sequence.
 pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartResult, CandleError> {
     // 0. Serialize starts of this service. Held until return, so a concurrent
     //    start sees this launch's row (and kills it, or check-start skips it)
     //    instead of racing it into a duplicate instance.
+    let db_identity = database_file_identity(conn);
     let _start_lock = crate::start::service_lock::acquire(&opts.project_dir, &opts.command_name)
         .map_err(|e| CandleError::Generic(format!("Failed to acquire start lock: {e}")))?;
+    // `erase-database` holds the lock exclusively while it erases, so a start
+    // that waited on it may now hold a connection to a deleted file. Writing
+    // there would launch a service no later command can see.
+    if db_identity.is_some() && database_file_identity(conn) != db_identity {
+        return Err(CandleError::Generic(
+            "The database was erased while this start was waiting. Run the command again."
+                .to_string(),
+        ));
+    }
 
     // 1. check-start dedup — runs BEFORE config resolution so it works for
     //    transient names that aren't in the config file.

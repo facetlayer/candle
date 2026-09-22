@@ -12,6 +12,7 @@ use crate::config::file::{find_config_file, read_config_file};
 use crate::config::model::{
     CandleSetupConfig, LogEvictionConfig, ServiceConfig, DEFAULT_CONFIG_FILENAME,
 };
+use crate::config::paths::{is_valid_root_path, path_resolve};
 use crate::config::validate::validate_config;
 use crate::errors::CandleError;
 
@@ -73,6 +74,28 @@ pub fn add_server_config(
     args: &AddServerConfigArgs,
     start_dir: &Path,
 ) -> Result<String, CandleError> {
+    validate_service_name(&args.name)?;
+
+    // Check the root against the directory the config lives in (or will be
+    // created in) before touching the filesystem.
+    if let Some(root) = args.root.as_deref().filter(|r| !r.is_empty()) {
+        // An invalid root (e.g. `../escape`) is reported by revalidate below.
+        if is_valid_root_path(root) {
+            let project_dir = match find_config_file(start_dir) {
+                Ok(found) => found.project_dir,
+                Err(CandleError::MissingSetupFile { .. }) => start_dir.to_path_buf(),
+                Err(e) => return Err(e),
+            };
+            let resolved = path_resolve(&project_dir, root);
+            if !resolved.is_dir() {
+                return Err(CandleError::UsageError(format!(
+                    "Root directory does not exist: {}",
+                    resolved.display()
+                )));
+            }
+        }
+    }
+
     let config_path = find_or_create_setup_file(start_dir)?;
     let mut config = read_config_file(&config_path)?;
 
@@ -98,6 +121,22 @@ pub fn add_server_config(
         "Service '{}' added successfully to .candle.json",
         args.name
     ))
+}
+
+/// Service names are typed on the command line and used as-is in every later
+/// command, so keep them to characters that never need quoting.
+fn validate_service_name(name: &str) -> Result<(), CandleError> {
+    let ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    if ok {
+        Ok(())
+    } else {
+        Err(CandleError::UsageError(format!(
+            "Invalid service name '{name}': use only letters, digits, '-', '_' and '.'"
+        )))
+    }
 }
 
 /// `remove-service`: remove a service by name. Mirrors `removeServerConfig`.
@@ -288,7 +327,7 @@ mod tests {
             format!("Created .candle.json in {}", dir.path().display())
         );
         let contents = read_to_string(&dir.path().join(".candle.json"));
-        assert_eq!(contents, "{\n  \"services\": []\n}");
+        assert_eq!(contents, "{\n  \"services\": []\n}\n");
     }
 
     #[test]
@@ -317,13 +356,14 @@ mod tests {
         let contents = read_to_string(&dir.path().join(".candle.json"));
         assert_eq!(
             contents,
-            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"npm run dev\"\n    }\n  ]\n}"
+            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"npm run dev\"\n    }\n  ]\n}\n"
         );
     }
 
     #[test]
     fn add_service_with_root_and_stdin() {
         let dir = TempDir::new();
+        std::fs::create_dir_all(dir.path().join("packages/api")).unwrap();
         let args = AddServerConfigArgs {
             name: "api".to_string(),
             shell: "cmd".to_string(),
@@ -334,7 +374,7 @@ mod tests {
         let contents = read_to_string(&dir.path().join(".candle.json"));
         assert_eq!(
             contents,
-            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"cmd\",\n      \"root\": \"packages/api\",\n      \"enableStdin\": true\n    }\n  ]\n}"
+            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"cmd\",\n      \"root\": \"packages/api\",\n      \"enableStdin\": true\n    }\n  ]\n}\n"
         );
     }
 
@@ -372,6 +412,79 @@ mod tests {
     }
 
     #[test]
+    fn add_service_missing_root_dir_errors_without_creating_config() {
+        let dir = TempDir::new();
+        let args = AddServerConfigArgs {
+            name: "api".to_string(),
+            shell: "cmd".to_string(),
+            root: Some("sub".to_string()),
+            enable_stdin: false,
+        };
+        let err = add_server_config(&args, dir.path()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Root directory does not exist: {}",
+                dir.path().join("sub").display()
+            )
+        );
+        assert!(!dir.path().join(".candle.json").exists());
+    }
+
+    #[test]
+    fn add_service_rejects_names_needing_quotes() {
+        let dir = TempDir::new();
+        for bad in ["bad name!", "a b", "x;y", "$(z)", "a/b", ""] {
+            let args = AddServerConfigArgs {
+                name: bad.to_string(),
+                shell: "cmd".to_string(),
+                root: None,
+                enable_stdin: false,
+            };
+            let err = add_server_config(&args, dir.path()).unwrap_err();
+            assert!(
+                err.to_string().starts_with("Invalid service name"),
+                "{bad:?}: {err}"
+            );
+        }
+        assert!(!dir.path().join(".candle.json").exists());
+        for good in ["api", "web-2", "my_worker", "svc.v1"] {
+            let args = AddServerConfigArgs {
+                name: good.to_string(),
+                shell: "cmd".to_string(),
+                root: None,
+                enable_stdin: false,
+            };
+            add_server_config(&args, dir.path()).unwrap();
+        }
+    }
+
+    #[test]
+    fn rewrites_preserve_unknown_per_service_keys() {
+        let dir = TempDir::new();
+        let path = dir.path().join(".candle.json");
+        std::fs::write(
+            &path,
+            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"env\": {\n        \"PORT\": \"3000\"\n      },\n      \"shell\": \"x\",\n      \"note\": \"keep me\"\n    },\n    {\n      \"name\": \"gone\",\n      \"shell\": \"y\"\n    }\n  ]\n}\n",
+        )
+        .unwrap();
+        let args = AddServerConfigArgs {
+            name: "web".to_string(),
+            shell: "z".to_string(),
+            root: None,
+            enable_stdin: false,
+        };
+        add_server_config(&args, dir.path()).unwrap();
+        remove_server_config("gone", dir.path()).unwrap();
+        handle_set_config("logEviction.maxLogsPerService", "5", dir.path()).unwrap();
+
+        assert_eq!(
+            read_to_string(&path),
+            "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"env\": {\n        \"PORT\": \"3000\"\n      },\n      \"shell\": \"x\",\n      \"note\": \"keep me\"\n    },\n    {\n      \"name\": \"web\",\n      \"shell\": \"z\"\n    }\n  ],\n  \"logEviction\": {\n    \"maxLogsPerService\": 5\n  }\n}\n"
+        );
+    }
+
+    #[test]
     fn remove_service_works_and_missing_errors() {
         let dir = TempDir::new();
         std::fs::write(
@@ -382,7 +495,7 @@ mod tests {
         let msg = remove_server_config("api", dir.path()).unwrap();
         assert_eq!(msg, "Service 'api' removed from .candle.json");
         let contents = read_to_string(&dir.path().join(".candle.json"));
-        assert_eq!(contents, "{\n  \"services\": []\n}");
+        assert_eq!(contents, "{\n  \"services\": []\n}\n");
 
         let err = remove_server_config("api", dir.path()).unwrap_err();
         assert_eq!(err.to_string(), "Service 'api' not found in configuration");
@@ -400,7 +513,7 @@ mod tests {
         let contents = read_to_string(&dir.path().join(".candle.json"));
         assert_eq!(
             contents,
-            "{\n  \"services\": [],\n  \"logEviction\": {\n    \"maxLogsPerService\": 5000\n  }\n}"
+            "{\n  \"services\": [],\n  \"logEviction\": {\n    \"maxLogsPerService\": 5000\n  }\n}\n"
         );
     }
 

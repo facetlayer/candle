@@ -77,6 +77,8 @@ Step 0 is `service_lock::acquire(project_dir, command_name)`, held (as the `Serv
 - The kernel releases it if the CLI dies. Rust opens files close-on-exec, so the detached monitor never inherits it.
 - Failure to acquire → `Generic("Failed to acquire start lock: <e>")`.
 - The lock is taken before the check-start dedup, so both checks and launches are serialized per service.
+- Before the per-service lock, `acquire` takes `<state dir>/locks/database.lock` **shared** (`LOCK_SH`). `erase-database` takes the same file **exclusive** for its whole live-process check and erase (`erase_database_guarded`), so a start can't launch between the check and the deletion. Starts don't block each other. The fixed order (database lock, then service lock) can't deadlock because erase takes only the database lock.
+- A start that waited on an erase may hold a connection to the deleted `candle.db`. So `start_one_service` stats the connection's DB path (dev, inode) before taking the lock and again after; if they differ, it fails with `Generic("The database was erased while this start was waiting. Run the command again.")`.
 
 ### 4.1 check-start dedup — runs BEFORE config resolution
 
@@ -186,7 +188,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 4. Reader threads (stdout, stderr), an optional stdin thread, and a wait thread forward events over one channel.
 5. **Grace period**: collect events for `GRACE_PERIOD_MS` (500ms), writing output lines as they arrive, then drain anything already queued. If the child exited with a code other than `Some(0)` (a nonzero code or a signal) → `save_process_log(process_start_failed, "Process failed to start: exited with code <n>"` or `"Process failed to start: stopped by a signal")`, `delete_process_entry`, return.
 6. Else `save_process_log(process_started)` (no content). If it already exited with 0 during the grace period, immediately log `process_exited` and delete the row.
-7. Main loop: write output lines until the `Exit` event, calling `maybe_run_cleanup` about every 60s (`CLEANUP_INTERVAL_MS`). Then `save_process_log(process_exited, "Process exited with code <n>")` (or `"Process was stopped"` when killed by a signal), `delete_process_entry`, and return the exit code.
+7. Main loop: write output lines until the `Exit` event, calling `maybe_run_cleanup` about every 60s (`CLEANUP_INTERVAL_MS`). The reader threads and the wait thread share one channel, so `Exit` can arrive before the child's last lines. After `Exit` (here and in the grace period), `drain_after_exit` keeps writing lines until the channel disconnects (both pipes at EOF) or `POST_EXIT_DRAIN_MS` (2s) passes. The limit exists because a background grandchild can hold the pipes open indefinitely. Then `save_process_log(process_exited, "Process exited with code <n>")` (or `"Process was stopped"` when killed by a signal), `delete_process_entry`, and return the exit code.
 
 ### 7.3 Supervising the service (`monitor::run`)
 - `launch_dir = root ? Path::new(project_dir).join(root) : project_dir`. (Note: this uses Rust's `Path::join`, where an **absolute** root replaces the base, so in practice the cwd matches `resolve_launch_dir` except for lexical normalization. The Node original concatenated unconditionally.)

@@ -13,6 +13,7 @@ use crate::db::process_table::{find_all_running_processes, ProcessEntry};
 use crate::dirs::get_state_directory;
 use crate::output;
 use crate::process_alive::is_process_alive;
+use crate::start::service_lock::acquire_database_lock_in;
 
 /// Services whose rows say they're running and whose shell or monitor is alive.
 ///
@@ -45,6 +46,10 @@ pub enum EraseOutcome {
 /// database can't be read (corruption is a main reason to erase it), the check
 /// is skipped with a warning rather than blocking the erase.
 pub fn erase_database_guarded(state_dir: &Path, force: bool) -> std::io::Result<EraseOutcome> {
+    // Hold the database lock exclusively across the check and the erase. Every
+    // start holds it shared, so a start can't slip a new process in between
+    // "nothing is running" and the files going away.
+    let _lock = acquire_database_lock_in(state_dir, true)?;
     if !force {
         match live_processes_in(state_dir) {
             Ok(live) if !live.is_empty() => return Ok(EraseOutcome::RefusedLiveProcesses(live)),
@@ -244,6 +249,65 @@ mod tests {
         assert!(matches!(res.unwrap(), EraseOutcome::Erased));
         assert!(captured.stderr.iter().any(|l| l.contains("erasing anyway")));
         assert!(!dir.join("candle.db").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn erase_waits_for_an_in_progress_start() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let dir = temp_db_dir("erase-database-lock");
+        std::fs::write(dir.join("candle.db"), b"x").unwrap();
+        let start_lock = crate::start::service_lock::acquire_in(&dir, "/proj", "svc").unwrap();
+
+        let done = Arc::new(AtomicBool::new(false));
+        let flag = done.clone();
+        let dir2 = dir.clone();
+        let handle = std::thread::spawn(move || {
+            let res = capture(|| erase_database_guarded(&dir2, true)).0;
+            flag.store(true, Ordering::SeqCst);
+            res.unwrap();
+        });
+
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(!done.load(Ordering::SeqCst), "erase ran during a start");
+        assert!(dir.join("candle.db").exists());
+
+        drop(start_lock);
+        handle.join().unwrap();
+        assert!(!dir.join("candle.db").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn start_waits_for_an_in_progress_erase() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let dir = temp_db_dir("erase-database-lock-2");
+        let erase_lock = crate::start::service_lock::acquire_database_lock_in(&dir, true).unwrap();
+
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let dir2 = dir.clone();
+        let handle = std::thread::spawn(move || {
+            let _l = crate::start::service_lock::acquire_in(&dir2, "/proj", "svc").unwrap();
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "start ran during an erase"
+        );
+        drop(erase_lock);
+        handle.join().unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

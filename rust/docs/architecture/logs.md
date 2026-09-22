@@ -220,7 +220,7 @@ CLI flags map to: `--count` (limit, default 100), `--start-at` (id). `cmd_logs` 
 
 `handle_clear_logs_command({ projectDir, commandNames })`:
 1. Print `Clearing logs for project: <projectDir>`.
-2. For each `commandName`: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[commandName, projectDir]`; accumulate `result.changes || 0` into `clearedCount`.
+2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each `commandName`: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[commandName, projectDir]`; accumulate `result.changes || 0` into `clearedCount`.
 3. If `clearedCount > 0`: print `✓ Cleared <n> log entries` (leading U+2713 CHECK MARK). Else: print `- No logs found to clear`.
 4. Orphan cleanup: `DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)`.
 5. `VACUUM`.

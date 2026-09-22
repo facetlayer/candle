@@ -32,6 +32,10 @@ use crate::monitor::MonitorLaunchInfo;
 const GRACE_PERIOD_MS: u64 = 500;
 const STDIN_POLL_INTERVAL_MS: u64 = 500;
 const CLEANUP_INTERVAL_MS: u128 = 60 * 1000;
+/// After the child exits, how long to keep collecting output the reader threads
+/// haven't forwarded yet. Bounded because a background grandchild can inherit
+/// the pipes and hold them open indefinitely.
+const POST_EXIT_DRAIN_MS: u64 = 2000;
 
 /// Events forwarded from the reader / wait threads to the supervisor.
 enum LineEvent {
@@ -70,6 +74,37 @@ fn record_grace_event(
     debug_log(&format!("[monitor] {log_type:?}: {line}"));
     let _ = save_process_log(conn, command_name, project_dir, log_type, Some(&line));
     None
+}
+
+/// Collect output still in flight after the `Exit` event.
+///
+/// The reader threads and the wait thread share one channel, so `Exit` can
+/// arrive before the last lines the child wrote. Keep receiving until every
+/// sender has dropped (both pipes hit EOF) or `timeout` elapses. Returns the
+/// number of lines passed to `save`.
+fn drain_after_exit(
+    rx: &mpsc::Receiver<LineEvent>,
+    timeout: Duration,
+    mut save: impl FnMut(LineEvent),
+) -> usize {
+    let deadline = Instant::now() + timeout;
+    let mut saved = 0;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(remaining) {
+            // There is only one wait thread, so no second Exit is coming.
+            Ok(LineEvent::Exit(_)) => {}
+            Ok(event) => {
+                save(event);
+                saved += 1;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return saved,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                debug_log("[monitor] output pipes still open after exit; stopped draining");
+                return saved;
+            }
+        }
+    }
 }
 
 /// Human-readable message for a process that died during the startup grace
@@ -281,6 +316,12 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
+    if exited_during_grace {
+        drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
+            record_grace_event(&conn, &command_name, &project_dir, event);
+        });
+    }
+
     // A nonzero exit within the grace period is a start failure: log it, delete
     // the row, and stop. (Asymmetry vs the spawn-failure branch above, which
     // never created a row.)
@@ -365,6 +406,10 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
+    drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
+        record_grace_event(&conn, &command_name, &project_dir, event);
+    });
+
     debug_log(&format!(
         "[monitor] process exited, pid={child_pid}, code={exit_code:?}"
     ));
@@ -383,4 +428,50 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     }
 
     exit_code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drain_collects_lines_sent_after_exit_until_disconnect() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        let reader = tx.clone();
+        tx.send(LineEvent::Exit(Some(1))).unwrap();
+        drop(tx);
+        // A reader thread that forwards its last lines after the wait thread
+        // has already reported the exit.
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            reader.send(LineEvent::Stderr("late error".into())).unwrap();
+            reader
+                .send(LineEvent::Stdout("late output".into()))
+                .unwrap();
+        });
+
+        // The supervisor has already consumed the Exit event.
+        assert!(matches!(rx.recv().unwrap(), LineEvent::Exit(Some(1))));
+
+        let mut lines = Vec::new();
+        let saved = drain_after_exit(&rx, Duration::from_secs(5), |e| match e {
+            LineEvent::Stdout(l) | LineEvent::Stderr(l) => lines.push(l),
+            LineEvent::Exit(_) => unreachable!(),
+        });
+        handle.join().unwrap();
+        assert_eq!(saved, 2);
+        assert_eq!(lines, vec!["late error", "late output"]);
+    }
+
+    #[test]
+    fn drain_gives_up_when_a_pipe_stays_open() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        tx.send(LineEvent::Stdout("queued".into())).unwrap();
+        let start = Instant::now();
+        // `tx` stays alive, like a grandchild holding the pipe open.
+        let saved = drain_after_exit(&rx, Duration::from_millis(100), |_| {});
+        assert_eq!(saved, 1);
+        assert!(start.elapsed() < Duration::from_secs(2));
+        drop(tx);
+    }
 }

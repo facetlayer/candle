@@ -17,7 +17,9 @@ pub enum CandleError {
     /// No service with the given name is configured for a directory.
     MissingServiceWithName { command_name: String, cwd: String },
     /// No `.candle.json` file was found in or above a directory.
-    MissingSetupFile { cwd: String },
+    /// `explicit` is set when the directory came from `--project-dir`, which
+    /// never searches parent directories.
+    MissingSetupFile { cwd: String, explicit: bool },
     /// A service failed to start; carries the joined content of the recent log
     /// lines captured during launch. Mirrors `ProcessStartFailedError`.
     ProcessStartFailed {
@@ -71,9 +73,20 @@ impl fmt::Display for CandleError {
                 f,
                 "No service '{command_name}' configured for directory: {cwd}"
             ),
-            CandleError::MissingSetupFile { cwd } => write!(
+            CandleError::MissingSetupFile {
+                cwd,
+                explicit: true,
+            } => write!(
                 f,
-                "No .candle.json file found in (or above) current directory: {cwd}"
+                "No .candle.json in {cwd} (--project-dir doesn't search parent directories)"
+            ),
+            CandleError::MissingSetupFile {
+                cwd,
+                explicit: false,
+            } => write!(
+                f,
+                "No .candle.json file found in (or above) current directory: {cwd}\n\
+                 To create one, run `candle add-service <name> --shell <cmd>` or `candle setup-project`."
             ),
             CandleError::ProcessStartFailed {
                 command_name,
@@ -127,12 +140,26 @@ mod tests {
     fn missing_setup_file_display_name_and_flag() {
         let err = CandleError::MissingSetupFile {
             cwd: "/proj".to_string(),
+            explicit: false,
         };
         assert_eq!(
             err.to_string(),
-            "No .candle.json file found in (or above) current directory: /proj"
+            "No .candle.json file found in (or above) current directory: /proj\n\
+             To create one, run `candle add-service <name> --shell <cmd>` or `candle setup-project`."
         );
         assert!(err.is_usage_error());
         assert_eq!(err.name(), "MissingSetupFile");
+    }
+
+    #[test]
+    fn missing_setup_file_for_explicit_project_dir() {
+        let err = CandleError::MissingSetupFile {
+            cwd: "/proj/sub".to_string(),
+            explicit: true,
+        };
+        assert_eq!(
+            err.to_string(),
+            "No .candle.json in /proj/sub (--project-dir doesn't search parent directories)"
+        );
     }
 }

@@ -24,6 +24,8 @@ Run 'candle kill-all' first, or pass --force to erase anyway.
 
 If the database is corrupted and can't be read, the running-services check is skipped with a warning and the erase goes ahead.
 
+A `start` or `restart` that is already under way finishes before the erase checks for running services, and a new one waits until the erase is done. So a service can't be launched between the check and the deletion.
+
 ## Options
 
 - `--force` - Erase even while services are running. They keep running, untracked.

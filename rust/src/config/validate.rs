@@ -50,7 +50,7 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
         _ => Value::Array(Vec::new()),
     };
 
-    let services = parse_services(services_value)?;
+    let (services, service_raw) = parse_services(services_value)?;
     let log_eviction = parse_log_eviction(obj.get("logEviction"))?;
 
     // Capture top-level key order. JS's `config.services ||= []` adds a
@@ -73,17 +73,30 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
         log_eviction,
         key_order,
         extra,
+        service_raw,
     })
 }
 
-fn parse_services(services_value: Value) -> Result<Vec<ServiceConfig>, CandleError> {
+type ParsedServices = (Vec<ServiceConfig>, Map<String, Value>);
+
+/// Parse `services`, also returning each service's raw object keyed by name so
+/// write-back can preserve keys Candle doesn't know.
+fn parse_services(services_value: Value) -> Result<ParsedServices, CandleError> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<ServiceConfig> = Vec::new();
+    let mut raw = Map::new();
+
+    let mut push = |entry: Value, seen: &mut HashSet<String>| -> Result<(), CandleError> {
+        let service = parse_service(&entry, seen)?;
+        raw.insert(service.name.clone(), entry);
+        out.push(service);
+        Ok(())
+    };
 
     match services_value {
         Value::Array(arr) => {
             for entry in arr {
-                out.push(parse_service(&entry, &mut seen)?);
+                push(entry, &mut seen)?;
             }
         }
         Value::Object(map) => {
@@ -97,7 +110,7 @@ fn parse_services(services_value: Value) -> Result<Vec<ServiceConfig>, CandleErr
                         merged.insert(k, v);
                     }
                 }
-                out.push(parse_service(&Value::Object(merged), &mut seen)?);
+                push(Value::Object(merged), &mut seen)?;
             }
         }
         other => {
@@ -108,7 +121,83 @@ fn parse_services(services_value: Value) -> Result<Vec<ServiceConfig>, CandleErr
         }
     }
 
-    Ok(out)
+    Ok((out, raw))
+}
+
+const KNOWN_SERVICE_KEYS: [&str; 4] = ["name", "shell", "root", "enableStdin"];
+
+/// Suggest the known key a misspelled or guessed one probably meant.
+fn suggest_key(key: &str, known: &[&'static str]) -> Option<&'static str> {
+    if let Some(k) = known.iter().find(|k| k.eq_ignore_ascii_case(key)) {
+        return Some(k);
+    }
+    let lower = key.to_ascii_lowercase();
+    let guess = match lower.as_str() {
+        "cwd" | "dir" | "directory" | "workingdir" | "working_dir" | "workdir" | "path" => "root",
+        "command" | "cmd" | "run" | "script" | "exec" => "shell",
+        "stdin" | "enable_stdin" => "enableStdin",
+        "service" | "servers" | "processes" => "services",
+        "log_eviction" => "logEviction",
+        _ => return None,
+    };
+    known.iter().find(|k| **k == guess).copied()
+}
+
+fn unknown_key_message(key: &str, location: &str, known: &[&'static str]) -> String {
+    let mut msg = format!("Warning: unknown key \"{key}\" {location}");
+    match suggest_key(key, known) {
+        Some(s) => msg.push_str(&format!(" (did you mean \"{s}\"?)")),
+        None => msg.push_str(&format!(" (known keys: {})", known.join(", "))),
+    }
+    msg
+}
+
+/// Warnings for keys Candle ignores, at the top level and inside each service.
+///
+/// Unknown keys are kept on write-back, so these are warnings, not errors; the
+/// point is to catch typos like `"cwd"` for `"root"` that otherwise do nothing.
+pub fn unknown_key_warnings(value: &Value, filename: &str) -> Vec<String> {
+    let Value::Object(obj) = value else {
+        return Vec::new();
+    };
+    let mut warnings = Vec::new();
+    for key in obj.keys() {
+        if !KNOWN_TOP_LEVEL_KEYS.contains(&key.as_str()) {
+            warnings.push(unknown_key_message(
+                key,
+                &format!("in {filename}"),
+                &KNOWN_TOP_LEVEL_KEYS,
+            ));
+        }
+    }
+
+    let services: Vec<(String, &Map<String, Value>)> = match obj.get("services") {
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|s| {
+                let m = s.as_object()?;
+                let name = m.get("name").and_then(Value::as_str).unwrap_or("?");
+                Some((name.to_string(), m))
+            })
+            .collect(),
+        Some(Value::Object(map)) => map
+            .iter()
+            .filter_map(|(name, s)| Some((name.clone(), s.as_object()?)))
+            .collect(),
+        _ => Vec::new(),
+    };
+    for (name, service) in services {
+        for key in service.keys() {
+            if !KNOWN_SERVICE_KEYS.contains(&key.as_str()) {
+                warnings.push(unknown_key_message(
+                    key,
+                    &format!("in service \"{name}\" in {filename}"),
+                    &KNOWN_SERVICE_KEYS,
+                ));
+            }
+        }
+    }
+    warnings
 }
 
 fn parse_service(value: &Value, seen: &mut HashSet<String>) -> Result<ServiceConfig, CandleError> {
@@ -340,7 +429,44 @@ mod tests {
         let input = "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"npm run dev\"\n    }\n  ],\n  \"customKey\": \"customValue\"\n}";
         let value: Value = serde_json::from_str(input).unwrap();
         let cfg = validate_config(value).unwrap();
-        assert_eq!(cfg.to_json_string(), input);
+        assert_eq!(cfg.to_json_string(), format!("{input}\n"));
+    }
+
+    #[test]
+    fn warns_on_unknown_service_and_top_level_keys() {
+        let w = unknown_key_warnings(
+            &json!({
+                "services": [ { "name": "api", "shell": "x", "cwd": "sub", "zzz": 1 } ],
+                "logEviction": {},
+                "extraThing": true
+            }),
+            ".candle.json",
+        );
+        assert_eq!(
+            w,
+            vec![
+                "Warning: unknown key \"extraThing\" in .candle.json (known keys: services, logEviction)",
+                "Warning: unknown key \"cwd\" in service \"api\" in .candle.json (did you mean \"root\"?)",
+                "Warning: unknown key \"zzz\" in service \"api\" in .candle.json (known keys: name, shell, root, enableStdin)",
+            ]
+        );
+    }
+
+    #[test]
+    fn no_warnings_for_known_keys_or_object_map_form() {
+        assert!(unknown_key_warnings(
+            &json!({ "services": { "api": { "shell": "x", "root": "a", "enableStdin": true } } }),
+            ".candle.json"
+        )
+        .is_empty());
+        let w = unknown_key_warnings(
+            &json!({ "services": { "api": { "shell": "x", "Root": "a" } } }),
+            ".candle.json",
+        );
+        assert_eq!(
+            w,
+            vec!["Warning: unknown key \"Root\" in service \"api\" in .candle.json (did you mean \"root\"?)"]
+        );
     }
 
     #[test]
@@ -349,6 +475,6 @@ mod tests {
             "{\n  \"customKey\": 1,\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"x\"\n    }\n  ]\n}";
         let value: Value = serde_json::from_str(input).unwrap();
         let cfg = validate_config(value).unwrap();
-        assert_eq!(cfg.to_json_string(), input);
+        assert_eq!(cfg.to_json_string(), format!("{input}\n"));
     }
 }

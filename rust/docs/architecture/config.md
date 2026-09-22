@@ -15,7 +15,7 @@ Modeled in `config/model.rs`.
 | `services` | array of ServiceConfig | no | `[]` | If missing/undefined it is normalized to `[]` (configFile.ts:60). Can also be supplied as an *object map* — see §3. |
 | `logEviction` | object | no | — | Nested object, see below. |
 
-There is no schema versioning field and no other known top-level keys. The former `logCollector` key (which chose between the Node and Rust collector sidecars) is **retired**: it is no longer validated or settable, and a leftover entry is treated like any other unknown key. Unknown extra top-level keys are **not** rejected by `validate_config`; they are kept in `CandleSetupConfig.extra` (with their position in `key_order`) and the serializer (see §6) writes them back verbatim on round-trip. Unknown **per-service** keys are also accepted, but `ServiceConfig` has no place for them, so they are dropped if a mutating command rewrites the file.
+There is no schema versioning field and no other known top-level keys. The former `logCollector` key (which chose between the Node and Rust collector sidecars) is **retired**: it is no longer validated or settable, and a leftover entry is treated like any other unknown key. Unknown extra top-level keys are **not** rejected by `validate_config`; they are kept in `CandleSetupConfig.extra` (with their position in `key_order`) and the serializer (see §6) writes them back verbatim on round-trip. Unknown **per-service** keys are also accepted and preserved: `validate_config` keeps each service's raw object in `CandleSetupConfig.service_raw` (keyed by name), and write-back starts from that object, updating the known keys in place. Whenever a config file is read, `read_config_file` prints a warning to stderr (once per process per message) for every unknown top-level or per-service key, suggesting a likely known key where it can (`cwd` → `root`, `command` → `shell`, case mismatches).
 
 ### ServiceConfig (configFile.ts:9-14)
 
@@ -83,7 +83,7 @@ DEFAULT_CONFIG_FILENAME = '.candle.json'
 3. `logEviction` if present must be a non-null, non-array object, else `ConfigFileError: Config file error: Invalid value for 'logEviction': expected an object`. Each of `maxLogsPerService` / `maxRetentionSeconds`, if present, must be an integer `>= 1`, else `ConfigFileError: Config file error: 'logEviction.<field>' must be a positive integer`.
 4. Returns a `CandleSetupConfig { services, log_eviction, key_order, extra }` (object-map normalization persisted; defaults NOT injected). `logCollector` gets no special treatment (see §1).
 
-**Validation does not reject unknown top-level or unknown per-service keys.**
+**Validation does not reject unknown top-level or unknown per-service keys** (they only warn, see §1).
 
 ### Path validation helpers (`config/paths.rs`, originally configFile.ts:192-219)
 - `is_valid_root_path(p)`: absolute → always valid. Else lexically normalize; invalid if it `startsWith('..')`. (So `../x` invalid, `a/../b` → normalizes to `b` valid, `a/../../b` → `../b` invalid.)
@@ -138,7 +138,7 @@ The Node original also defined a `RunningStatus` enum (`running=1, stopped=0`, d
 
 ## 6. Serialization (write-back)
 
-All three mutating commands write with 2-space indent, no trailing newline (mirrors `JSON.stringify(config, null, 2)` — addServerConfig.ts:40, removeServerConfig.ts:20, set-config-command.ts:64). Object key order follows insertion order: for a freshly created file it is `{ "services": [] }`. For `set-config`, new keys are appended after existing ones. The Rust code rebuilds the object in `key_order` (`CandleSetupConfig::to_value`), using `serde_json` with the `preserve_order` feature, and writes `to_string_pretty` (2-space) output to match byte-for-byte where tests check file contents. Each service is written as `name`, `shell`, then `root` (if non-empty) and `enableStdin` (only if `true`).
+All the commands that write the file (`setup-project`, `add-service`, `remove-service`, `set-config`) write with 2-space indent and a trailing newline (the Node original had none). Object key order follows insertion order: for a freshly created file it is `{ "services": [] }`. For `set-config`, new keys are appended after existing ones. The Rust code rebuilds the object in `key_order` (`CandleSetupConfig::to_value`), using `serde_json` with the `preserve_order` feature, and writes `to_string_pretty` (2-space) output to match byte-for-byte where tests check file contents. Each service is written as `name`, `shell`, then `root` (if non-empty) and `enableStdin` (only if `true`).
 
 ## 7. Commands
 
@@ -152,6 +152,7 @@ Implemented in `config/commands.rs` (each handler returns the success message; `
 ### `add-service <name> --shell <s> [--root <r>] [--enable-stdin]` (originally addServerConfig.ts)
 - `name` positional required (missing → `Error: Service name is required`, exit 1). `--shell` required and non-empty (missing → `Missing required argument: shell`, exit 1). `--root` string optional. `--enable-stdin` boolean optional. Unknown flags are rejected.
 - CLI rejects multiple command names: prints `Error: Cannot use multiple command names for add-service` to stderr + `exit(1)`.
+- Before any file is created: the name must be non-empty and use only ASCII letters, digits, `-`, `_`, `.` (else `UsageError("Invalid service name '<name>': use only letters, digits, '-', '_' and '.'")`). A non-empty, otherwise valid `--root` must resolve (against the discovered project dir, or `cwd` if none) to an existing directory (else `UsageError("Root directory does not exist: <abs path>")`).
 - `find_or_create_setup_file(cwd)`: if a config exists upward, use `join(projectDir, configFilename)`; if `MissingSetupFile`, create `{ "services": [] }` at `join(cwd, '.candle.json')` (other errors rethrow).
 - Read config. If a service with `name` exists → `ConfigFileError("Service '<name>' already exists in configuration")`.
 - Build new service object with fields in this exact insertion order: `name`, `shell`, then `root` **only if truthy**, then `enableStdin` **only if truthy** (addServerConfig.ts:26-31 — falsy values are omitted entirely).

@@ -14,12 +14,12 @@ The `add-service` command adds a new service definition to your `.candle.json` c
 
 ## Arguments
 
-- `name` - Name for the new service (required)
+- `name` - Name for the new service (required). Use only letters, digits, `-`, `_` and `.`, so the name never needs quoting in later commands. Other characters, such as spaces or shell characters, are rejected.
 
 ## Options
 
 - `--shell <command>` - Shell command to run the service (required)
-- `--root <directory>` - Working directory for the service (relative path)
+- `--root <directory>` - Working directory for the service, relative to the project directory. The directory must already exist.
 
 ## Examples
 
@@ -52,7 +52,8 @@ candle add-service api --shell "npm run dev" --root packages/api
 
 1. If `.candle.json` exists, the service is added to the existing configuration
 2. If it doesn't exist, a new configuration file is created
-3. Existing services are preserved
+3. Existing services are preserved, including any keys Candle doesn't recognize
+4. The file is written with 2-space indentation and a trailing newline
 
 ## Notes
 
