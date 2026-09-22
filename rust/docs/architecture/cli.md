@@ -94,7 +94,7 @@ const docFiles = new DocFilesHelper({
 ```
 - `dirs`: scanned for `*.md` files (non-recursive, top-level only).
 - `files`: explicit individual files added by basename.
-- `__packageRoot` resolves relative to the running script's directory. The docs dir contents: `agents-intro.md`, `getting-started.md`, `testing-strategy.md`, `transient-processes.md`, plus `README.md`.
+- `__packageRoot` resolves relative to the running script's directory. The docs dir contents: `agents-intro.md`, `getting-started.md`, `transient-processes.md`, plus `README.md` (`testing-strategy.md` has since moved to `docs/dev/`).
 
 ### Internal model
 `fileMap: Map<basename, fullPath>`. Built in the constructor:
@@ -164,7 +164,7 @@ Available doc files:
 Module `doc_files` has free functions, not a helper struct. The docs are **embedded at compile time** with `include_dir!("$CARGO_MANIFEST_DIR/../docs")` plus `include_str!("../../README.md")`, so the binary is relocatable and never reads the filesystem for docs.
 - `all_docs()`: the embedded top-level `*.md` files **sorted by filename**, then `README.md` last.
 - `parse_frontmatter(&str) -> (name, description, content)`: hand-written (no `regex`). Normalizes `\r\n` to `\n`, requires a leading `---\n` and a closing `\n---\n`, and reads only the `name` and `description` keys; otherwise returns the full text unchanged.
-- `list_docs() -> Vec<DocInfo { name, description, filename }>` and `get_doc(name) -> Result<DocContent { filename, source_path, content }, DocLookupError::NotFound>`. Unlike the Node helper, lookup is **exact** (case-insensitive): the name matches a doc's filename stem or its frontmatter `name`, with an optional `.md` suffix. There is no substring or prefix matching, so `get-doc start` does not resolve to `getting-started`. `content` has the frontmatter stripped. `source_path` is `README.md` for the README (it lives at the repo root) and `docs/<filename>` otherwise.
+- `list_docs() -> Vec<DocInfo { name, description, filename }>` and `get_doc(name) -> Result<DocContent { filename, source_path, content }, DocLookupError::NotFound>`. Unlike the Node helper, lookup is **exact** (case-insensitive): the name matches a doc's filename stem or its frontmatter `name`, with an optional `.md` suffix. There is no substring or prefix matching, so `get-doc start` does not resolve to `getting-started`. `content` has the frontmatter stripped. `source_path` is `README.md` for the README (it lives at the repo root) and `docs/<filename>` otherwise. Only files directly in `docs/` are served; developer docs under `docs/dev/` (e.g. `testing-strategy.md`) are excluded from both commands.
 - Printing lives in `main.rs`. `cmd_list_docs` uses `candle get-doc <name>` as the command hint, the same key the listing shows. `cmd_get_doc` prints `content`, then `\n(File source: <source_path>)`; `NotFound` prints the two `Doc file not found` lines to stderr with exit 1.
 
 ## 4b. Project scope (`project_scope.rs`)

@@ -12,7 +12,8 @@
  ./test/sampleServers/ - Sample implementations of test services.
  ./test/workspaces/ - Directories used to run Candle during tests.
  ./test/cli/ - Tests related to each CLI command
- ./docs/ - Internal docs, aimed at tools and developers
+ ./docs/ - Docs built into the binary and shown by `candle list-docs` / `get-doc`
+ ./docs/dev/ - Developer docs for working on Candle (not shown by `list-docs`)
  ./docs-site/ - Public documentation website
  ./docs-site/docs/ - Contents for the public documentation site.
  ./docs-site/docs/commands/ - Public documentation for each CLI command.

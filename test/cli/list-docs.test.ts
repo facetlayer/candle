@@ -60,10 +60,15 @@ describe('CLI List-Docs Command', () => {
 
     describe('list-docs content', () => {
         it('should include known documentation files', async () => {
-            await workspace.runCli(['list-docs']);
+            const result = await workspace.runCli(['list-docs']);
 
-            // Project has docs like getting-started.md
-            // The exact files depend on the docs directory
+            expect(result.stdoutAsString()).toContain('candle get-doc getting-started)');
+        });
+
+        it('should not include developer docs from docs/dev', async () => {
+            const result = await workspace.runCli(['list-docs']);
+
+            expect(result.stdoutAsString()).not.toContain('testing-strategy');
         });
     });
 });
