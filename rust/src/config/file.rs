@@ -50,8 +50,8 @@ pub fn read_config_file(config_file_path: &Path) -> Result<CandleSetupConfig, Ca
         return Ok(CandleSetupConfig::default());
     }
 
-    let value: Value = serde_json::from_str(trimmed)
-        .map_err(|e| CandleError::ConfigFileError(e.to_string()))?;
+    let value: Value =
+        serde_json::from_str(trimmed).map_err(|e| CandleError::ConfigFileError(e.to_string()))?;
 
     validate_config(value)
 }
@@ -313,7 +313,10 @@ mod tests {
         std::fs::write(&path, "{ not json").unwrap();
         let err = find_config_file(dir.path()).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.starts_with(&format!("Invalid .candle.json at {}:", path.display())), "got: {msg}");
+        assert!(
+            msg.starts_with(&format!("Invalid .candle.json at {}:", path.display())),
+            "got: {msg}"
+        );
         // Wrapping loses the MissingSetupFile type.
         assert!(matches!(err, CandleError::ConfigFileError(_)));
     }
@@ -321,11 +324,7 @@ mod tests {
     #[test]
     fn filename_priority_prefers_candle_json() {
         let dir = TempDir::new();
-        std::fs::write(
-            dir.path().join(".candle.json"),
-            "{\n  \"services\": []\n}",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
         std::fs::write(
             dir.path().join(".candle-setup.json"),
             "{\n  \"services\": [ { \"name\": \"x\", \"shell\": \"y\" } ]\n}",
@@ -380,7 +379,11 @@ mod tests {
         .unwrap();
         // canonicalize project dir so root-equality matches the discovered project_dir.
         let err = get_service_config_by_name("api", Some(dir.path())).unwrap_err();
-        assert!(err.to_string().starts_with("Ambiguous service name \"api\""), "got: {err}");
+        assert!(
+            err.to_string()
+                .starts_with("Ambiguous service name \"api\""),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -393,6 +396,8 @@ mod tests {
         .unwrap();
         let err = get_service_config_by_name("nope", Some(dir.path())).unwrap_err();
         assert!(matches!(err, CandleError::MissingServiceWithName { .. }));
-        assert!(err.to_string().starts_with("No service 'nope' configured for directory:"));
+        assert!(err
+            .to_string()
+            .starts_with("No service 'nope' configured for directory:"));
     }
 }

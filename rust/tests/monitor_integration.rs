@@ -5,9 +5,9 @@
 
 use candle::db::get_database;
 use candle::db::process_table::find_all_processes;
-use candle::monitor::{self, MonitorLaunchInfo};
 use candle::logs::process_logs::{get_process_logs, LogSearchOptions};
 use candle::logs::ProcessLogType;
+use candle::monitor::{self, MonitorLaunchInfo};
 
 fn temp_dir(label: &str) -> std::path::PathBuf {
     let unique = format!(
@@ -64,8 +64,9 @@ fn collector_records_full_lifecycle() {
 
     // A stdout line "hello".
     assert!(
-        logs.iter().any(|l| l.log_type == ProcessLogType::Stdout.as_i64()
-            && l.content.as_deref() == Some("hello")),
+        logs.iter()
+            .any(|l| l.log_type == ProcessLogType::Stdout.as_i64()
+                && l.content.as_deref() == Some("hello")),
         "expected an stdout 'hello' row; got {logs:?}"
     );
     // process_started (no content).
@@ -76,8 +77,9 @@ fn collector_records_full_lifecycle() {
     );
     // process_exited with the exact exit-code message.
     assert!(
-        logs.iter().any(|l| l.log_type == ProcessLogType::ProcessExited.as_i64()
-            && l.content.as_deref() == Some("Process exited with code 0")),
+        logs.iter()
+            .any(|l| l.log_type == ProcessLogType::ProcessExited.as_i64()
+                && l.content.as_deref() == Some("Process exited with code 0")),
         "expected a process_exited row; got {logs:?}"
     );
 

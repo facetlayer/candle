@@ -75,9 +75,8 @@ pub fn handle_restart(
         // Fetch process info for all command names before killing.
         let mut process_info: Vec<(&String, Option<ProcessEntry>)> = Vec::new();
         for name in &names {
-            let processes =
-                find_processes_by_command_name_and_project_dir(conn, name, project_dir)
-                    .map_err(db_err)?;
+            let processes = find_processes_by_command_name_and_project_dir(conn, name, project_dir)
+                .map_err(db_err)?;
             process_info.push((name, processes.into_iter().next()));
         }
 

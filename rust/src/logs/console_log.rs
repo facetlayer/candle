@@ -126,7 +126,10 @@ mod tests {
     #[test]
     fn stdout_pretty_no_prefix() {
         let (_, captured) = capture(|| {
-            console_log_row(&row(ProcessLogType::Stdout, Some("hello")), &ConsoleLogOptions::pretty());
+            console_log_row(
+                &row(ProcessLogType::Stdout, Some("hello")),
+                &ConsoleLogOptions::pretty(),
+            );
         });
         assert_eq!(captured.stdout, vec!["hello".to_string()]);
     }
@@ -134,7 +137,10 @@ mod tests {
     #[test]
     fn stderr_pretty_has_prefix() {
         let (_, captured) = capture(|| {
-            console_log_row(&row(ProcessLogType::Stderr, Some("boom")), &ConsoleLogOptions::pretty());
+            console_log_row(
+                &row(ProcessLogType::Stderr, Some("boom")),
+                &ConsoleLogOptions::pretty(),
+            );
         });
         assert_eq!(captured.stdout, vec!["[stderr] boom".to_string()]);
     }
@@ -155,7 +161,10 @@ mod tests {
     #[test]
     fn system_message_is_bracketed() {
         let (_, captured) = capture(|| {
-            console_log_row(&row(ProcessLogType::ProcessExited, Some("exited code 0")), &ConsoleLogOptions::pretty());
+            console_log_row(
+                &row(ProcessLogType::ProcessExited, Some("exited code 0")),
+                &ConsoleLogOptions::pretty(),
+            );
         });
         assert_eq!(captured.stdout, vec!["[exited code 0]".to_string()]);
     }
@@ -163,8 +172,14 @@ mod tests {
     #[test]
     fn lifecycle_start_types_are_hidden() {
         let (_, captured) = capture(|| {
-            console_log_row(&row(ProcessLogType::ProcessStartInitiated, None), &ConsoleLogOptions::pretty());
-            console_log_row(&row(ProcessLogType::ProcessStarted, None), &ConsoleLogOptions::pretty());
+            console_log_row(
+                &row(ProcessLogType::ProcessStartInitiated, None),
+                &ConsoleLogOptions::pretty(),
+            );
+            console_log_row(
+                &row(ProcessLogType::ProcessStarted, None),
+                &ConsoleLogOptions::pretty(),
+            );
         });
         assert!(captured.stdout.is_empty());
     }

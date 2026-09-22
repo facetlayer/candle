@@ -21,8 +21,8 @@ pub use commands::{
 };
 pub use file::{
     find_config_file, find_loose_command_name, find_project_dir, find_service_by_name,
-    get_all_service_names, get_log_eviction_config, get_service_config_by_name,
-    read_config_file, resolve_command_names_or_all, FoundConfig, FoundServiceConfig,
+    get_all_service_names, get_log_eviction_config, get_service_config_by_name, read_config_file,
+    resolve_command_names_or_all, FoundConfig, FoundServiceConfig,
 };
 pub use model::{
     CandleSetupConfig, LogEvictionConfig, ResolvedLogEvictionConfig, ServiceConfig,

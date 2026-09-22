@@ -14,9 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::config::{
-    find_config_file, find_service_by_name, CandleSetupConfig, ServiceConfig,
-};
+use crate::config::{find_config_file, find_service_by_name, CandleSetupConfig, ServiceConfig};
 use crate::db::process_table::{
     find_all_processes, find_running_processes_by_project_dir, ProcessEntry,
 };
@@ -150,8 +148,8 @@ pub fn handle_list(
     show_all: bool,
 ) -> Result<ListOutput, CandleError> {
     if show_all {
-        let entries =
-            filter_alive_processes(conn, find_all_processes(conn).map_err(db_err)?).map_err(db_err)?;
+        let entries = filter_alive_processes(conn, find_all_processes(conn).map_err(db_err)?)
+            .map_err(db_err)?;
         let processes = entries
             .into_iter()
             .map(|entry| {
@@ -173,9 +171,11 @@ pub fn handle_list(
     let config: CandleSetupConfig = found.config;
     let project_dir = found.project_dir.display().to_string();
 
-    let running =
-        filter_alive_processes(conn, find_running_processes_by_project_dir(conn, &project_dir).map_err(db_err)?)
-            .map_err(db_err)?;
+    let running = filter_alive_processes(
+        conn,
+        find_running_processes_by_project_dir(conn, &project_dir).map_err(db_err)?,
+    )
+    .map_err(db_err)?;
 
     let mut processes: Vec<ListProcess> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
@@ -354,7 +354,11 @@ fn format_table(output: &ListOutput, with_command_and_dir: bool) -> String {
     let widths: Vec<usize> = (0..headers.len())
         .map(|i| {
             let header_len = headers[i].len();
-            rows.iter().map(|r| r[i].len()).max().unwrap_or(0).max(header_len)
+            rows.iter()
+                .map(|r| r[i].len())
+                .max()
+                .unwrap_or(0)
+                .max(header_len)
         })
         .collect();
 
@@ -432,7 +436,13 @@ mod tests {
         let uptime = header.find("UPTIME").unwrap();
         let command = header.find("COMMAND").unwrap();
         let directory = header.find("DIRECTORY").unwrap();
-        assert!(name < status && status < pid && pid < uptime && uptime < command && command < directory);
+        assert!(
+            name < status
+                && status < pid
+                && pid < uptime
+                && uptime < command
+                && command < directory
+        );
         assert!(!text.contains("LAUNCH_ID"));
         assert!(!text.contains("WRAPPER_PID"));
         assert!(text.contains("[config changed]"));
@@ -512,7 +522,10 @@ mod tests {
 
         // Empty filter is a no-op.
         assert_eq!(
-            filter_by_service_names(sample(), &[]).unwrap().processes.len(),
+            filter_by_service_names(sample(), &[])
+                .unwrap()
+                .processes
+                .len(),
             2
         );
 

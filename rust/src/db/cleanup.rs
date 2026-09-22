@@ -301,14 +301,18 @@ mod tests {
 
         run_cleanup(&conn).unwrap();
         let count: i64 = conn
-            .query_row("select count(*) from process_last_cleanup", [], |r| r.get(0))
+            .query_row("select count(*) from process_last_cleanup", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(count, 1);
 
         // A second run keeps it single-row (update-in-place).
         run_cleanup(&conn).unwrap();
         let count2: i64 = conn
-            .query_row("select count(*) from process_last_cleanup", [], |r| r.get(0))
+            .query_row("select count(*) from process_last_cleanup", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(count2, 1);
 
@@ -330,8 +334,14 @@ mod tests {
 
         // Many over-limit logs, but cleanup should be skipped (recent timestamp).
         for i in 0..1005 {
-            save_process_log(&conn, "api", "/proj", ProcessLogType::Stdout, Some(&format!("{i}")))
-                .unwrap();
+            save_process_log(
+                &conn,
+                "api",
+                "/proj",
+                ProcessLogType::Stdout,
+                Some(&format!("{i}")),
+            )
+            .unwrap();
         }
         maybe_run_cleanup(&conn).unwrap();
         assert_eq!(count_logs(&conn, "/proj", "api"), 1005);

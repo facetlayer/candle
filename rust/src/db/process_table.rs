@@ -59,7 +59,10 @@ const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid
 
 /// Insert a new process row. Sets `start_time` to the current unix seconds and
 /// leaves `created_at`/`killed_at` to default/NULL. Returns the new row id.
-pub fn create_process_entry(conn: &Connection, entry: &CreateProcessEntry) -> rusqlite::Result<i64> {
+pub fn create_process_entry(
+    conn: &Connection,
+    entry: &CreateProcessEntry,
+) -> rusqlite::Result<i64> {
     conn.execute(
         "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root) \
          values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -122,7 +125,9 @@ pub fn find_processes_by_command_name_and_project_dir(
 ) -> rusqlite::Result<Vec<ProcessEntry>> {
     query_entries(
         conn,
-        &format!("select {SELECT_COLS} from processes where command_name = ?1 and project_dir = ?2"),
+        &format!(
+            "select {SELECT_COLS} from processes where command_name = ?1 and project_dir = ?2"
+        ),
         params![command_name, project_dir],
     )
 }
@@ -152,7 +157,11 @@ pub fn find_running_processes_by_project_dir(
 }
 
 pub fn find_all_processes(conn: &Connection) -> rusqlite::Result<Vec<ProcessEntry>> {
-    query_entries(conn, &format!("select {SELECT_COLS} from processes"), params![])
+    query_entries(
+        conn,
+        &format!("select {SELECT_COLS} from processes"),
+        params![],
+    )
 }
 
 pub fn find_all_running_processes(conn: &Connection) -> rusqlite::Result<Vec<ProcessEntry>> {
@@ -195,8 +204,7 @@ mod tests {
         let id = create_process_entry(&conn, &sample("api", 100)).unwrap();
         assert!(id > 0);
 
-        let found =
-            find_processes_by_command_name_and_project_dir(&conn, "api", "/proj").unwrap();
+        let found = find_processes_by_command_name_and_project_dir(&conn, "api", "/proj").unwrap();
         assert_eq!(found.len(), 1);
         let entry = &found[0];
         assert_eq!(entry.command_name, "api");
@@ -210,7 +218,12 @@ mod tests {
 
         // Running query sees it.
         assert_eq!(find_all_running_processes(&conn).unwrap().len(), 1);
-        assert_eq!(find_running_processes_by_project_dir(&conn, "/proj").unwrap().len(), 1);
+        assert_eq!(
+            find_running_processes_by_project_dir(&conn, "/proj")
+                .unwrap()
+                .len(),
+            1
+        );
 
         // Mark killed.
         update_process_killed_at(&conn, "api", "/proj", 100, 12345).unwrap();
@@ -238,8 +251,16 @@ mod tests {
         other.project_dir = "/other".to_string();
         create_process_entry(&conn, &other).unwrap();
 
-        assert_eq!(find_processes_by_project_dir(&conn, "/proj").unwrap().len(), 2);
-        assert_eq!(find_processes_by_project_dir(&conn, "/other").unwrap().len(), 1);
+        assert_eq!(
+            find_processes_by_project_dir(&conn, "/proj").unwrap().len(),
+            2
+        );
+        assert_eq!(
+            find_processes_by_project_dir(&conn, "/other")
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(find_all_processes(&conn).unwrap().len(), 3);
 
         drop(conn);

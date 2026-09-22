@@ -37,7 +37,13 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
     {
         run_command_for_pids(
             "ps",
-            &["-o", "pid", "--no-headers", "--ppid", &parent_pid.to_string()],
+            &[
+                "-o",
+                "pid",
+                "--no-headers",
+                "--ppid",
+                &parent_pid.to_string(),
+            ],
         )
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -52,10 +58,7 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
 /// stdin and stderr are silenced; stdout is captured. Non-numeric and blank
 /// lines are dropped. On any spawn failure the result is an empty list (matching
 /// the Node `error` event handler).
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "linux")),
-    allow(dead_code)
-)]
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
 fn run_command_for_pids(command: &str, args: &[&str]) -> Vec<i64> {
     let output = Command::new(command)
         .args(args)

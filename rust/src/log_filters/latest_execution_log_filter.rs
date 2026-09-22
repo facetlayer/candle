@@ -44,7 +44,10 @@ pub struct LatestExecutionLogFilter {
 
 impl LatestExecutionLogFilter {
     /// Create a new filter.
-    pub fn new(show_past_logs_behavior: ShowPastLogsBehavior, recent_window_ms: Option<u64>) -> Self {
+    pub fn new(
+        show_past_logs_behavior: ShowPastLogsBehavior,
+        recent_window_ms: Option<u64>,
+    ) -> Self {
         LatestExecutionLogFilter {
             recent_command_launch: HashMap::new(),
             show_past_logs_behavior,
@@ -136,7 +139,8 @@ impl LatestExecutionLogFilter {
                     // Only include logs from the latest launch onward.
                     log.id >= status.start_log_id && self.passes_timestamp_window(log)
                 }
-            } else if self.show_past_logs_behavior == ShowPastLogsBehavior::ShowLogsFromPreviousLaunch
+            } else if self.show_past_logs_behavior
+                == ShowPastLogsBehavior::ShowLogsFromPreviousLaunch
             {
                 // No start event, but configured to show existing logs anyway
                 self.passes_timestamp_window(log)
@@ -280,7 +284,11 @@ mod tests {
         let logs = vec![
             m.make("first-launch", ProcessLogType::ProcessStartInitiated, m.now),
             m.make("old-run", ProcessLogType::Stdout, m.now),
-            m.make("second-launch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make(
+                "second-launch",
+                ProcessLogType::ProcessStartInitiated,
+                m.now,
+            ),
             m.make("new-run", ProcessLogType::Stdout, m.now),
         ];
         filter.check_latest_launch_status(&logs);
@@ -302,7 +310,11 @@ mod tests {
         filter.filter(&initial);
 
         let next = vec![
-            m.make("second-launch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make(
+                "second-launch",
+                ProcessLogType::ProcessStartInitiated,
+                m.now,
+            ),
             m.make("new-run", ProcessLogType::Stdout, m.now),
         ];
         let result = filter.filter(&next);
@@ -343,7 +355,11 @@ mod tests {
         let logs = vec![
             initial[0].clone(),
             m.make("started", ProcessLogType::ProcessStarted, m.now),
-            m.make("Process exited with code 0", ProcessLogType::ProcessExited, m.now),
+            m.make(
+                "Process exited with code 0",
+                ProcessLogType::ProcessExited,
+                m.now,
+            ),
         ];
 
         let result = filter.filter(&logs);

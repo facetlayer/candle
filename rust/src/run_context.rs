@@ -75,7 +75,10 @@ mod tests {
     #[test]
     fn each_agent_var_triggers_agent_mode() {
         for name in AGENT_ENV_VARS {
-            assert!(detect_agent(only(name, "1")), "{name} should trigger agent mode");
+            assert!(
+                detect_agent(only(name, "1")),
+                "{name} should trigger agent mode"
+            );
         }
     }
 

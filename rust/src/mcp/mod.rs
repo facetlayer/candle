@@ -157,7 +157,9 @@ fn tool_definitions() -> Vec<ToolDef> {
 }
 
 fn arg_str<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
 fn resolve_project_dir(cwd: &Path) -> Result<String, CandleError> {
@@ -170,22 +172,45 @@ fn db_err(e: rusqlite::Error) -> CandleError {
 
 // ---- tool handlers ---------------------------------------------------------
 
-fn tool_list_services(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
-    let show_all = args.get("showAll").and_then(|v| v.as_bool()).unwrap_or(false);
+fn tool_list_services(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
+    let show_all = args
+        .get("showAll")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let output = crate::commands::list::handle_list(conn, cwd, show_all)?;
-    Ok(Some(serde_json::to_value(&output).unwrap_or_else(|_| json!({ "processes": [] }))))
+    Ok(Some(
+        serde_json::to_value(&output).unwrap_or_else(|_| json!({ "processes": [] })),
+    ))
 }
 
-fn tool_list_ports(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
-    let show_all = args.get("showAll").and_then(|v| v.as_bool()).unwrap_or(false);
+fn tool_list_ports(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
+    let show_all = args
+        .get("showAll")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let command_names: Vec<String> = arg_str(args, "serviceName")
         .map(|s| vec![s.to_string()])
         .unwrap_or_default();
-    let output = crate::commands::list_ports::handle_list_ports(conn, cwd, show_all, &command_names)?;
-    Ok(Some(serde_json::to_value(&output).unwrap_or_else(|_| json!({ "ports": [] }))))
+    let output =
+        crate::commands::list_ports::handle_list_ports(conn, cwd, show_all, &command_names)?;
+    Ok(Some(
+        serde_json::to_value(&output).unwrap_or_else(|_| json!({ "ports": [] })),
+    ))
 }
 
-fn tool_get_logs(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_get_logs(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let name = arg_str(args, "name")
         .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?
         .to_string();
@@ -202,7 +227,11 @@ fn tool_get_logs(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<V
     Ok(None)
 }
 
-fn tool_start_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_start_service(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let name = arg_str(args, "name")
         .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?
         .to_string();
@@ -224,7 +253,11 @@ fn tool_start_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Opt
     })))
 }
 
-fn tool_start_transient_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_start_transient_service(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let name = arg_str(args, "name");
     let shell = arg_str(args, "shell");
     let (name, shell) = match (name, shell) {
@@ -253,7 +286,11 @@ fn tool_start_transient_service(conn: &Connection, cwd: &Path, args: &Value) -> 
     })))
 }
 
-fn tool_kill_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_kill_service(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let name = arg_str(args, "name")
         .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?
         .to_string();
@@ -262,14 +299,24 @@ fn tool_kill_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Opti
     Ok(None)
 }
 
-fn tool_restart_service(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_restart_service(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let project_dir = resolve_project_dir(cwd)?;
-    let names: Vec<String> = arg_str(args, "name").map(|s| vec![s.to_string()]).unwrap_or_default();
+    let names: Vec<String> = arg_str(args, "name")
+        .map(|s| vec![s.to_string()])
+        .unwrap_or_default();
     crate::commands::restart::handle_restart(conn, &project_dir, &names)?;
     Ok(None)
 }
 
-fn tool_add_server_config(_conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_add_server_config(
+    _conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let name = arg_str(args, "name");
     let shell = arg_str(args, "shell");
     let (name, shell) = match (name, shell) {
@@ -293,7 +340,11 @@ fn tool_add_server_config(_conn: &Connection, cwd: &Path, args: &Value) -> Resul
     Ok(None)
 }
 
-fn tool_open_browser(conn: &Connection, cwd: &Path, args: &Value) -> Result<Option<Value>, CandleError> {
+fn tool_open_browser(
+    conn: &Connection,
+    cwd: &Path,
+    args: &Value,
+) -> Result<Option<Value>, CandleError> {
     let service_name = arg_str(args, "serviceName")
         .ok_or_else(|| CandleError::Generic("Service name is required".to_string()))?;
     let project_dir = resolve_project_dir(cwd)?;
@@ -320,8 +371,16 @@ fn call_wrapped(handler: Handler, conn: &Connection, cwd: &Path, args: &Value) -
     let (res, captured) = crate::output::capture(|| handler(conn, cwd, args));
     let logs = captured.mcp_log_lines();
     match res {
-        Ok(result) => CallOutcome { result, error: None, logs },
-        Err(e) => CallOutcome { result: None, error: Some(e.to_string()), logs },
+        Ok(result) => CallOutcome {
+            result,
+            error: None,
+            logs,
+        },
+        Err(e) => CallOutcome {
+            result: None,
+            error: Some(e.to_string()),
+            logs,
+        },
     }
 }
 
@@ -386,7 +445,13 @@ pub fn serve_mcp() -> ! {
             None => continue, // notification or id-less message
         };
 
-        if writeln!(out, "{}", serde_json::to_string(&response).unwrap_or_default()).is_err() {
+        if writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&response).unwrap_or_default()
+        )
+        .is_err()
+        {
             break;
         }
         let _ = out.flush();
@@ -424,7 +489,10 @@ fn handle_message(
         }
         "tools/call" => {
             let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            let arguments = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             match tool_definitions().into_iter().find(|t| t.name == name) {
                 Some(tool) => {
                     let outcome = call_wrapped(tool.handler, conn, cwd, &arguments);
@@ -501,7 +569,14 @@ mod tests {
     #[test]
     fn notification_without_id_has_no_response() {
         let conn = crate::db::get_database(Some(&crate::db::temp_db_dir("mcp-notif"))).unwrap();
-        assert!(handle_message(&conn, Path::new("."), "notifications/initialized", &Value::Null, None).is_none());
+        assert!(handle_message(
+            &conn,
+            Path::new("."),
+            "notifications/initialized",
+            &Value::Null,
+            None
+        )
+        .is_none());
     }
 
     #[test]
@@ -514,7 +589,10 @@ mod tests {
         let res = build_call_result(outcome);
         assert_eq!(res["isError"], json!(false));
         assert_eq!(res["content"][0]["text"], "line one");
-        assert!(res["content"][1]["text"].as_str().unwrap().contains("\"ok\": true"));
+        assert!(res["content"][1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"ok\": true"));
     }
 
     #[test]

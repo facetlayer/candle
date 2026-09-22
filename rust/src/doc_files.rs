@@ -160,7 +160,10 @@ mod tests {
 
     #[test]
     fn get_doc_not_found() {
-        assert_eq!(get_doc("nonexistent-doc-xyz"), Err(DocLookupError::NotFound));
+        assert_eq!(
+            get_doc("nonexistent-doc-xyz"),
+            Err(DocLookupError::NotFound)
+        );
     }
 
     #[test]

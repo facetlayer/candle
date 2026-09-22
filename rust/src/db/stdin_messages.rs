@@ -102,10 +102,14 @@ mod tests {
         create_stdin_message(&conn, "api", "/proj", "third", None).unwrap();
 
         // FIFO: oldest id first.
-        let m1 = pop_stdin_message(&mut conn, "api", "/proj").unwrap().unwrap();
+        let m1 = pop_stdin_message(&mut conn, "api", "/proj")
+            .unwrap()
+            .unwrap();
         assert_eq!(m1.data, "first");
         assert_eq!(m1.encoding, "utf8");
-        let m2 = pop_stdin_message(&mut conn, "api", "/proj").unwrap().unwrap();
+        let m2 = pop_stdin_message(&mut conn, "api", "/proj")
+            .unwrap()
+            .unwrap();
         assert_eq!(m2.data, "second");
 
         // One left; clear empties it.
@@ -125,11 +129,15 @@ mod tests {
         create_stdin_message(&conn, "api", "/proj", "for-api", None).unwrap();
         create_stdin_message(&conn, "worker", "/proj", "for-worker", None).unwrap();
 
-        let popped = pop_stdin_message(&mut conn, "worker", "/proj").unwrap().unwrap();
+        let popped = pop_stdin_message(&mut conn, "worker", "/proj")
+            .unwrap()
+            .unwrap();
         assert_eq!(popped.data, "for-worker");
 
         // api message still present.
-        let api = pop_stdin_message(&mut conn, "api", "/proj").unwrap().unwrap();
+        let api = pop_stdin_message(&mut conn, "api", "/proj")
+            .unwrap()
+            .unwrap();
         assert_eq!(api.data, "for-api");
 
         drop(conn);

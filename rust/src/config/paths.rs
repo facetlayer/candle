@@ -117,7 +117,7 @@ mod tests {
         assert!(is_valid_root_path("packages/api"));
         assert!(!is_valid_root_path("../x"));
         assert!(!is_valid_root_path("a/../../b")); // -> "../b"
-        // Quirk: a segment literally named "..foo" starts with ".." so is invalid.
+                                                   // Quirk: a segment literally named "..foo" starts with ".." so is invalid.
         assert!(!is_valid_root_path("..foo"));
     }
 

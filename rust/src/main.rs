@@ -10,13 +10,16 @@
 use std::path::PathBuf;
 use std::process::exit;
 
+use candle::cli::help;
+use candle::cli::monitor_mode::run_monitor_mode;
+use candle::cli::parser::{canonical_command, parse_command_args, CommandArgs};
 use candle::commands::assert_valid_command_names;
 use candle::commands::clear_logs::handle_clear_logs_command;
+use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list::{
     filter_by_service_names, format_list_detail, format_list_output, format_ps_output, handle_list,
     list_output_to_json,
 };
-use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list_ports::{format_list_ports_output, handle_list_ports};
 use candle::commands::logs::handle_logs_command;
 use candle::commands::open_browser::{format_open_browser_output, handle_open_browser};
@@ -34,9 +37,6 @@ use candle::errors::CandleError;
 use candle::kill::{handle_kill_all, handle_kill_command};
 use candle::project_scope::ProjectScope;
 use candle::start::{handle_start_command, StartCommandOptions};
-use candle::cli::help;
-use candle::cli::monitor_mode::run_monitor_mode;
-use candle::cli::parser::{canonical_command, parse_command_args, CommandArgs};
 use rusqlite::Connection;
 
 fn main() {
@@ -254,7 +254,9 @@ fn cmd_set_config(args: &CommandArgs) {
             exit(1);
         }
     };
-    print_or_exit(handle_set_config(&key, &value, &cwd()), |e| format!("Error: {e}"));
+    print_or_exit(handle_set_config(&key, &value, &cwd()), |e| {
+        format!("Error: {e}")
+    });
 }
 
 fn cmd_list_docs() {
@@ -404,8 +406,7 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
             if watch_after {
                 let exit_after_ms: Option<u64> =
                     args.value("exit-after-ms").and_then(|s| s.parse().ok());
-                if let Err(e) =
-                    watch_started_services(&conn, &project_dir, &started, exit_after_ms)
+                if let Err(e) = watch_started_services(&conn, &project_dir, &started, exit_after_ms)
                 {
                     fail_with(&e);
                 }
@@ -482,8 +483,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
 
     // Don't validate command names (transient names are allowed).
 
-    let result =
-        handle_wait_for_log(&conn, &project_dir, &args.positionals, message, timeout_ms);
+    let result = handle_wait_for_log(&conn, &project_dir, &args.positionals, message, timeout_ms);
     if !result.success {
         exit(1);
     }
@@ -492,7 +492,10 @@ fn cmd_wait_for_log(args: &CommandArgs) {
 fn cmd_logs(args: &CommandArgs) {
     let project_dir = project_dir_or_exit(&scope_of(args));
 
-    let limit: i64 = args.value("count").and_then(|s| s.parse().ok()).unwrap_or(100);
+    let limit: i64 = args
+        .value("count")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
     let start_at_id: Option<i64> = args.value("start-at").and_then(|s| s.parse().ok());
 
     let conn = open_db();
@@ -628,7 +631,10 @@ fn cmd_find_orphans(args: &CommandArgs) {
     };
 
     if args.has("json") {
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
     } else {
         println!("{}", format_find_orphans(&output));
     }

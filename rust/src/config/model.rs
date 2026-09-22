@@ -117,7 +117,8 @@ impl CandleSetupConfig {
         for key in &self.key_order {
             match key.as_str() {
                 "services" => {
-                    let arr: Vec<Value> = self.services.iter().map(ServiceConfig::to_value).collect();
+                    let arr: Vec<Value> =
+                        self.services.iter().map(ServiceConfig::to_value).collect();
                     map.insert("services".to_string(), Value::Array(arr));
                 }
                 "logEviction" => {
@@ -138,8 +139,7 @@ impl CandleSetupConfig {
     /// Serialize to a 2-space pretty JSON string with NO trailing newline,
     /// matching `JSON.stringify(config, null, 2)`.
     pub fn to_json_string(&self) -> String {
-        serde_json::to_string_pretty(&self.to_value())
-            .expect("config Value is always serializable")
+        serde_json::to_string_pretty(&self.to_value()).expect("config Value is always serializable")
     }
 
     /// Ensure a top-level key is present in `key_order` (appending it at the end
@@ -186,6 +186,9 @@ mod tests {
             enable_stdin: Some(true),
         };
         let s = serde_json::to_string(&svc.to_value()).unwrap();
-        assert_eq!(s, "{\"name\":\"api\",\"shell\":\"cmd\",\"root\":\"packages/api\",\"enableStdin\":true}");
+        assert_eq!(
+            s,
+            "{\"name\":\"api\",\"shell\":\"cmd\",\"root\":\"packages/api\",\"enableStdin\":true}"
+        );
     }
 }

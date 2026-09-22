@@ -313,8 +313,7 @@ node    12345   user   46u  IPv4 0x1235    0t0  TCP *:8080 (LISTEN)
 
     #[test]
     fn parse_ipv6_splits_on_last_colon() {
-        let out =
-            "node    222   user   7u  IPv6 0xabc    0t0  TCP [::1]:5173 (LISTEN)\n";
+        let out = "node    222   user   7u  IPv6 0xabc    0t0  TCP [::1]:5173 (LISTEN)\n";
         let parsed = parse_lsof_output(out);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].address, "[::1]");

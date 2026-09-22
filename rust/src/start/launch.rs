@@ -62,10 +62,7 @@ pub fn launch_monitor(info: &MonitorLaunchInfo) -> std::io::Result<()> {
     // Write the handshake JSON (single line, no trailing newline) and close
     // stdin by dropping it, so the monitor's read-to-EOF completes.
     {
-        let mut stdin = child
-            .stdin
-            .take()
-            .expect("stdin was configured as piped");
+        let mut stdin = child.stdin.take().expect("stdin was configured as piped");
         stdin.write_all(json.as_bytes())?;
     }
 

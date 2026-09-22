@@ -135,6 +135,8 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
         shell,
         root,
         enable_stdin,
-        database_path: database_path.map(PathBuf::from).unwrap_or_else(candle_db_path),
+        database_path: database_path
+            .map(PathBuf::from)
+            .unwrap_or_else(candle_db_path),
     })
 }

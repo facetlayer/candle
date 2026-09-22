@@ -96,8 +96,14 @@ pub fn watch_process(
     // Install signal handlers and reset the stop flag.
     STOP.store(false, Ordering::SeqCst);
     unsafe {
-        libc::signal(libc::SIGINT, handle_signal as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGTERM, handle_signal as *const () as libc::sighandler_t);
+        libc::signal(
+            libc::SIGINT,
+            handle_signal as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGTERM,
+            handle_signal as *const () as libc::sighandler_t,
+        );
     }
 
     let deadline = exit_after_ms
@@ -115,7 +121,10 @@ pub fn watch_process(
             if Instant::now() >= dl {
                 console_log_system_message(
                     OutputFormat::Pretty,
-                    &format!("Exiting watch mode after {}ms timeout", exit_after_ms.unwrap()),
+                    &format!(
+                        "Exiting watch mode after {}ms timeout",
+                        exit_after_ms.unwrap()
+                    ),
                     "",
                 );
                 break;
@@ -172,11 +181,12 @@ pub fn handle_watch(
     } else {
         // Each named process must be running.
         for name in command_names {
-            let existing =
-                find_processes_by_command_name_and_project_dir(conn, name, &project_dir)
-                    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
-            let not_killed: Vec<_> =
-                existing.into_iter().filter(|p| p.killed_at.is_none()).collect();
+            let existing = find_processes_by_command_name_and_project_dir(conn, name, &project_dir)
+                .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+            let not_killed: Vec<_> = existing
+                .into_iter()
+                .filter(|p| p.killed_at.is_none())
+                .collect();
             let running = filter_alive_processes(conn, not_killed)
                 .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
             if running.is_empty() {

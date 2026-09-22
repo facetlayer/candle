@@ -134,7 +134,7 @@ mod tests {
             &CreateProcessEntry {
                 command_name: "svc".to_string(),
                 project_dir: "/proj".to_string(),
-                pid: 2_000_000_000, // dead
+                pid: 2_000_000_000,          // dead
                 log_collector_pid: Some(me), // alive
                 shell: None,
                 root: None,

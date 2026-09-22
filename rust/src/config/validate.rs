@@ -111,10 +111,7 @@ fn parse_services(services_value: Value) -> Result<Vec<ServiceConfig>, CandleErr
     Ok(out)
 }
 
-fn parse_service(
-    value: &Value,
-    seen: &mut HashSet<String>,
-) -> Result<ServiceConfig, CandleError> {
+fn parse_service(value: &Value, seen: &mut HashSet<String>) -> Result<ServiceConfig, CandleError> {
     // name: must be a non-empty string.
     let name = match value.get("name") {
         Some(Value::String(s)) if !s.is_empty() => s.clone(),
@@ -165,9 +162,7 @@ fn parse_service(
     })
 }
 
-fn parse_log_eviction(
-    value: Option<&Value>,
-) -> Result<Option<LogEvictionConfig>, CandleError> {
+fn parse_log_eviction(value: Option<&Value>) -> Result<Option<LogEvictionConfig>, CandleError> {
     let value = match value {
         None => return Ok(None),
         Some(v) => v,
@@ -177,7 +172,8 @@ fn parse_log_eviction(
         Value::Object(m) => m,
         _ => {
             return Err(CandleError::ConfigFileError(
-                "Config file error: Invalid value for 'logEviction': expected an object".to_string(),
+                "Config file error: Invalid value for 'logEviction': expected an object"
+                    .to_string(),
             ));
         }
     };

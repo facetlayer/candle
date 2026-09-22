@@ -30,7 +30,8 @@ fn content_contains(content: &Option<String>, message: &str) -> bool {
 
 fn print_recent_logs(conn: &Connection, project_dir: &str, command_names: &[String]) {
     output::out(&format!("Recent logs for '{}':", command_names.join(", ")));
-    let mut filter = LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
+    let mut filter =
+        LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
     let all_logs = get_process_logs(
         conn,
         &LogSearchOptions {
@@ -135,10 +136,22 @@ mod tests {
         let dir = temp_db_dir("wait-for-log-found");
         let conn = get_database(Some(&dir)).unwrap();
 
-        save_process_log(&conn, "echo", "/proj", ProcessLogType::ProcessStartInitiated, None)
-            .unwrap();
-        save_process_log(&conn, "echo", "/proj", ProcessLogType::Stdout, Some("hello world"))
-            .unwrap();
+        save_process_log(
+            &conn,
+            "echo",
+            "/proj",
+            ProcessLogType::ProcessStartInitiated,
+            None,
+        )
+        .unwrap();
+        save_process_log(
+            &conn,
+            "echo",
+            "/proj",
+            ProcessLogType::Stdout,
+            Some("hello world"),
+        )
+        .unwrap();
 
         let (result, captured) = output::capture(|| {
             handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "hello", 30000)
@@ -174,12 +187,24 @@ mod tests {
         let dir = temp_db_dir("wait-for-log-timeout");
         let conn = get_database(Some(&dir)).unwrap();
 
-        save_process_log(&conn, "echo", "/proj", ProcessLogType::ProcessStartInitiated, None)
-            .unwrap();
+        save_process_log(
+            &conn,
+            "echo",
+            "/proj",
+            ProcessLogType::ProcessStartInitiated,
+            None,
+        )
+        .unwrap();
 
         let timeout_ms = 200;
         let (result, captured) = output::capture(|| {
-            handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "never-appears", timeout_ms)
+            handle_wait_for_log(
+                &conn,
+                "/proj",
+                &["echo".to_string()],
+                "never-appears",
+                timeout_ms,
+            )
         });
 
         assert!(!result.success);

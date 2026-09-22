@@ -80,8 +80,7 @@ pub fn handle_open_browser(
 ) -> Result<OpenBrowserOutput, CandleError> {
     let service_name = resolve_service_name(conn, project_dir, service_name)?;
 
-    let ports_output =
-        handle_list_ports(conn, cwd, false, std::slice::from_ref(&service_name))?;
+    let ports_output = handle_list_ports(conn, cwd, false, std::slice::from_ref(&service_name))?;
 
     if ports_output.ports.is_empty() {
         let processes =
@@ -135,9 +134,7 @@ fn open_url(url: &str) -> Result<(), CandleError> {
 
     match spawn_result {
         Ok(_child) => Ok(()),
-        Err(e) => Err(CandleError::Generic(format!(
-            "Failed to open browser: {e}"
-        ))),
+        Err(e) => Err(CandleError::Generic(format!("Failed to open browser: {e}"))),
     }
 }
 
@@ -191,10 +188,7 @@ mod tests {
         let dir = temp_db_dir("open-browser-single");
         let conn = get_database(Some(&dir)).unwrap();
         create_process_entry(&conn, &entry("solo")).unwrap();
-        assert_eq!(
-            resolve_service_name(&conn, "/proj", None).unwrap(),
-            "solo"
-        );
+        assert_eq!(resolve_service_name(&conn, "/proj", None).unwrap(), "solo");
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -219,6 +213,9 @@ mod tests {
             port: 3000,
             url: "http://localhost:3000".to_string(),
         };
-        assert_eq!(format_open_browser_output(&out), "Opened http://localhost:3000 in browser");
+        assert_eq!(
+            format_open_browser_output(&out),
+            "Opened http://localhost:3000 in browser"
+        );
     }
 }

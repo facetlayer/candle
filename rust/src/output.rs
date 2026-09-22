@@ -130,7 +130,10 @@ mod tests {
         });
 
         assert_eq!(ret, 42);
-        assert_eq!(captured.stdout, vec!["hello".to_string(), "world".to_string()]);
+        assert_eq!(
+            captured.stdout,
+            vec!["hello".to_string(), "world".to_string()]
+        );
         assert_eq!(captured.stderr, vec!["oops".to_string()]);
         // Combined transcript preserves emission order across both streams.
         assert_eq!(captured.transcript(), "hello\noops\nworld");

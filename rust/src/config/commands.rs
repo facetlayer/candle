@@ -45,7 +45,10 @@ pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
         Err(CandleError::MissingSetupFile { .. }) => {
             let config_path = cwd.join(DEFAULT_CONFIG_FILENAME);
             write_config_file(&config_path, &CandleSetupConfig::default())?;
-            Ok(format!("Created {DEFAULT_CONFIG_FILENAME} in {}", cwd.display()))
+            Ok(format!(
+                "Created {DEFAULT_CONFIG_FILENAME} in {}",
+                cwd.display()
+            ))
         }
         Err(e) => Err(e),
     }
@@ -176,12 +179,16 @@ fn parse_config_value(key: &str, value: &str) -> Result<ParsedConfigValue, Candl
 fn apply_config_value(config: &mut CandleSetupConfig, parsed: &ParsedConfigValue) {
     match parsed {
         ParsedConfigValue::MaxLogsPerService(n) => {
-            let le = config.log_eviction.get_or_insert_with(LogEvictionConfig::default);
+            let le = config
+                .log_eviction
+                .get_or_insert_with(LogEvictionConfig::default);
             le.max_logs_per_service = Some(*n);
             config.ensure_key("logEviction");
         }
         ParsedConfigValue::MaxRetentionSeconds(n) => {
-            let le = config.log_eviction.get_or_insert_with(LogEvictionConfig::default);
+            let le = config
+                .log_eviction
+                .get_or_insert_with(LogEvictionConfig::default);
             le.max_retention_seconds = Some(*n);
             config.ensure_key("logEviction");
         }
@@ -214,11 +221,7 @@ fn js_number(input: &str) -> Option<f64> {
         let body = s
             .strip_prefix(prefix_lower)
             .or_else(|| s.strip_prefix(prefix_upper));
-        body.map(|body| {
-            i128::from_str_radix(body, base)
-                .ok()
-                .map(|v| v as f64)
-        })
+        body.map(|body| i128::from_str_radix(body, base).ok().map(|v| v as f64))
     };
     if let Some(r) = radix("0x", "0X", 16) {
         return r;
@@ -247,8 +250,9 @@ fn js_number(input: &str) -> Option<f64> {
 }
 
 fn write_config_file(path: &Path, config: &CandleSetupConfig) -> Result<(), CandleError> {
-    std::fs::write(path, config.to_json_string())
-        .map_err(|e| CandleError::ConfigFileError(format!("Failed to write {}: {e}", path.display())))
+    std::fs::write(path, config.to_json_string()).map_err(|e| {
+        CandleError::ConfigFileError(format!("Failed to write {}: {e}", path.display()))
+    })
 }
 
 #[cfg(test)]
@@ -279,7 +283,10 @@ mod tests {
     fn setup_project_creates_file() {
         let dir = TempDir::new();
         let msg = handle_setup_project(dir.path()).unwrap();
-        assert_eq!(msg, format!("Created .candle.json in {}", dir.path().display()));
+        assert_eq!(
+            msg,
+            format!("Created .candle.json in {}", dir.path().display())
+        );
         let contents = read_to_string(&dir.path().join(".candle.json"));
         assert_eq!(contents, "{\n  \"services\": []\n}");
     }
@@ -290,7 +297,10 @@ mod tests {
         let path = dir.path().join(".candle.json");
         std::fs::write(&path, "{\n  \"services\": []\n}").unwrap();
         let msg = handle_setup_project(dir.path()).unwrap();
-        assert_eq!(msg, format!("Config file already exists at {}", path.display()));
+        assert_eq!(
+            msg,
+            format!("Config file already exists at {}", path.display())
+        );
     }
 
     #[test]
@@ -339,7 +349,10 @@ mod tests {
         };
         add_server_config(&args, dir.path()).unwrap();
         let err = add_server_config(&args, dir.path()).unwrap_err();
-        assert_eq!(err.to_string(), "Service 'api' already exists in configuration");
+        assert_eq!(
+            err.to_string(),
+            "Service 'api' already exists in configuration"
+        );
     }
 
     #[test]
@@ -352,7 +365,10 @@ mod tests {
             enable_stdin: false,
         };
         let err = add_server_config(&args, dir.path()).unwrap_err();
-        assert_eq!(err.to_string(), "Service \"api\" has invalid root path: \"../escape\"");
+        assert_eq!(
+            err.to_string(),
+            "Service \"api\" has invalid root path: \"../escape\""
+        );
     }
 
     #[test]
@@ -377,7 +393,10 @@ mod tests {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
         let msg = handle_set_config("logEviction.maxLogsPerService", "5000", dir.path()).unwrap();
-        assert_eq!(msg, "Set 'logEviction.maxLogsPerService' to '5000' in .candle.json");
+        assert_eq!(
+            msg,
+            "Set 'logEviction.maxLogsPerService' to '5000' in .candle.json"
+        );
         let contents = read_to_string(&dir.path().join(".candle.json"));
         assert_eq!(
             contents,
@@ -404,7 +423,9 @@ mod tests {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
         let err = handle_set_config("logCollector", "rust", dir.path()).unwrap_err();
-        assert!(err.to_string().starts_with("Unknown config key 'logCollector'"));
+        assert!(err
+            .to_string()
+            .starts_with("Unknown config key 'logCollector'"));
         assert!(err.is_usage_error());
     }
 
@@ -412,7 +433,8 @@ mod tests {
     fn set_config_invalid_integer() {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
-        let err = handle_set_config("logEviction.maxRetentionSeconds", "3.5", dir.path()).unwrap_err();
+        let err =
+            handle_set_config("logEviction.maxRetentionSeconds", "3.5", dir.path()).unwrap_err();
         assert_eq!(
             err.to_string(),
             "Invalid value for 'logEviction.maxRetentionSeconds': expected a positive integer"

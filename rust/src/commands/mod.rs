@@ -91,8 +91,8 @@ mod tests {
         let db = temp_db_dir("assert-valid-unknown");
         let conn = get_database(Some(&db)).unwrap();
 
-        let err = assert_valid_command_names(&conn, proj.path(), &["ghost".to_string()])
-            .unwrap_err();
+        let err =
+            assert_valid_command_names(&conn, proj.path(), &["ghost".to_string()]).unwrap_err();
         assert!(matches!(err, CandleError::MissingServiceWithName { .. }));
         assert!(err.to_string().contains("ghost"));
         assert!(err.is_usage_error());
@@ -122,9 +122,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(
-            assert_valid_command_names(&conn, proj.path(), &["transient".to_string()]).is_ok()
-        );
+        assert!(assert_valid_command_names(&conn, proj.path(), &["transient".to_string()]).is_ok());
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&db);

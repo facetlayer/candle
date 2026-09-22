@@ -3,8 +3,8 @@
 //! See `rust/docs/architecture/start-flow.md`.
 
 pub mod launch;
-pub mod start_command;
 pub mod service_lock;
+pub mod start_command;
 pub mod start_one_service;
 
 pub use launch::{launch_monitor, resolve_monitor_path};

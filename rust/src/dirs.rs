@@ -154,7 +154,10 @@ mod tests {
         assert_eq!(resolve_launch_dir("/proj", None), "/proj");
         assert_eq!(resolve_launch_dir("/proj", Some("")), "/proj");
         assert_eq!(resolve_launch_dir("/proj", Some("sub")), "/proj/sub");
-        assert_eq!(resolve_launch_dir("/proj", Some("/elsewhere")), "/elsewhere");
+        assert_eq!(
+            resolve_launch_dir("/proj", Some("/elsewhere")),
+            "/elsewhere"
+        );
     }
 
     #[test]
@@ -162,7 +165,10 @@ mod tests {
         assert_eq!(resolve_launch_dir("/proj", Some("./sub")), "/proj/sub");
         assert_eq!(resolve_launch_dir("/proj", Some("./a/./b")), "/proj/a/b");
         assert_eq!(resolve_launch_dir("/proj", Some("../sibling")), "/sibling");
-        assert_eq!(resolve_launch_dir("/proj/nested", Some("../sub")), "/proj/sub");
+        assert_eq!(
+            resolve_launch_dir("/proj/nested", Some("../sub")),
+            "/proj/sub"
+        );
         assert_eq!(resolve_launch_dir("/proj/", Some("sub/")), "/proj/sub");
         // A root that walks up to and past the filesystem root keeps its meaning
         // rather than silently resolving to something else.

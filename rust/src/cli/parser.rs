@@ -69,11 +69,7 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         "list-all" => &[("json", false)],
         "logs" => &[("count", true), ("start-at", true), ("project-dir", true)],
         "watch" => &[("exit-after-ms", true), ("project-dir", true)],
-        "wait-for-log" => &[
-            ("message", true),
-            ("timeout", true),
-            ("project-dir", true),
-        ],
+        "wait-for-log" => &[("message", true), ("timeout", true), ("project-dir", true)],
         "kill" | "clear-logs" | "list-ports" | "open-browser" => &[("project-dir", true)],
         "find-orphans" => &[("json", false)],
         "erase-database" => &[("force", false)],
@@ -184,8 +180,8 @@ mod tests {
 
     #[test]
     fn boolean_flag_recorded() {
-        let args =
-            parse_command_args("start", &["svc".to_string(), "--enable-stdin".to_string()]).unwrap();
+        let args = parse_command_args("start", &["svc".to_string(), "--enable-stdin".to_string()])
+            .unwrap();
         assert!(args.has("enable-stdin"));
         assert_eq!(args.positionals, vec!["svc"]);
     }
