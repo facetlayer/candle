@@ -8,7 +8,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use crate::config::resolve_command_names_or_all;
+use crate::config::{get_service_config_by_name, resolve_command_names_or_all};
 use crate::errors::CandleError;
 use crate::start::start_one_service::{start_one_service, RunOptions};
 
@@ -34,6 +34,21 @@ pub fn handle_start_command(
     // With no --shell, default to all configured services when none are named.
     if opts.shell.is_none() {
         command_names = resolve_command_names_or_all(Path::new(&opts.project_dir), &command_names)?;
+    }
+
+    // --root sets the directory of a transient service. A configured service's
+    // directory comes from its `root` in the config, so rather than silently
+    // drop the flag, reject it. Unknown names are reported first, so a typo
+    // gets the "No service configured" error rather than this one.
+    if opts.shell.is_none() && opts.root.is_some() {
+        for name in &command_names {
+            get_service_config_by_name(name, Some(Path::new(&opts.project_dir)))?;
+        }
+        return Err(CandleError::UsageError(format!(
+            "--root only applies to transient services started with --shell. \
+             To change where '{}' runs, set its \"root\" in .candle.json.",
+            command_names.join("', '")
+        )));
     }
 
     // Transient: exactly one name, with the provided shell/root/enable-stdin.

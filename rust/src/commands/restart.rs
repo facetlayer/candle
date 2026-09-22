@@ -18,7 +18,6 @@ use crate::db::process_table::{
 };
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
-use crate::output;
 use crate::start::start_one_service::{start_one_service, RunOptions};
 
 fn db_err(e: rusqlite::Error) -> CandleError {
@@ -39,9 +38,9 @@ fn is_service_defined_in_config(project_dir: &str, name: &str) -> bool {
 /// Returns the resolved list of restarted command names.
 ///
 /// The empty-names "No running processes" usage error is raised before the
-/// kill+start work, so it propagates to the caller (the CLI maps it to stderr +
-/// exit 1). Failures inside the kill+start loop are caught and printed as
-/// `Failed to restart: <msg>`, and the handler still returns `Ok`.
+/// kill+start work. A failure inside the kill+start loop is returned as
+/// `Failed to restart: <msg>`. Either way the CLI prints it to stderr and exits
+/// 1, so scripts and CI can tell a restart failed.
 pub fn handle_restart(
     conn: &Connection,
     project_dir: &str,
@@ -69,8 +68,6 @@ pub fn handle_restart(
         command_names.to_vec()
     };
 
-    // Everything below mirrors the TS try/catch: on error, print
-    // "Failed to restart: <msg>" to stderr and return Ok overall.
     let result: Result<(), CandleError> = (|| {
         // Fetch process info for all command names before killing.
         let mut process_info: Vec<(&String, Option<ProcessEntry>)> = Vec::new();
@@ -113,7 +110,7 @@ pub fn handle_restart(
     })();
 
     if let Err(e) = result {
-        output::err(&format!("Failed to restart: {e}"));
+        return Err(CandleError::Generic(format!("Failed to restart: {e}")));
     }
 
     Ok(names)

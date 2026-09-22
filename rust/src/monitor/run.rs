@@ -108,9 +108,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     };
 
-    // launchDir = root ? join(projectDir, root) : projectDir. Per
-    // startMonitoredService.ts, the join is unconditional (no absolute-root
-    // special-casing).
+    // launchDir = root ? join(projectDir, root) : projectDir. `Path::join`
+    // replaces the base when `root` is absolute, so this is the same directory
+    // `resolve_launch_dir` reports in the start banner and `list`.
     let launch_dir = match &root {
         Some(r) => Path::new(&project_dir).join(r),
         None => Path::new(&project_dir).to_path_buf(),
@@ -135,12 +135,18 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         Ok(child) => child,
         Err(e) => {
             debug_log(&format!("[monitor] failed to start: {e}"));
+            // Both a missing cwd and a missing `sh` surface as ENOENT; say which.
+            let reason = if launch_dir.is_dir() {
+                format!("could not run 'sh': {e}")
+            } else {
+                format!("root directory does not exist: {}", launch_dir.display())
+            };
             let _ = save_process_log(
                 &conn,
                 &command_name,
                 &project_dir,
                 ProcessLogType::ProcessStartFailed,
-                Some(&format!("Process failed to start: {e}")),
+                Some(&format!("Process failed to start: {reason}")),
             );
             std::process::exit(1);
         }

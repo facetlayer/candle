@@ -63,8 +63,9 @@ Positional `name...` becomes `command_names`.
 
 1. `command_names = opts.command_names` (possibly empty).
 2. **If no `--shell`**: `command_names = resolve_command_names_or_all(project_dir, command_names)` — if names are empty, loads **all** configured service names from `.candle.json`; raises `UsageError('No services configured in .candle.json')` if config has zero services (originally `configFile.ts:259-269`).
-3. **If `--shell` is set** (transient): require exactly one name, else `UsageError('Exactly one service name is required when using --shell')`. Call `start_one_service` once with `shell/root/enable_stdin/check_start`.
-4. **Else**: loop over resolved names, calling `start_one_service` for each (sequentially). Transient flags are NOT passed in this branch (`enable_stdin: false`).
+3. **If `--root` is set without `--shell`**: resolve each name with `get_service_config_by_name` (so an unknown name still gets `MissingServiceWithName`), then fail with `UsageError("--root only applies to transient services started with --shell. ...")` rather than silently dropping the flag.
+4. **If `--shell` is set** (transient): require exactly one name, else `UsageError('Exactly one service name is required when using --shell')`. Call `start_one_service` once with `shell/root/enable_stdin/check_start`.
+5. **Else**: loop over resolved names, calling `start_one_service` for each (sequentially). Transient flags are NOT passed in this branch (`enable_stdin: false`).
 
 ## 4. `start_one_service` (`rust/src/start/start_one_service.rs`; originally `src/start/startOneService.ts:45-194`)
 
@@ -99,6 +100,10 @@ Subtlety: dedup uses **both** `killed_at IS NULL` filtering **and** a liveness p
 
 - Transient (`shell` set): require `command_name`; validate `root` with `is_valid_root_path` (absolute OK; relative must not start with `..` after normalize) else `UsageError('Invalid root path: "<root>". Root must be an absolute path or a relative path within the project.')`. Build `ServiceConfig { name, shell, root, enable_stdin }`.
 - Configured: `get_service_config_by_name(command_name, Some(project_dir))` (`rust/src/config/file.rs`) — exact match by name, else **loose substring matching** that walks up directories matching `root` (originally `configFile.ts:276-349`); raises `MissingServiceWithNameError` (message `No service '<name>' configured for directory: <projectDir>`) if not found.
+
+### 4.2a Launch directory check
+
+`launch_dir = resolve_launch_dir(project_dir, service.root)`. If it isn't an existing directory → `UsageError("Process '<name>' failed to start: root directory does not exist: <launch_dir>")`, before the kill below, so a bad `root` never stops a running instance. (The monitor has the same check as a fallback when spawning `sh` fails.)
 
 ### 4.3 Kill existing
 
@@ -201,7 +206,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 `kill_one_running_process` (`rust/src/kill/mod.rs`):
 - `kill_process_tree_and_wait(pid, KILL_GRACE_PERIOD = 5s)` → `KillOutcome::{Terminated, Escalated, ProcessNotFound, Error}`.
 - `Terminated` / `Escalated`: on `Escalated`, note `[Process '<name>' (PID <pid>) did not exit 5s after SIGTERM; sent SIGKILL]` on stderr; print `[Killed '<name>' process with PID: <pid>]` (unless quiet). If `killed_at` exists and is >5min old → `delete_process_entry` (+ warn `[Cleaning up stale process entry ...]`); else `update_process_killed_at` to now (unix seconds).
-- `ProcessNotFound`: warn `[Cleaning up stale process entry ...]`, `delete_process_entry`.
+- `ProcessNotFound`: `delete_process_entry`; warn `[Cleaning up stale process entry ...]` only when the row had no `killed_at` (it claimed to be running). A row already marked killed — e.g. the second kill inside `restart` — is swept silently.
 - `Error`: print `Error killing process '<name>' with PID: <pid>`.
 
 `kill_process_tree_and_wait`: `kill_process_tree(pid)`, then wait up to the grace period for the root to exit; if it hasn't, re-snapshot the tree, `SIGKILL` it children-first, and wait up to `SIGKILL_WAIT` (1s).

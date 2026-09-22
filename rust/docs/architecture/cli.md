@@ -29,7 +29,7 @@ In the Node original all extend JS `Error`. The `.name` value is set explicitly 
 | `ConfigFileError` | **absent** (not a usage error) | `"ConfigFileError"` | — | (caller-supplied) |
 | `MissingServiceWithNameError` | `true` | `"NeedRunCommandError"` ⚠️ | `cwd: string`, `commandName: string` | `` No service '${commandName}' configured for directory: ${cwd} `` |
 | `MissingSetupFileError` | `true` | `"MissingSetupFile"` ⚠️ | `cwd: string` | `` No .candle.json file found in (or above) current directory: ${cwd} `` |
-| `ProcessStartFailedError` | `true` | `"ProcessStartFailedError"` | — | `` Process '${commandName}' failed to start. Recent logs: ${recentLogs.map(l => l.content).join('\n')} `` |
+| `ProcessStartFailedError` | `true` | `"ProcessStartFailedError"` | — | `` Process '${commandName}' failed to start. Recent logs:\n${recentLogs} `` (Rust: blank/content-less rows dropped; just `Process '<name>' failed to start.` when there are none) |
 
 ⚠️ **Easy to get wrong:** `MissingServiceWithNameError.name === "NeedRunCommandError"` and `MissingSetupFileError.name === "MissingSetupFile"` — the `name` strings do not match the class identifiers. These literal strings are preserved because tests and logs may depend on `error.name`.
 

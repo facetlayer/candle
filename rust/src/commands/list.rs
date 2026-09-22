@@ -11,7 +11,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::config::{find_config_file, find_service_by_name, CandleSetupConfig, ServiceConfig};
@@ -20,6 +20,7 @@ use crate::db::process_table::{
 };
 use crate::dirs::resolve_launch_dir;
 use crate::errors::CandleError;
+use crate::logs::ProcessLogType;
 use crate::process_alive::filter_alive_processes;
 
 /// One row in a `list` result. Field order and (camelCase) names match the JSON
@@ -32,10 +33,17 @@ pub struct ListProcess {
     #[serde(rename = "workingDir")]
     pub working_dir: String,
     pub uptime: String,
-    pub pid: i64,
+    /// The service's PID, or `None` (JSON `null`) when it is not running.
+    pub pid: Option<i64>,
     pub status: String,
-    #[serde(rename = "configChanged", skip_serializing_if = "Option::is_none")]
-    pub config_changed: Option<bool>,
+    /// Whether the running process was launched with a different `shell` /
+    /// `root` than the config now has. Always `false` for a stopped service.
+    #[serde(rename = "configChanged")]
+    pub config_changed: bool,
+    /// Exit code of the service's latest run, when that run exited non-zero
+    /// (status `EXITED (<code>)`). `None` (JSON `null`) otherwise.
+    #[serde(rename = "exitCode")]
+    pub exit_code: Option<i64>,
 }
 
 /// Result of [`handle_list`]. Mirrors `ListOutput`; only `processes` is ever set.
@@ -46,6 +54,11 @@ pub struct ListOutput {
 
 const STATUS_RUNNING: &str = "RUNNING";
 const STATUS_NOT_RUNNING: &str = "not running";
+
+/// Status for a stopped service whose latest run exited with a non-zero code.
+fn exited_status(code: i64) -> String {
+    format!("EXITED ({code})")
+}
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -130,10 +143,59 @@ fn running_row(
         command: command.to_string(),
         working_dir: working_dir.to_string(),
         uptime: format_uptime(now_millis() - start_time * 1000),
-        pid,
+        pid: Some(pid),
         status: STATUS_RUNNING.to_string(),
-        config_changed: Some(config_changed),
+        config_changed,
+        exit_code: None,
     }
+}
+
+/// Parse the exit code out of a lifecycle log line written by the monitor:
+/// `Process exited with code N` or `Process failed to start: exited with code N`.
+fn parse_exit_code(content: &str) -> Option<i64> {
+    let (_, code) = content.rsplit_once("exited with code ")?;
+    code.trim().parse().ok()
+}
+
+/// The exit code of a service's latest run, if that run has ended with a
+/// non-zero code. Looks at the newest lifecycle row (start initiated / failed /
+/// started / exited) for the service: a stopped-by-signal exit, a clean exit, or
+/// a run still in progress all yield `None`.
+fn latest_nonzero_exit_code(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+) -> Result<Option<i64>, CandleError> {
+    let row: Option<(i64, Option<String>)> = conn
+        .query_row(
+            "select log_type, content from process_output \
+             where project_dir = ?1 and command_name = ?2 and log_type in (?3, ?4, ?5, ?6) \
+             order by id desc limit 1",
+            rusqlite::params![
+                project_dir,
+                command_name,
+                ProcessLogType::ProcessStartInitiated.as_i64(),
+                ProcessLogType::ProcessStartFailed.as_i64(),
+                ProcessLogType::ProcessStarted.as_i64(),
+                ProcessLogType::ProcessExited.as_i64(),
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(db_err)?;
+
+    let Some((log_type, content)) = row else {
+        return Ok(None);
+    };
+    if log_type != ProcessLogType::ProcessExited.as_i64()
+        && log_type != ProcessLogType::ProcessStartFailed.as_i64()
+    {
+        return Ok(None);
+    }
+    Ok(content
+        .as_deref()
+        .and_then(parse_exit_code)
+        .filter(|code| *code != 0))
 }
 
 /// Build a `list` / `list-all` result.
@@ -156,7 +218,8 @@ pub fn handle_list(
                 running_row(
                     &entry.command_name,
                     &resolve_shell(&entry, None),
-                    &entry.project_dir,
+                    // The directory the service runs in, same as `list` reports.
+                    &resolve_launch_dir(&entry.project_dir, entry.root.as_deref()),
                     entry.start_time,
                     entry.pid,
                     // No project context for drift detection in list-all.
@@ -197,15 +260,22 @@ pub fn handle_list(
                 entry.pid,
                 has_config_drift(entry, Some(service)),
             )),
-            None => processes.push(ListProcess {
-                service_name: service.name.clone(),
-                command: service.shell.clone(),
-                working_dir: resolve_launch_dir(&project_dir, service.root.as_deref()),
-                uptime: "-".to_string(),
-                pid: 0,
-                status: STATUS_NOT_RUNNING.to_string(),
-                config_changed: None,
-            }),
+            None => {
+                let exit_code = latest_nonzero_exit_code(conn, &project_dir, &service.name)?;
+                processes.push(ListProcess {
+                    service_name: service.name.clone(),
+                    command: service.shell.clone(),
+                    working_dir: resolve_launch_dir(&project_dir, service.root.as_deref()),
+                    uptime: "-".to_string(),
+                    pid: None,
+                    status: match exit_code {
+                        Some(code) => exited_status(code),
+                        None => STATUS_NOT_RUNNING.to_string(),
+                    },
+                    config_changed: false,
+                    exit_code,
+                })
+            }
         }
     }
 
@@ -218,7 +288,7 @@ pub fn handle_list(
         processes.push(running_row(
             &entry.command_name,
             &resolve_shell(entry, config_service),
-            &entry.project_dir,
+            &resolve_launch_dir(&project_dir, entry.root.as_deref()),
             entry.start_time,
             entry.pid,
             has_config_drift(entry, config_service),
@@ -242,7 +312,7 @@ pub fn filter_by_service_names(
     for name in names {
         if !output.processes.iter().any(|p| &p.service_name == name) {
             return Err(CandleError::UsageError(format!(
-                "No service found with name: {name}"
+                "No service '{name}' configured"
             )));
         }
     }
@@ -270,12 +340,12 @@ pub fn format_list_detail(output: &ListOutput) -> String {
     let mut entries: Vec<String> = Vec::new();
     for p in &output.processes {
         let mut header = format!("{}  {}", p.service_name, p.status);
-        if p.config_changed == Some(true) {
+        if p.config_changed {
             header.push_str(" [config changed]");
         }
         if p.status == STATUS_RUNNING {
-            if p.pid > 0 {
-                header.push_str(&format!("  pid {}", p.pid));
+            if let Some(pid) = p.pid {
+                header.push_str(&format!("  pid {pid}"));
             }
             if !p.uptime.is_empty() && p.uptime != "-" {
                 header.push_str(&format!("  uptime {}", p.uptime));
@@ -330,17 +400,13 @@ fn format_table(output: &ListOutput, with_command_and_dir: bool) -> String {
         .iter()
         .map(|p| {
             let mut status = p.status.clone();
-            if p.config_changed == Some(true) {
+            if p.config_changed {
                 status = format!("{status} [config changed]");
             }
             let mut cells = vec![
                 p.service_name.clone(),
                 status,
-                if p.pid > 0 {
-                    p.pid.to_string()
-                } else {
-                    "-".to_string()
-                },
+                p.pid.map_or_else(|| "-".to_string(), |pid| pid.to_string()),
                 p.uptime.clone(),
             ];
             if with_command_and_dir {
@@ -422,9 +488,10 @@ mod tests {
                 command: "echo".to_string(),
                 working_dir: "/proj".to_string(),
                 uptime: "5s".to_string(),
-                pid: 42,
+                pid: Some(42),
                 status: "RUNNING".to_string(),
-                config_changed: Some(true),
+                config_changed: true,
+                exit_code: None,
             }],
         };
         let text = format_list_output(&out);
@@ -457,18 +524,20 @@ mod tests {
                     command: "npm run dev".to_string(),
                     working_dir: "/proj/web".to_string(),
                     uptime: "3m 5s".to_string(),
-                    pid: 12345,
+                    pid: Some(12345),
                     status: STATUS_RUNNING.to_string(),
-                    config_changed: Some(false),
+                    config_changed: false,
+                    exit_code: None,
                 },
                 ListProcess {
                     service_name: "api".to_string(),
                     command: "npm run api".to_string(),
                     working_dir: "/proj".to_string(),
                     uptime: "-".to_string(),
-                    pid: 0,
+                    pid: None,
                     status: STATUS_NOT_RUNNING.to_string(),
-                    config_changed: None,
+                    config_changed: false,
+                    exit_code: None,
                 },
             ],
         }
@@ -485,7 +554,7 @@ mod tests {
     #[test]
     fn detail_view_marks_config_changed_and_handles_empty() {
         let mut out = sample();
-        out.processes[0].config_changed = Some(true);
+        out.processes[0].config_changed = true;
         let text = format_list_detail(&out);
         assert!(text.starts_with("web  RUNNING [config changed]  pid 12345"));
         assert_eq!(
@@ -586,30 +655,95 @@ mod tests {
             command: "echo".to_string(),
             working_dir: "/proj".to_string(),
             uptime: "5s".to_string(),
-            pid: 42,
+            pid: Some(42),
             status: "RUNNING".to_string(),
-            config_changed: Some(false),
+            config_changed: false,
+            exit_code: None,
         };
         let json = serde_json::to_string(&running).unwrap();
         assert_eq!(
             json,
-            r#"{"serviceName":"echo","command":"echo","workingDir":"/proj","uptime":"5s","pid":42,"status":"RUNNING","configChanged":false}"#
+            r#"{"serviceName":"echo","command":"echo","workingDir":"/proj","uptime":"5s","pid":42,"status":"RUNNING","configChanged":false,"exitCode":null}"#
         );
 
-        // Not-running row: configChanged omitted.
+        // Not-running row: same keys, pid null.
         let stopped = ListProcess {
             service_name: "web".to_string(),
             command: "web".to_string(),
             working_dir: "/proj".to_string(),
             uptime: "-".to_string(),
-            pid: 0,
+            pid: None,
             status: "not running".to_string(),
-            config_changed: None,
+            config_changed: false,
+            exit_code: None,
         };
         let json = serde_json::to_string(&stopped).unwrap();
         assert_eq!(
             json,
-            r#"{"serviceName":"web","command":"web","workingDir":"/proj","uptime":"-","pid":0,"status":"not running"}"#
+            r#"{"serviceName":"web","command":"web","workingDir":"/proj","uptime":"-","pid":null,"status":"not running","configChanged":false,"exitCode":null}"#
         );
+
+        // Crashed row: status and exitCode carry the code.
+        let crashed = ListProcess {
+            status: exited_status(1),
+            exit_code: Some(1),
+            ..stopped
+        };
+        let json = serde_json::to_string(&crashed).unwrap();
+        assert!(json.contains(r#""status":"EXITED (1)","configChanged":false,"exitCode":1"#));
+    }
+
+    #[test]
+    fn exit_code_parsing() {
+        assert_eq!(parse_exit_code("Process exited with code 1"), Some(1));
+        assert_eq!(
+            parse_exit_code("Process failed to start: exited with code 127"),
+            Some(127)
+        );
+        assert_eq!(parse_exit_code("Process was stopped"), None);
+    }
+
+    #[test]
+    fn latest_run_exit_code_from_logs() {
+        use crate::db::{get_database, temp_db_dir};
+        use crate::logs::process_logs::save_process_log;
+        let dir = temp_db_dir("list-exit-code");
+        let conn = get_database(Some(&dir)).unwrap();
+        let log = |t: ProcessLogType, c: Option<&str>| {
+            save_process_log(&conn, "svc", "/proj", t, c).unwrap();
+        };
+
+        assert_eq!(
+            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
+            None
+        );
+
+        log(ProcessLogType::ProcessStartInitiated, None);
+        log(ProcessLogType::ProcessStarted, None);
+        log(ProcessLogType::Stdout, Some("boom"));
+        log(
+            ProcessLogType::ProcessExited,
+            Some("Process exited with code 3"),
+        );
+        assert_eq!(
+            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
+            Some(3)
+        );
+
+        // A newer run that is still going (or stopped cleanly) clears it.
+        log(ProcessLogType::ProcessStartInitiated, None);
+        assert_eq!(
+            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
+            None
+        );
+        log(ProcessLogType::ProcessStarted, None);
+        log(ProcessLogType::ProcessExited, Some("Process was stopped"));
+        assert_eq!(
+            latest_nonzero_exit_code(&conn, "/proj", "svc").unwrap(),
+            None
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -51,7 +51,8 @@ candle start api && candle open-browser api
 
 ## Errors
 
-The command will fail if:
+The command will fail (exit code 1) if:
+- The named service isn't configured in this project (`No service '<name>' configured ...`)
 - The service is not running
 - The service has no open ports
 - No service name was provided and no processes are running

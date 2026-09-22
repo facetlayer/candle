@@ -51,7 +51,19 @@ api  not running
   directory: /Users/andy/proj
 ```
 
-`pid` and `uptime` are omitted for services that aren't running.
+`pid` and `uptime` are omitted for services that aren't running. A service
+whose latest run exited with a non-zero code shows `EXITED (<code>)` instead of
+`not running`:
+
+```
+jobs  EXITED (1)
+  command:   node jobs.js
+  directory: /Users/andy/proj
+```
+
+The `directory` is where the service runs: the project directory, or its `root`
+(from `.candle.json`, or `--root` for a transient service) resolved against it.
+`candle list-all` reports the same directory.
 
 If a running process was started from a service definition that has since been
 edited in `.candle.json`, ` [config changed]` is appended to its status:
@@ -90,9 +102,20 @@ candle ls web api
 candle list --json
 ```
 
-The JSON is an array of objects with `serviceName`, `command` (the service's
-shell command), `workingDir`, `uptime`, `pid`, `status`, and — for running
-processes — `configChanged`. Passing service names filters the JSON the same way
+The JSON is an array of objects. Every object has the same keys, whatever the
+service's state:
+
+| Key | Value |
+|-----|-------|
+| `serviceName` | The service name |
+| `command` | The service's shell command |
+| `workingDir` | The directory the service runs in |
+| `uptime` | Uptime, or `"-"` when not running |
+| `pid` | The process ID, or `null` when not running |
+| `status` | `RUNNING`, `not running`, or `EXITED (<code>)` |
+| `configChanged` | `true` if a running process was started from a since-edited definition; always `false` when not running |
+| `exitCode` | The latest run's exit code when it exited non-zero, otherwise `null` |
+ Passing service names filters the JSON the same way
 it filters the detail view.
 
 ## See Also

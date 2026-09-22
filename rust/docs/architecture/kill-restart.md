@@ -88,7 +88,7 @@ Logic:
    - **Else** (normal): `update_process_killed_at({ ..., killed_at: now_secs })` — sets `killed_at` to current time; row remains, awaiting reaper deletion.
 
    **`ProcessNotFound`:**
-   - If `!quiet`: warn `[Cleaning up stale process entry for '<command_name>' with PID: <pid>]`
+   - If `!quiet` and the row has no `killed_at` (it claimed to be running): warn `[Cleaning up stale process entry for '<command_name>' with PID: <pid>]`. A row already marked killed (the second kill inside `restart`) is swept silently.
    - `delete_process_entry(...)` (hard delete — the OS process is already gone so there is nothing the monitor will clean up).
 
    **`Error`** (a signal failed, or a process survived even `SIGKILL`):
@@ -160,7 +160,7 @@ Signature: `handle_restart(conn, project_dir, command_names) -> Result<Vec<Strin
 
 Flow:
 1. **If `command_names` empty**: load `find_running_processes_by_project_dir(project_dir)`. If none → `UsageError('No running processes found in this project to restart')` (propagates; CLI prints to stderr, exit 1). Else `command_names` = the running rows' names, deduped in first-seen order.
-2. Wrapped in a closure standing in for the TS try/catch (an error prints `Failed to restart: <message>` to **stderr**, and the handler still returns `Ok`):
+2. Wrapped in a closure standing in for the TS try/catch (an error is returned as `Generic("Failed to restart: <message>")`, which the CLI prints to **stderr** before exiting 1):
    a. **Snapshot phase** (before killing): for each name store the first row from `find_processes_by_command_name_and_project_dir(name, dir)`, if any. This captures `shell`/`root` before the kill marks/deletes rows.
    b. `handle_kill_command(conn, project_dir, names, false, false)` — kills (no quiet flags, so it prints `[Killed ...]`).
    c. **Restart phase**: for each name, decide command source:
@@ -188,7 +188,7 @@ Flow:
 - `No running processes found in project '<projectDir>'`
 - `No running processes found` (kill-all)
 - `No running processes found in this project to restart` (UsageError, restart)
-- `Failed to restart: <message>` (stderr)
+- `Failed to restart: <message>` (stderr, exit 1)
 - `Warning: Could not kill process <pid>: <msg>` (stderr)
 - assert_valid_command_names failure: stderr `No service '<name>' configured for directory: <dir>`; non-zero exit.
 

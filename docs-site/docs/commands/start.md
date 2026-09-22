@@ -48,7 +48,7 @@ is not a terminal or when run by a coding agent (such as Claude Code). Use
 - `--watch` - Force interactive mode: watch logs after starting
 - `--bg` - Force non-interactive mode: exit as soon as the launch is confirmed
 - `--shell <command>` - Start a transient service with the specified shell command
-- `--root <directory>` - Set the working directory for a transient service
+- `--root <directory>` - Set the working directory for a transient service. Only valid with `--shell`; for a configured service, set `root` in `.candle.json` instead (passing `--root` is an error)
 - `--enable-stdin` - Enable stdin message polling from database
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
@@ -111,6 +111,25 @@ candle start server --shell "python -m http.server 8080"
 
 ```bash
 candle start server --shell "npm run dev" --root ./packages/api
+```
+
+## When a start fails
+
+If the service can't be launched, `start` exits with code 1 and says why. A
+`root` directory that doesn't exist is reported by path, before anything is
+launched (and before any running instance is stopped):
+
+```
+Process 'api' failed to start: root directory does not exist: /Users/andy/proj/packages/api
+```
+
+If the process starts but exits during startup, `start` prints the logs it
+captured, such as the shell's `command not found` for a missing executable:
+
+```
+Process 'api' failed to start. Recent logs:
+sh: nosuch-binary: command not found
+Process failed to start: exited with code 127
 ```
 
 ## See Also

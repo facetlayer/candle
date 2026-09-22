@@ -1,0 +1,12 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "PORT=0 node ../../sampleServers/listeningServer.js"
+    },
+    {
+      "name": "idle",
+      "shell": "node ../../sampleServers/testProcess.js"
+    }
+  ]
+}

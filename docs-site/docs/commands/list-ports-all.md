@@ -5,14 +5,14 @@ List open ports for all running services globally across the entire system.
 ## Syntax
 
 ```bash
-candle list-ports-all
+candle list-ports-all [--json]
 ```
 
 ## Description
 
 The `list-ports-all` command displays all open (listening) ports used by running services that were started by Candle, regardless of which project directory they were started from.
 
-This is different from `candle list-ports`, which only shows ports for services in the current project.
+This is different from `candle list-ports`, which only shows ports for services in the current project. Because it is system-wide, `list-ports-all` works from any directory; it doesn't need a `.candle.json`.
 
 ## Output Format
 
@@ -25,6 +25,10 @@ The command outputs a table with the following columns:
 | PORT | Port number |
 | ADDRESS | Network address (e.g., 127.0.0.1, 0.0.0.0) |
 | PROTOCOL | Network protocol (always TCP, since only listening TCP sockets are detected), with "(child)" suffix for child processes |
+
+## Options
+
+- `--json` - Output as JSON: an object with a `ports` array, the same shape as [`list-ports --json`](list-ports#json-output).
 
 ## Example
 

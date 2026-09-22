@@ -14,8 +14,10 @@ The `list-all` command displays all running services that were started by Candle
 
 This is different from `candle list`, which only shows services in the current project directory.
 
-Output is a table, in the same style as [ps](ps) but with the process's command and project directory
-included — those are the only way to tell processes from different projects apart.
+Output is a table, in the same style as [ps](ps) but with the process's command and directory
+included — those are the only way to tell processes from different projects apart. The DIRECTORY
+column (and `workingDir` in JSON) is the directory the process runs in, the same one `candle list`
+shows: the project directory, or the service's root inside it.
 
 ## Options
 

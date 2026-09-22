@@ -2,9 +2,10 @@
 //!
 //! Ports `startOneService` from `src/start/startOneService.ts`. The flow:
 //! check-start dedup → resolve the service config (transient or from file) →
-//! kill any existing instance → seed a log cursor → record
-//! `process_start_initiated` → launch the sidecar → race the log table against a
-//! 10s timeout for `process_started` / `process_start_failed` → print the banner.
+//! check the launch directory exists → kill any existing instance → seed a log
+//! cursor → record `process_start_initiated` → launch the monitor process
+//! (`candle --monitor`) → race the log table against a 10s timeout for
+//! `process_started` / `process_start_failed` → print the banner.
 
 use std::path::Path;
 use std::thread;
@@ -60,7 +61,7 @@ fn db_err(e: rusqlite::Error) -> CandleError {
 }
 
 /// PIDs belonging to the currently-running instance of `command_name`: the
-/// supervised shell and the monitor sidecar that writes its log rows. Both must
+/// supervised shell and the monitor process that writes its log rows. Both must
 /// be gone before the old instance can be considered fully drained.
 fn previous_instance_pids(
     conn: &Connection,
@@ -174,6 +175,19 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         found.service_config
     };
 
+    // The directory the service runs in. The monitor would fail to spawn the
+    // shell there anyway, but only with a bare "No such file or directory" that
+    // reads the same as a missing executable. Check up front so the error names
+    // the path — and before the kill below, so a bad `root` doesn't take down a
+    // running instance on its way to failing.
+    let launch_dir = crate::dirs::resolve_launch_dir(&opts.project_dir, service.root.as_deref());
+    if !Path::new(&launch_dir).is_dir() {
+        return Err(CandleError::UsageError(format!(
+            "Process '{}' failed to start: root directory does not exist: {launch_dir}",
+            service.name
+        )));
+    }
+
     // 3. Kill any existing instance (start == restart). quiet_failure suppresses
     //    "no running processes" noise.
     let previous_pids = previous_instance_pids(conn, &opts.project_dir, &service.name)?;
@@ -239,9 +253,12 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
                 let recent = initial_log_position
                     .get_next_logs(conn, None)
                     .map_err(db_err)?;
+                // Lifecycle rows such as `process_start_initiated` carry no
+                // content; skip them rather than emit blank lines.
                 let recent_logs = recent
                     .iter()
-                    .map(|l| l.content.clone().unwrap_or_default())
+                    .filter_map(|l| l.content.clone())
+                    .filter(|c| !c.is_empty())
                     .collect::<Vec<_>>()
                     .join("\n");
                 return Err(CandleError::ProcessStartFailed {
@@ -263,11 +280,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         ));
     }
 
-    // 7. Success banner. Note the absolute-root special-case here diverges from
-    //    the sidecar's cwd (which joins unconditionally) — preserved from Node.
-    //    Shared with `list` so the two always report the same directory.
-    let launch_dir = crate::dirs::resolve_launch_dir(&opts.project_dir, service.root.as_deref());
-
+    // 7. Success banner. `launch_dir` comes from `resolve_launch_dir`, which
+    //    `list` also uses, so the two always report the same directory. It
+    //    matches the monitor's cwd too: an absolute `root` replaces the project
+    //    dir in both.
     output::out(&format!(
         "[Started process '{}'] $ {}",
         service.name, service.shell

@@ -1,0 +1,22 @@
+{
+  "services": [
+    {
+      "name": "web",
+      "shell": "node ../../sampleServers/testProcess.js"
+    },
+    {
+      "name": "missing-root",
+      "shell": "node ../../sampleServers/testProcess.js",
+      "root": "does-not-exist"
+    },
+    {
+      "name": "missing-exe",
+      "shell": "nosuch-binary-xyz-123 --flag"
+    },
+    {
+      "name": "rooted",
+      "shell": "node ../../../sampleServers/testProcess.js",
+      "root": "sub"
+    }
+  ]
+}

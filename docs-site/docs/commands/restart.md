@@ -18,6 +18,9 @@ take effect on the next restart. Transient processes (started with `--shell`
 and not present in the config) are relaunched with the same command they were
 originally started with.
 
+If a service fails to start again, `restart` prints `Failed to restart: <reason>`
+and exits with code 1.
+
 `restart` follows the same interactive behavior as [start](start): when run
 interactively it watches the restarted process's logs until `Ctrl+C` (the
 process keeps running); when run non-interactively (agents, scripts, pipes) it
