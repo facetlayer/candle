@@ -53,7 +53,11 @@ describe('CLI Erase-Database Command', () => {
 
     describe('erase-database output format', () => {
         it('should have minimal output', async () => {
-            await workspace.runCli(['erase-database']);
+            const result = await workspace.runCli(['erase-database']);
+
+            expect(result.stdoutAsString()).toContain('Database erased');
+            expect(result.stdoutAsString()).not.toContain('successfully');
+            expect(result.stdoutAsString()).not.toContain('\u2713');
         });
 
         it('should have no stderr on success', async () => {

@@ -26,7 +26,7 @@ Unlike directory-based discovery, `--project-dir` never searches parent director
 
 ```bash
 candle ps --project-dir ~/work/api/src
-# No .candle.json in /Users/you/work/api/src (--project-dir doesn't search parent directories)
+# Error: No .candle.json in /Users/you/work/api/src (--project-dir doesn't search parent directories)
 ```
 
 This keeps a single command from reading its services out of one project while acting on another.

@@ -92,6 +92,13 @@ pub fn err(line: &str) {
     });
 }
 
+/// Emit a user-facing error line to stderr as `Error: <message>` (see
+/// [`crate::errors::error_line`]), or buffer it when a [`capture`] scope is
+/// active.
+pub fn error(message: &str) {
+    err(&crate::errors::error_line(message));
+}
+
 /// Run `f` with output capture active on the current thread, returning its value
 /// alongside everything it emitted via [`out`]/[`err`].
 pub fn capture<T>(f: impl FnOnce() -> T) -> (T, CapturedOutput) {

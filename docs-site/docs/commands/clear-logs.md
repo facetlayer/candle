@@ -24,8 +24,10 @@ The `clear-logs` command deletes log entries from the database. It also optimize
 
 ### Clear logs for a specific service
 
-```bash
-candle clear-logs api
+```
+$ candle clear-logs api
+Clearing logs for project: /Users/you/projects/my-app
+Cleared 42 log entries
 ```
 
 ### Clear logs for multiple services

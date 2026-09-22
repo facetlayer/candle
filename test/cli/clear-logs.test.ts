@@ -22,7 +22,7 @@ describe('CLI Clear-Logs Command', () => {
             // Clear logs
             const result = await workspace.runCli(['clear-logs', 'echo']);
 
-            expect(result.stdoutAsString()).toContain('Logs cleared successfully');
+            expect(result.stdoutAsString()).toContain('Clearing logs for project');
 
             // Verify logs are cleared
             const afterClear = await workspace.runCli(['logs', 'echo']);
@@ -50,7 +50,7 @@ describe('CLI Clear-Logs Command', () => {
 
             const result = await workspace.runCli(['clear-logs', 'my-transient']);
 
-            expect(result.stdoutAsString()).toContain('Logs cleared successfully');
+            expect(result.stdoutAsString()).toContain('Clearing logs for project');
         });
     });
 
@@ -62,7 +62,7 @@ describe('CLI Clear-Logs Command', () => {
 
             const result = await workspace.runCli(['clear-logs']);
 
-            expect(result.stdoutAsString()).toContain('Logs cleared successfully');
+            expect(result.stdoutAsString()).toContain('Clearing logs for project');
         });
 
         it('should clear logs for every service in the project, including running and transient ones', async () => {
@@ -100,7 +100,9 @@ describe('CLI Clear-Logs Command', () => {
 
             const result = await workspace.runCli(['clear-logs', 'echo']);
 
-            expect(result.stdoutAsString()).toContain('Logs cleared successfully');
+            expect(result.stdoutAsString()).toMatch(/^Cleared \d+ log entries$/m);
+            expect(result.stdoutAsString()).not.toContain('successfully');
+            expect(result.stdoutAsString()).not.toContain('\u2713');
         });
 
         it('should have no stderr on success', async () => {
@@ -121,7 +123,7 @@ describe('CLI Clear-Logs Command', () => {
 
             const result = await workspace.runCli(['clear-logs', 'echo']);
 
-            expect(result.stdoutAsString()).toContain('Logs cleared successfully');
+            expect(result.stdoutAsString()).toContain('Clearing logs for project');
         });
     });
 });

@@ -120,7 +120,7 @@ describe('process safety', () => {
         it('erases once services are stopped', async () => {
             await workspace.runCli(['kill', 'slow']);
             const result = await workspace.runCli(['erase-database']);
-            expect(result.stdoutAsString()).toContain('Database cleared successfully');
+            expect(result.stdoutAsString()).toContain('Database erased');
         });
 
         it('--force erases anyway', async () => {
@@ -129,7 +129,7 @@ describe('process safety', () => {
 
             try {
                 const result = await workspace.runCli(['erase-database', '--force']);
-                expect(result.stdoutAsString()).toContain('Database cleared successfully');
+                expect(result.stdoutAsString()).toContain('Database erased');
                 expect(isAlive(pid)).toBe(true);
             } finally {
                 // --force orphans it by design; clean up by hand. Its monitor

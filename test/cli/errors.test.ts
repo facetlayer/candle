@@ -182,6 +182,37 @@ describe('CLI Error Handling', () => {
         });
     });
 
+    describe('error prefix', () => {
+        // Every fatal error is printed to stderr as a single `Error: <message>`.
+        const cases: [string, string[]][] = [
+            ['unknown command', ['foobar']],
+            ['unknown flag', ['logs', '--unknown']],
+            ['unknown service', ['start', 'nonexistent-service-xyz']],
+            ['add-service without a name', ['add-service']],
+            ['add-service without --shell', ['add-service', 'needs-shell']],
+            ['wait-for-log without --message', ['wait-for-log', 'echo']],
+            ['unknown help topic', ['help', 'nonexistent']],
+            ['unknown doc', ['get-doc', 'nonexistent']],
+        ];
+
+        for (const [label, args] of cases) {
+            it(`uses a single "Error: " prefix for ${label}`, async () => {
+                const result = await workspace.runCli(args, { ignoreExitCode: true });
+
+                expect(result.failed()).toBe(true);
+                const stderr = result.stderrAsString();
+                expect(stderr.startsWith('Error: ')).toBe(true);
+                expect(stderr).not.toContain('Error: Error');
+            });
+        }
+
+        it('uses the prefix for a missing .candle.json', async () => {
+            const result = await workspace.runCli(['ps'], { cwd: '/tmp', ignoreExitCode: true });
+
+            expect(result.stderrAsString().startsWith('Error: No .candle.json')).toBe(true);
+        });
+    });
+
     describe('stderr vs stdout for errors', () => {
         it('should output errors to stderr', async () => {
             const result = await workspace.runCli(['start', 'nonexistent'], { ignoreExitCode: true });

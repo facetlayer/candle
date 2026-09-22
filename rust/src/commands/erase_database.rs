@@ -1,9 +1,7 @@
 //! `erase-database` command — delete the candle SQLite database and its WAL/SHM
 //! sidecar files from the resolved state directory.
 //!
-//! Ported from `src/clear-database-command.ts`. Output strings (including the
-//! leading U+2713 check marks and the blank line before "Database cleared
-//! successfully!") match the Node implementation byte-for-byte.
+//! Ported from `src/clear-database-command.ts`.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -107,21 +105,20 @@ pub fn erase_database_in(state_dir: &Path) -> std::io::Result<()> {
 
     // Main database file: report whether it was present.
     if remove_if_present(&db_path)? {
-        output::out("\u{2713} Removed database file");
+        output::out("Removed database file");
     } else {
-        output::out("- Database file not found");
+        output::out("Database file not found");
     }
 
     // WAL / shared-memory sidecars: only reported when present.
     if remove_if_present(&wal_path)? {
-        output::out("\u{2713} Removed WAL file");
+        output::out("Removed WAL file");
     }
     if remove_if_present(&shm_path)? {
-        output::out("\u{2713} Removed shared memory file");
+        output::out("Removed shared memory file");
     }
 
-    output::out("\nDatabase cleared successfully!");
-    output::out("A new database will be created on next use.");
+    output::out("Database erased. A new one will be created on next use.");
     Ok(())
 }
 
@@ -151,14 +148,11 @@ mod tests {
         res.unwrap();
 
         assert!(!dir.join("candle.db").exists());
+        assert!(captured.stdout.iter().any(|l| l == "Removed database file"));
         assert!(captured
             .stdout
             .iter()
-            .any(|l| l == "\u{2713} Removed database file"));
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\nDatabase cleared successfully!"));
+            .any(|l| l == "Database erased. A new one will be created on next use."));
         // No stderr on success.
         assert!(captured.stderr.is_empty());
 
@@ -176,7 +170,7 @@ mod tests {
         assert!(captured
             .stdout
             .iter()
-            .any(|l| l == "- Database file not found"));
+            .any(|l| l == "Database file not found"));
         assert!(captured.stderr.is_empty());
     }
 
@@ -321,7 +315,7 @@ mod tests {
         assert!(captured
             .stdout
             .iter()
-            .any(|l| l == "- Database file not found"));
+            .any(|l| l == "Database file not found"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

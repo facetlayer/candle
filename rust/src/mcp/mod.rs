@@ -415,7 +415,10 @@ pub fn serve_mcp() -> ! {
     let conn = match crate::db::get_database(None) {
         Ok(conn) => conn,
         Err(e) => {
-            eprintln!("candle: failed to open database: {e}");
+            eprintln!(
+                "{}",
+                crate::errors::error_line(&format!("Failed to open database: {e}"))
+            );
             std::process::exit(1);
         }
     };

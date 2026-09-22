@@ -108,9 +108,33 @@ impl fmt::Display for CandleError {
 
 impl std::error::Error for CandleError {}
 
+/// The one prefix every fatal user-facing error carries on stderr.
+pub const ERROR_PREFIX: &str = "Error: ";
+
+/// Format a fatal user-facing error as `Error: <message>`.
+///
+/// Messages are written without a prefix; this adds it in one place. A message
+/// that already starts with the prefix is returned unchanged, so a caller can
+/// never produce `Error: Error: ...`. Only the first line is prefixed; any
+/// following lines (hints, recent logs) are kept as-is.
+pub fn error_line(message: &str) -> String {
+    if message.starts_with(ERROR_PREFIX) {
+        message.to_string()
+    } else {
+        format!("{ERROR_PREFIX}{message}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_line_adds_a_single_prefix() {
+        assert_eq!(error_line("bad args"), "Error: bad args");
+        assert_eq!(error_line("Error: bad args"), "Error: bad args");
+        assert_eq!(error_line("first\nsecond"), "Error: first\nsecond");
+    }
 
     #[test]
     fn usage_error_display_and_flags() {

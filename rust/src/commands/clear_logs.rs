@@ -41,9 +41,9 @@ pub fn handle_clear_logs_command(
     }
 
     if cleared_count > 0 {
-        output::out(&format!("\u{2713} Cleared {cleared_count} log entries"));
+        output::out(&format!("Cleared {cleared_count} log entries"));
     } else {
-        output::out("- No logs found to clear");
+        output::out("No logs found to clear");
     }
 
     // Clean up orphaned logs and optimize the database.
@@ -52,8 +52,6 @@ pub fn handle_clear_logs_command(
         [],
     )?;
     conn.execute("VACUUM", [])?;
-
-    output::out("\nLogs cleared successfully!");
 
     Ok(())
 }
@@ -81,14 +79,7 @@ mod tests {
             .stdout
             .iter()
             .any(|l| l == "Clearing logs for project: /proj"));
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\u{2713} Cleared 2 log entries"));
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\nLogs cleared successfully!"));
+        assert!(captured.stdout.iter().any(|l| l == "Cleared 2 log entries"));
 
         let remaining = get_process_logs(
             &conn,
@@ -117,12 +108,8 @@ mod tests {
         assert!(captured
             .stdout
             .iter()
-            .any(|l| l == "- No logs found to clear"));
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\nLogs cleared successfully!"));
-        assert!(!captured.stdout.iter().any(|l| l.starts_with('\u{2713}')));
+            .any(|l| l == "No logs found to clear"));
+        assert!(!captured.stdout.iter().any(|l| l.starts_with("Cleared")));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
@@ -140,12 +127,8 @@ mod tests {
         assert!(captured
             .stdout
             .iter()
-            .any(|l| l == "- No logs found to clear"));
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\nLogs cleared successfully!"));
-        assert!(!captured.stdout.iter().any(|l| l.starts_with('\u{2713}')));
+            .any(|l| l == "No logs found to clear"));
+        assert!(!captured.stdout.iter().any(|l| l.starts_with("Cleared")));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
@@ -176,10 +159,7 @@ mod tests {
         let (_, captured) = output::capture(|| {
             handle_clear_logs_command(&conn, "/proj", &[]).unwrap();
         });
-        assert!(captured
-            .stdout
-            .iter()
-            .any(|l| l == "\u{2713} Cleared 2 log entries"));
+        assert!(captured.stdout.iter().any(|l| l == "Cleared 2 log entries"));
 
         let count = |project: &str| -> i64 {
             conn.query_row(

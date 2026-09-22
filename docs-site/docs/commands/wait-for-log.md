@@ -32,7 +32,13 @@ candle wait-for-log [name] --message <message> [--timeout <seconds>]
 
 A message that a finished run did print still counts, so `wait-for-log` succeeds for a short-lived job that has already exited.
 
-When it gives up (timeout, or the process exiting), it prints the last 20 lines from the service's latest run, followed by a hint to run `candle logs <name>` for the rest.
+Failures are reported on stderr as `Error: <reason>`, for example:
+
+```
+Error: Timed out after 30000ms and message "Ready" not found.
+```
+
+When it gives up (timeout, or the process exiting), it also prints the last 20 lines from the service's latest run, followed by a hint to run `candle logs <name>` for the rest.
 
 ## Exit Status
 

@@ -114,8 +114,8 @@ fn fail_not_running(
     message: &str,
     has_run: bool,
 ) -> WaitForLogResult {
-    output::out(&format!(
-        "wait-for-log failed: {} and message \"{message}\" was not found.",
+    output::error(&format!(
+        "{} and message \"{message}\" was not found.",
         describe_services(command_names)
     ));
     if has_run {
@@ -184,7 +184,7 @@ pub fn handle_wait_for_log(
             .iter()
             .any(|log| is_type(log, ProcessLogType::ProcessStartInitiated));
         if !has_process_started {
-            output::err("Process has not started yet");
+            output::error("Process has not started yet");
             return WaitForLogResult { success: false };
         }
 
@@ -207,8 +207,8 @@ pub fn handle_wait_for_log(
         }
 
         if time_started.elapsed().as_millis() > timeout_ms as u128 {
-            output::out(&format!(
-                "wait-for-log failed: Timed out after {timeout_ms}ms and message \"{message}\" not found."
+            output::error(&format!(
+                "Timed out after {timeout_ms}ms and message \"{message}\" not found."
             ));
             print_recent_logs(conn, project_dir, command_names);
             return WaitForLogResult { success: false };
@@ -227,8 +227,8 @@ pub fn handle_wait_for_log(
             }
 
             if ends_run(log) {
-                output::out(&format!(
-                    "wait-for-log failed: Process exited before finding message \"{message}\""
+                output::error(&format!(
+                    "Process exited before finding message \"{message}\""
                 ));
                 print_recent_logs(conn, project_dir, command_names);
                 return WaitForLogResult { success: false };
@@ -295,10 +295,11 @@ mod tests {
         assert!(!result.success);
         // Fails at once instead of waiting out the 30s timeout.
         assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(captured.stdout.is_empty());
         assert_eq!(
-            captured.stdout,
+            captured.stderr,
             vec![
-                "wait-for-log failed: Service 'echo' is not running and message \"hello\" was not found."
+                "Error: Service 'echo' is not running and message \"hello\" was not found."
                     .to_string()
             ]
         );
@@ -333,9 +334,9 @@ mod tests {
         });
 
         assert!(!result.success);
-        assert!(captured.stdout.iter().any(|l| l
+        assert!(captured.stderr.iter().any(|l| l
             == &format!(
-                "wait-for-log failed: Timed out after {timeout_ms}ms and message \"never-appears\" not found."
+                "Error: Timed out after {timeout_ms}ms and message \"never-appears\" not found."
             )));
 
         drop(conn);
@@ -368,8 +369,11 @@ mod tests {
         assert!(!result.success);
         assert!(started.elapsed() < Duration::from_secs(5));
         assert_eq!(
-            captured.stdout[0],
-            "wait-for-log failed: Service 'echo' is not running and message \"ready\" was not found."
+            captured.stderr,
+            vec![
+                "Error: Service 'echo' is not running and message \"ready\" was not found."
+                    .to_string()
+            ]
         );
         assert!(captured.stdout.contains(&"booting".to_string()));
         assert_eq!(
@@ -397,7 +401,7 @@ mod tests {
 
         assert!(!result.success);
         assert!(started.elapsed() < Duration::from_secs(5));
-        assert!(captured.stdout[0].contains("Service 'echo' is not running"));
+        assert!(captured.stderr[0].contains("Service 'echo' is not running"));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
@@ -426,9 +430,9 @@ mod tests {
         });
 
         assert!(!result.success);
+        assert!(captured.stderr[0].starts_with("Error: Timed out"));
         let out = &captured.stdout;
-        assert!(out[0].starts_with("wait-for-log failed: Timed out"));
-        assert_eq!(out[1], "Last 20 lines of the latest run of 'echo':");
+        assert_eq!(out[0], "Last 20 lines of the latest run of 'echo':");
         let lines: Vec<&String> = out.iter().filter(|l| l.starts_with("new ")).collect();
         assert_eq!(lines.len(), 20);
         assert_eq!(lines[0], "new 30");

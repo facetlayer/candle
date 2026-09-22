@@ -110,7 +110,7 @@ describe('CLI Wait-For-Log Command', () => {
             expect(result.failed()).toBe(true);
             // The default timeout is 30s; a stopped service must not wait it out.
             expect(elapsed).toBeLessThan(5000);
-            expect(result.stdoutAsString()).toContain("Service 'web' is not running");
+            expect(result.stderrAsString()).toContain("Error: Service 'web' is not running");
         }, 15000);
 
         it('should fail at once when the latest run already exited', async () => {
@@ -128,7 +128,7 @@ describe('CLI Wait-For-Log Command', () => {
 
             expect(result.failed()).toBe(true);
             expect(elapsed).toBeLessThan(5000);
-            expect(result.stdoutAsString()).toContain("Service 'exits-fast' is not running");
+            expect(result.stderrAsString()).toContain("Error: Service 'exits-fast' is not running");
         }, 15000);
 
         it('should still find a message a finished run printed', async () => {
@@ -158,7 +158,7 @@ describe('CLI Wait-For-Log Command', () => {
             const output = result.stdoutAsString();
 
             expect(result.failed()).toBe(true);
-            expect(output).toContain('Timed out');
+            expect(result.stderrAsString()).toContain('Error: Timed out');
             expect(output).not.toContain('oldrun');
             const lines = output.split('\n').filter((l) => l.startsWith('newrun'));
             expect(lines.length).toBe(20);

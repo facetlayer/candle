@@ -119,14 +119,14 @@ If the service can't be launched, `start` exits with code 1 and says why. A
 launched (and before any running instance is stopped):
 
 ```
-Process 'api' failed to start: root directory does not exist: /Users/andy/proj/packages/api
+Error: Process 'api' failed to start: root directory does not exist: /Users/andy/proj/packages/api
 ```
 
 If the process starts but exits during startup, `start` prints the logs it
 captured, such as the shell's `command not found` for a missing executable:
 
 ```
-Process 'api' failed to start. Recent logs:
+Error: Process 'api' failed to start. Recent logs:
 sh: nosuch-binary: command not found
 Process failed to start: exited with code 127
 ```

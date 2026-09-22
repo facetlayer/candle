@@ -259,9 +259,8 @@ pub fn kill_one_running_process(
         }
         KillOutcome::Error => {
             if !quiet {
-                // Note: Node emits this on stdout (console.log), not stderr.
-                output::out(&format!(
-                    "Error killing process '{}' with PID: {}",
+                output::error(&format!(
+                    "Could not kill process '{}' with PID: {}",
                     entry.command_name, entry.pid
                 ));
             }

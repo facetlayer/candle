@@ -35,7 +35,7 @@ use candle::config::commands::{
 use candle::db::cleanup::maybe_run_cleanup;
 use candle::db::get_database;
 use candle::doc_files::{self, DocLookupError};
-use candle::errors::CandleError;
+use candle::errors::{error_line, CandleError};
 use candle::kill::{handle_kill_all, handle_kill_command};
 use candle::project_scope::ProjectScope;
 use candle::start::{handle_start_command, StartCommandOptions};
@@ -100,9 +100,9 @@ fn main() {
     let canonical = match canonical_command(&command_token) {
         Some(c) => c,
         None => {
-            eprintln!("Error: Unrecognized command '{command_token}'");
-            eprintln!("Run \"candle help\" for available commands.");
-            exit(1);
+            fatal(format!(
+                "Unrecognized command '{command_token}'\nRun \"candle help\" for available commands."
+            ));
         }
     };
 
@@ -115,9 +115,9 @@ fn main() {
             match canonical_command(topic) {
                 Some(cmd) => println!("{}", help::command_help(cmd)),
                 None => {
-                    eprintln!("Unknown help topic: {topic}");
-                    eprintln!("Run \"candle help\" for available commands.");
-                    exit(1);
+                    fatal(format!(
+                        "Unknown help topic: {topic}\nRun \"candle help\" for available commands."
+                    ));
                 }
             }
             return;
@@ -132,10 +132,7 @@ fn main() {
 
     let args = match parse_command_args(canonical, rest) {
         Ok(a) => a,
-        Err(msg) => {
-            eprintln!("{msg}");
-            exit(1);
-        }
+        Err(msg) => fatal(msg),
     };
 
     dispatch(canonical, &args);
@@ -143,7 +140,7 @@ fn main() {
 
 fn dispatch(command: &str, args: &CommandArgs) {
     match command {
-        "setup-project" => print_or_exit(handle_setup_project(&cwd()), |e| format!("{e}")),
+        "setup-project" => print_or_exit(handle_setup_project(&cwd())),
         "add-service" => cmd_add_service(args),
         "remove-service" => cmd_remove_service(args),
         "set-config" => cmd_set_config(args),
@@ -198,14 +195,11 @@ fn configured_project_dir_or_exit(scope: &ProjectScope) -> String {
     project_dir_or_exit(scope)
 }
 
-/// Print a handler's success message, or render its error to stderr and exit 1.
-fn print_or_exit<E>(result: Result<String, E>, render: impl FnOnce(&E) -> String) {
+/// Print a handler's success message, or print its error to stderr and exit 1.
+fn print_or_exit<E: std::fmt::Display>(result: Result<String, E>) {
     match result {
         Ok(msg) => println!("{msg}"),
-        Err(e) => {
-            eprintln!("{}", render(&e));
-            exit(1);
-        }
+        Err(e) => fatal(e),
     }
 }
 
@@ -213,19 +207,16 @@ fn cmd_add_service(args: &CommandArgs) {
     let name = match args.positionals.first() {
         Some(n) => n.clone(),
         None => {
-            eprintln!("Error: Service name is required");
-            exit(1);
+            fatal("Service name is required");
         }
     };
     if args.positionals.len() > 1 {
-        eprintln!("Error: Cannot use multiple command names for add-service");
-        exit(1);
+        fatal("Cannot use multiple command names for add-service");
     }
     let shell = match args.value("shell") {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => {
-            eprintln!("Missing required argument: shell");
-            exit(1);
+            fatal("--shell <command> is required");
         }
     };
     let config_args = AddServerConfigArgs {
@@ -234,39 +225,30 @@ fn cmd_add_service(args: &CommandArgs) {
         root: args.value("root").map(str::to_string),
         enable_stdin: args.has("enable-stdin"),
     };
-    print_or_exit(add_server_config(&config_args, &cwd()), |e| {
-        format!("Error adding service: {e}")
-    });
+    print_or_exit(add_server_config(&config_args, &cwd()));
 }
 
 fn cmd_remove_service(args: &CommandArgs) {
     let name = match args.positionals.first() {
         Some(n) => n.clone(),
         None => {
-            eprintln!("Error: Service name is required");
-            exit(1);
+            fatal("Service name is required");
         }
     };
     if args.positionals.len() > 1 {
-        eprintln!("Error: Cannot use multiple command names for remove-service");
-        exit(1);
+        fatal("Cannot use multiple command names for remove-service");
     }
-    print_or_exit(remove_server_config(&name, &cwd()), |e| {
-        format!("Error removing service: {e}")
-    });
+    print_or_exit(remove_server_config(&name, &cwd()));
 }
 
 fn cmd_set_config(args: &CommandArgs) {
     let (key, value) = match (args.positionals.first(), args.positionals.get(1)) {
         (Some(k), Some(v)) => (k.clone(), v.clone()),
         _ => {
-            eprintln!("Error: set-config requires a <key> and a <value>");
-            exit(1);
+            fatal("set-config requires a <key> and a <value>");
         }
     };
-    print_or_exit(handle_set_config(&key, &value, &cwd()), |e| {
-        format!("Error: {e}")
-    });
+    print_or_exit(handle_set_config(&key, &value, &cwd()));
 }
 
 fn cmd_list_docs() {
@@ -290,9 +272,9 @@ fn cmd_get_doc(args: &CommandArgs) {
             println!("\n(File source: {})", doc.source_path);
         }
         Err(DocLookupError::NotFound) => {
-            eprintln!("Doc file not found: {name}");
-            eprintln!("Run with \"list-docs\" command to see available docs.");
-            exit(1);
+            fatal(format!(
+                "Doc file not found: {name}\nRun with \"list-docs\" command to see available docs."
+            ));
         }
     }
 }
@@ -302,18 +284,21 @@ fn cmd_get_doc(args: &CommandArgs) {
 fn open_db() -> Connection {
     match get_database(None) {
         Ok(conn) => conn,
-        Err(e) => {
-            eprintln!("candle: failed to open database: {e}");
-            exit(1);
-        }
+        Err(e) => fatal(format!("Failed to open database: {e}")),
     }
 }
 
-/// Print a CandleError to stderr and exit 1. Mirrors the Node top-level handler,
-/// which prints `error.message` for usage errors.
-fn fail_with(err: &CandleError) -> ! {
-    eprintln!("{err}");
+/// Print a fatal error to stderr as `Error: <message>` and exit 1. Every fatal
+/// user-facing error in the CLI goes through here, so the prefix is added in
+/// exactly one place (see [`error_line`]).
+fn fatal(message: impl std::fmt::Display) -> ! {
+    eprintln!("{}", error_line(&message.to_string()));
     exit(1);
+}
+
+/// Print a CandleError to stderr and exit 1.
+fn fail_with(err: &CandleError) -> ! {
+    fatal(err)
 }
 
 /// `kill` / `stop`: resolve the project dir, validate names, then mark/kill.
@@ -336,8 +321,7 @@ fn cmd_kill(args: &CommandArgs) {
     }
 
     if let Err(e) = handle_kill_command(&conn, &project_dir, &args.positionals, false, false) {
-        eprintln!("candle: database error: {e}");
-        exit(1);
+        fatal(format!("Database error: {e}"));
     }
 }
 
@@ -346,8 +330,7 @@ fn cmd_kill_all() {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
     if let Err(e) = handle_kill_all(&conn, false) {
-        eprintln!("candle: database error: {e}");
-        exit(1);
+        fatal(format!("Database error: {e}"));
     }
 }
 
@@ -359,8 +342,7 @@ fn should_watch_after_launch(args: &CommandArgs) -> bool {
     let force_bg = args.has("bg");
     let force_watch = args.has("watch");
     if force_bg && force_watch {
-        eprintln!("Error: Cannot use --bg and --watch together");
-        exit(1);
+        fatal("Cannot use --bg and --watch together");
     }
     if force_watch {
         true
@@ -470,8 +452,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     let message = match args.value("message") {
         Some(m) => m,
         None => {
-            eprintln!("Missing required argument: message");
-            exit(1);
+            fatal("--message <text> is required");
         }
     };
 
@@ -544,10 +525,7 @@ fn cmd_clear_logs(args: &CommandArgs) {
 
     match handle_clear_logs_command(&conn, &project_dir, &args.positionals) {
         Ok(()) => {}
-        Err(e) => {
-            eprintln!("Error clearing logs: {e}");
-            exit(1);
-        }
+        Err(e) => fatal(format!("Could not clear logs: {e}")),
     }
 }
 
@@ -590,10 +568,9 @@ fn cmd_restart(args: &CommandArgs) {
 
 fn cmd_watch(args: &CommandArgs) {
     if candle::run_context::is_run_by_agent() {
-        eprintln!(
-            "Error: 'watch' blocks and is not available in agent mode. Use 'candle logs' to view process output."
+        fatal(
+            "'watch' blocks and is not available in agent mode. Use 'candle logs' to view process output.",
         );
-        exit(1);
     }
     let scope = scope_of(args);
     if let Err(e) = scope.require_own_config() {
@@ -679,14 +656,8 @@ fn cmd_erase_database(args: &CommandArgs) {
     };
     match handle_erase_database_command(args.has("force")) {
         Ok(EraseOutcome::Erased) => {}
-        Ok(EraseOutcome::RefusedLiveProcesses(live)) => {
-            eprintln!("{}", format_refusal(&live));
-            exit(1);
-        }
-        Err(e) => {
-            eprintln!("Error clearing database: {e}");
-            exit(1);
-        }
+        Ok(EraseOutcome::RefusedLiveProcesses(live)) => fatal(format_refusal(&live)),
+        Err(e) => fatal(format!("Could not erase database: {e}")),
     }
 }
 
@@ -696,6 +667,5 @@ fn run_mcp() -> ! {
 }
 
 fn not_implemented(command: &str) -> ! {
-    eprintln!("candle: '{command}' is not yet implemented in the Rust port");
-    exit(1);
+    fatal(format!("'{command}' is not implemented"));
 }
