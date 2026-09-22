@@ -1,0 +1,21 @@
+{
+  "services": [
+    {
+      "name": "crasher",
+      "shell": "node ../../sampleServers/delayedExitServer.js 3 1000"
+    },
+    {
+      "name": "clean-exit",
+      "shell": "node ../../sampleServers/delayedExitServer.js 0 1000"
+    },
+    {
+      "name": "idle",
+      "shell": "node ../../sampleServers/testProcess.js"
+    },
+    {
+      "name": "rooted",
+      "shell": "node ../../../sampleServers/testProcess.js",
+      "root": "sub"
+    }
+  ]
+}

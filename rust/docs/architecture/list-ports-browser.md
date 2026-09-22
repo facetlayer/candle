@@ -57,16 +57,17 @@ struct ListProcess {          // serialized in this field order, camelCase
   command: String,            // the service's shell string (NOT the service name)
   working_dir: String,        // "workingDir"
   uptime: String,             // formatted, see §2.3
-  pid: i64,                   // 0 when not running
-  status: String,             // "RUNNING" | "not running"
-  config_changed: Option<bool>, // "configChanged", omitted when None
+  pid: Option<i64>,           // null when not running
+  status: String,             // "RUNNING" | "not running" | "EXITED (<code>)"
+  config_changed: bool,       // "configChanged", always present; false when not running
+  exit_code: Option<i64>,     // "exitCode": latest run's non-zero exit code, else null
 }
 ```
 CLI (`cmd_list` in `main.rs`): with `--json`, prints `list_output_to_json` = pretty JSON of `output.processes` (the **array**, not the wrapper). Otherwise it renders with one of the §2.4 renderers.
 
 ### 2.1 `list-all` branch (`showAll: true`, lines 49-64)
 - No config file needed. `entries = filter_alive_processes(find_all_processes())`.
-- Map each entry to: `serviceName = command_name`, `command = entry.shell` (or `''`), `workingDir = project_dir`, `uptime = formatUptime(now_ms - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
+- Map each entry to: `serviceName = command_name`, `command = entry.shell` (or `''`), `workingDir = resolve_launch_dir(project_dir, entry.root)` (the same directory `list` reports), `uptime = formatUptime(now_ms - start_time*1000)`, `pid = pid`, `status = 'RUNNING'`, `configChanged = false` (always; no config context).
 - Only alive processes appear (dead ones filtered + deleted). All listed rows are `RUNNING`.
 
 ### 2.2 `list` branch (default, lines 65-122)
@@ -76,8 +77,8 @@ CLI (`cmd_list` in `main.rs`): with `--json`, prints `list_output_to_json` = pre
 4. `runningByName` = Map `command_name → entry`.
 5. **First** iterate `config.services` in file order, marking each name `seen`:
    - If a running process matches the name: `status='RUNNING'`, real `pid`, `uptime` from `start_time`, `configChanged = has_config_drift(entry, service)`, `command` = the row's `shell` (falling back to the config's), `workingDir = resolve_launch_dir(project_dir, entry.root or service.root)`.
-   - Else: `status='not running'`, `pid=0`, `uptime='-'`, `command = service.shell`, `workingDir = resolve_launch_dir(project_dir, service.root)`, **no `configChanged` field emitted**.
-6. **Then** iterate running entries again; for any whose `command_name` was not in config (transient/orphan), append with `status='RUNNING'`, real pid/uptime, `workingDir = entry.project_dir`, `configChanged = has_config_drift(entry, find_service_by_name(...))`.
+   - Else: `pid=null`, `uptime='-'`, `command = service.shell`, `workingDir = resolve_launch_dir(project_dir, service.root)`, `configChanged=false`. `status` is `EXITED (<code>)` (with `exitCode = code`) when the service's newest lifecycle log row (`process_start_initiated` / `process_start_failed` / `process_started` / `process_exited`) is an exit or start failure whose message ends in a non-zero `exited with code N`; otherwise `not running` (`exitCode = null`). A signal exit ("Process was stopped") is not a crash.
+6. **Then** iterate running entries again; for any whose `command_name` was not in config (transient/orphan), append with `status='RUNNING'`, real pid/uptime, `workingDir = resolve_launch_dir(project_dir, entry.root)` (so `--root` shows), `configChanged = has_config_drift(entry, find_service_by_name(...))`.
 
 `resolve_launch_dir` (`rust/src/dirs.rs`) is the same helper the start banner uses: absolute root wins, relative root is joined, and the result is lexically normalized. (The Node `list` reported the bare project dir.)
 
@@ -132,11 +133,11 @@ interface PortInfo {
 }
 interface ListPortsOutput { ports: PortInfo[]; }
 ```
-The CLI never JSON-serializes this (a `list_ports_output_to_json` helper exists for other callers); only `format_list_ports_output` is printed.
+With `--json` the CLI prints `list_ports_output_to_json` (the `{ ports: [...] }` wrapper, same as MCP `ListPorts`); otherwise `format_list_ports_output`.
 
 ### Algorithm
-1. `find_config_file(cwd)` → `project_dir` (errors if none, even for `list-ports-all`).
-2. `processEntries = showAll ? findAllProcesses() : findProcessesByProjectDir(projectDir)`. **Note:** this uses the *non-running* query — includes `killed_at` rows. No `filterAliveProcesses` here; dead pids simply yield no lsof matches.
+1. `showAll`: `processEntries = find_all_processes()`, no config needed (so `list-ports-all` works outside a project).
+2. Otherwise `find_config_file(cwd)` → `project_dir` (errors if none), `processEntries = find_processes_by_project_dir(project_dir)`, and each requested name must be configured (exact match) or have a row in `processEntries`, else `MissingServiceWithName`. `open-browser <name>` inherits this check. **Note:** this uses the *non-running* query — includes `killed_at` rows. No `filterAliveProcesses` here; dead pids simply yield no lsof matches.
 3. If `commandNames` non-empty, filter `processEntries` to those whose `command_name ∈ commandNames`.
 4. For each entry, compute its full process tree `getProcessTree(entry.pid)`.
 5. Collect **all** pids across all trees into `allPids`. If empty → return `{ ports: [] }`.
@@ -232,7 +233,7 @@ Errors: `UsageError`/`MissingSetupFile`/`MissingServiceWithName` are usage error
 
 - **Time units:** `start_time` is unix **seconds**; uptime computed as `now_ms - start_time*1000`. Not treated as ms.
 - **`formatUptime` zero case:** emits `"0s"` when all components are zero (other "not running" rows use the literal `"-"`, set separately).
-- **`pid=0` sentinel** for not-running rows; printed as `"-"`.
+- **`pid=None`** (JSON `null`) for not-running rows; printed as `"-"`.
 - **liveness EPERM → alive**; only ESRCH (no-such-process) is dead. And `filterAliveProcesses` **deletes** dead rows as a side effect (mutating the DB during a read command).
 - **`log_collector_pid` checked before `pid`** in liveness, and only if truthy/nonzero.
 - **list-ports uses `findProcessesByProjectDir` (includes killed)** and does NOT prune via `filterAliveProcesses`; correctness comes from lsof simply not matching dead pids. open-browser's `resolveServiceName` likewise counts killed rows as "processes."

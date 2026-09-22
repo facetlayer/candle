@@ -256,7 +256,7 @@ Root-level tests:
 3. Exact output strings are load-bearing — preserved verbatim across implementations:
    - Start: two lines — `[Started process '<name>'] $ <shell>` then `[With root directory: <dir>]` (the first must contain `Started` and `'<name>'`).
    - check-start skip: `[Service '<name>' is already running]` (contains `already running`).
-   - Errors: `No service '<name>' configured for directory: <cwd>`; `No .candle.json file found in (or above) current directory: <cwd>`; `Process '<name>' failed to start. Recent logs: ...`; `No services configured in .candle.json`; `Exactly one service name is required when using --shell`; `Unrecognized command '<cmd>'`.
+   - Errors: `No service '<name>' configured for directory: <cwd>`; `No .candle.json file found in (or above) current directory: <cwd>`; `Process '<name>' failed to start. Recent logs:` + newline + log lines; `Process '<name>' failed to start: root directory does not exist: <dir>`; `No services configured in .candle.json`; `Exactly one service name is required when using --shell`; `Unrecognized command '<cmd>'`.
    - Unknown flags yield yargs-style `Unknown argument` (strict mode). The Node CLI used yargs `.strictOptions()`; the Rust CLI's hand-rolled parser (`rust/src/cli/parser.rs`, not clap) rejects unknown flags with `Unknown argument: <flag>`.
 4. **Timeouts are in seconds on the CLI** (`--timeout 30`) but converted to ms internally (`timeout*1000`). Negative/zero handled as immediate failure.
 5. Stale detection uses signal-0 liveness; fake PID `2147483000` is chosen to be unused. Both `pid` and `log_collector_pid` deadness form the staleness condition.

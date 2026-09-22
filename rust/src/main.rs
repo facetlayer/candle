@@ -19,7 +19,9 @@ use candle::commands::list::{
     filter_by_service_names, format_list_detail, format_list_output, format_ps_output, handle_list,
     list_output_to_json,
 };
-use candle::commands::list_ports::{format_list_ports_output, handle_list_ports};
+use candle::commands::list_ports::{
+    format_list_ports_output, handle_list_ports, list_ports_output_to_json,
+};
 use candle::commands::logs::{handle_logs_command, LogsCommandOptions};
 use candle::commands::open_browser::{format_open_browser_output, handle_open_browser};
 use candle::commands::restart::handle_restart;
@@ -606,26 +608,30 @@ fn cmd_watch(args: &CommandArgs) {
     }
 }
 
-/// `list-ports` / `list-ports-all`: detect open listening ports for project (or
-/// all) processes via lsof and print them as a table.
-///
-/// Note: the Node CLI declares the `list-ports` positional as `[names...]` but
-/// reads `argv.name` (singular), so positional names never reach
-/// `handleListPorts`; `list-ports foo` lists all project ports. We preserve that
-/// behavior — positionals are ignored — so this stays a drop-in replacement.
+/// `list-ports [names...]` / `list-ports-all`: detect open listening ports for
+/// project (or all) processes via lsof and print them as a table, or as JSON
+/// with `--json`. Names restrict the output to those services; in a project an
+/// unknown name is an error. `list-ports-all` is system-wide and needs no
+/// project.
 fn cmd_list_ports(args: &CommandArgs, show_all: bool) {
     let scope = scope_of(args);
-    if let Err(e) = scope.require_own_config() {
-        fail_with(&e);
+    if !show_all {
+        if let Err(e) = scope.require_own_config() {
+            fail_with(&e);
+        }
     }
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    let output = match handle_list_ports(&conn, scope.base_dir(), show_all, &[]) {
+    let output = match handle_list_ports(&conn, scope.base_dir(), show_all, &args.positionals) {
         Ok(output) => output,
         Err(e) => fail_with(&e),
     };
-    println!("{}", format_list_ports_output(&output));
+    if args.has("json") {
+        println!("{}", list_ports_output_to_json(&output));
+    } else {
+        println!("{}", format_list_ports_output(&output));
+    }
 }
 
 /// `open-browser`: resolve a service (explicit or sole running), open a browser

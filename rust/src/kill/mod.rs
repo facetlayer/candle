@@ -185,7 +185,10 @@ pub enum KillOutcome {
 /// - **Success**: print `[Killed ...]` (unless `quiet`); then if the row was
 ///   already marked killed over 5 minutes ago, warn + hard-delete it; otherwise
 ///   mark `killed_at = now`.
-/// - **ProcessNotFound**: warn + hard-delete the row (the OS process is gone).
+/// - **ProcessNotFound**: hard-delete the row (the OS process is gone). The
+///   warning is printed only for a row that still claimed to be running; a row
+///   already marked killed is expected to be gone (e.g. the second kill inside
+///   `restart`), so sweeping it is silent.
 /// - **Error**: print `Error killing process ...` (to stdout, matching Node) and
 ///   leave the row unchanged.
 ///
@@ -245,7 +248,7 @@ pub fn kill_one_running_process(
             true
         }
         KillOutcome::ProcessNotFound => {
-            if !quiet {
+            if !quiet && entry.killed_at.is_none() {
                 output::err(&format!(
                     "[Cleaning up stale process entry for '{}' with PID: {}]",
                     entry.command_name, entry.pid
@@ -414,6 +417,23 @@ mod tests {
             .stderr
             .iter()
             .any(|l| l.contains("Cleaning up stale process entry")));
+        assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sweeping_an_already_killed_row_is_silent() {
+        let dir = temp_db_dir("kill-one-already-killed");
+        let conn = get_database(Some(&dir)).unwrap();
+        insert(&conn, "svc", 2_000_000_000);
+        update_process_killed_at(&conn, "svc", "/proj", 2_000_000_000, now_unix_seconds()).unwrap();
+
+        let entry = find_all_processes(&conn).unwrap().pop().unwrap();
+        let (_, captured) = capture(|| kill_one_running_process(&conn, &entry, false).unwrap());
+
+        assert!(captured.stderr.is_empty(), "{:?}", captured.stderr);
         assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
 
         drop(conn);

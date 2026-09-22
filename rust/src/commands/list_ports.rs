@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::config::find_config_file;
+use crate::config::{find_config_file, find_service_by_name};
 use crate::db::process_table::{find_all_processes, find_processes_by_project_dir};
 use crate::errors::CandleError;
 use crate::process_tree::get_process_tree;
@@ -55,21 +55,35 @@ fn db_err(e: rusqlite::Error) -> CandleError {
 
 /// Build a `list-ports` / `list-ports-all` result.
 ///
-/// - `show_all`: consider every process row system-wide; otherwise scope to the
-///   project resolved from `cwd` (throws `MissingSetupFile` if no config).
+/// - `show_all`: consider every process row system-wide, with no project needed;
+///   otherwise scope to the project resolved from `cwd` (throws
+///   `MissingSetupFile` if no config).
 /// - `command_names`: when non-empty, restrict to processes with those names.
+///   In project scope each name must be a configured service or have a process
+///   row in the project (a transient service), else `MissingServiceWithName`.
 pub fn handle_list_ports(
     conn: &Connection,
     cwd: &Path,
     show_all: bool,
     command_names: &[String],
 ) -> Result<ListPortsOutput, CandleError> {
-    let project_dir = find_config_file(cwd)?.project_dir.display().to_string();
-
     let mut process_entries = if show_all {
         find_all_processes(conn).map_err(db_err)?
     } else {
-        find_processes_by_project_dir(conn, &project_dir).map_err(db_err)?
+        let found = find_config_file(cwd)?;
+        let project_dir = found.project_dir.display().to_string();
+        let entries = find_processes_by_project_dir(conn, &project_dir).map_err(db_err)?;
+        for name in command_names {
+            let configured = find_service_by_name(&found.config, name).is_some();
+            let has_row = entries.iter().any(|e| &e.command_name == name);
+            if !configured && !has_row {
+                return Err(CandleError::MissingServiceWithName {
+                    command_name: name.clone(),
+                    cwd: project_dir,
+                });
+            }
+        }
+        entries
     };
 
     if !command_names.is_empty() {

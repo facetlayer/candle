@@ -41,9 +41,12 @@ NAME  STATUS       PID    UPTIME
 ----  -----------  -----  ------
 web   RUNNING      12345  3m 5s
 api   not running  -      -
+jobs  EXITED (1)   -      -
 ```
 
-A service that isn't running shows `-` for its pid and uptime. If a running
+A service that isn't running shows `-` for its pid and uptime. Its status is
+`EXITED (<code>)` when its latest run exited with a non-zero code (it crashed),
+and `not running` when it was stopped, exited cleanly, or was never started. If a running
 process drifted from its current `.candle.json` definition, its status reads
 `RUNNING [config changed]`.
 

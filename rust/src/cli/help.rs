@@ -100,8 +100,8 @@ pub fn command_help(command: &str) -> String {
         "wait-for-log" => {
             "candle wait-for-log [name]   Wait for a specific log message\n\nOptions:\n  --message <text>   The log message to wait for (required)\n  --timeout <secs>   Timeout in seconds (default: 30)\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
-        "list-ports" => "candle list-ports [names...]   List open ports for running services\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
-        "list-ports-all" => "candle list-ports-all   List open ports for all services".to_string(),
+        "list-ports" => "candle list-ports [names...]   List open ports for running services\n\nWith one or more names, only those services are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
+        "list-ports-all" => "candle list-ports-all   List open ports for all services\n\nSystem-wide; works from any directory.\n\nOptions:\n  --json   Output as JSON".to_string(),
         "open-browser" => "candle open-browser [name]   Open a browser to a running service\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "setup-project" => "candle setup-project   Create a new .candle.json in the current directory".to_string(),
         "add-service" => {

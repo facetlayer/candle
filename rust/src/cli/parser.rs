@@ -75,7 +75,10 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         ],
         "watch" => &[("exit-after-ms", true), ("project-dir", true)],
         "wait-for-log" => &[("message", true), ("timeout", true), ("project-dir", true)],
-        "kill" | "clear-logs" | "list-ports" | "open-browser" => &[("project-dir", true)],
+        "list-ports" => &[("json", false), ("project-dir", true)],
+        // System-wide, like list-all.
+        "list-ports-all" => &[("json", false)],
+        "kill" | "clear-logs" | "open-browser" => &[("project-dir", true)],
         "find-orphans" => &[("json", false)],
         "erase-database" => &[("force", false)],
         _ => &[],

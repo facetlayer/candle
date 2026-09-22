@@ -78,10 +78,16 @@ impl fmt::Display for CandleError {
             CandleError::ProcessStartFailed {
                 command_name,
                 recent_logs,
-            } => write!(
-                f,
-                "Process '{command_name}' failed to start. Recent logs: {recent_logs}"
-            ),
+            } => {
+                if recent_logs.is_empty() {
+                    write!(f, "Process '{command_name}' failed to start.")
+                } else {
+                    write!(
+                        f,
+                        "Process '{command_name}' failed to start. Recent logs:\n{recent_logs}"
+                    )
+                }
+            }
             CandleError::Generic(msg) => write!(f, "{msg}"),
         }
     }
@@ -121,6 +127,25 @@ mod tests {
         );
         assert!(err.is_usage_error());
         assert_eq!(err.name(), "NeedRunCommandError");
+    }
+
+    #[test]
+    fn process_start_failed_puts_logs_on_their_own_lines() {
+        let err = CandleError::ProcessStartFailed {
+            command_name: "api".to_string(),
+            recent_logs: "sh: x: command not found\nProcess failed to start: exited with code 127"
+                .to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Process 'api' failed to start. Recent logs:\nsh: x: command not found\nProcess failed to start: exited with code 127"
+        );
+
+        let bare = CandleError::ProcessStartFailed {
+            command_name: "api".to_string(),
+            recent_logs: String::new(),
+        };
+        assert_eq!(bare.to_string(), "Process 'api' failed to start.");
     }
 
     #[test]

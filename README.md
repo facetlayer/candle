@@ -307,6 +307,7 @@ This command searches Candle managed processes and also child processes. It uses
 to find to find TCP ports that are in a LISTEN state
 
 If no `[names]` are provided: Show ports for all running services in the current project.
+A name that isn't a service in this project is an error. Pass `--json` for machine-readable output.
 
 ### `candle open-browser`
 
@@ -383,6 +384,7 @@ directory that no longer exists.
 ### `candle list-ports-all`
 
 Like `list-ports` but shows open ports for all Candle-managed processes across the entire system.
+Works from any directory, and also takes `--json`.
 
 ### `candle clear-logs`
 
