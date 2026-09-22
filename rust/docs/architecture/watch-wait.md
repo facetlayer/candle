@@ -161,42 +161,48 @@ Subtlety: the function returns normally (no forced exit); the process exits natu
 ## 8. `wait-for-log` command (`rust/src/commands/wait_for_log.rs`)
 
 ### 8.1 CLI definition (`cmd_wait_for_log` in `rust/src/main.rs`; originally `src/main-cli.ts:165-178`)
-`wait-for-log [name]` — positional name(s), all passed through as `command_names`. Required option `--message <string>` (missing → stderr `Missing required argument: message`, exit 1). Option `--timeout <number>` in seconds, default `30`. Option `--project-dir <dir>`. Strict options. **Not** disabled in agent mode. Names are not validated (transient names are allowed).
+`wait-for-log [name]` — positional name(s), all passed through as `command_names`. Required option `--message <string>` (missing → stderr `Missing required argument: message`, exit 1). Option `--timeout <number>` in seconds, default `30`. Option `--project-dir <dir>`. Strict options. **Not** disabled in agent mode. Names are validated with `assert_known_service_names` (same rule as `logs`: stored logs, a process row, or a config entry), so an unknown name prints `No service '<name>' configured for directory: <dir>` to stderr and exits 1. Transient names with history are allowed.
 
 Dispatch: resolve `project_dir`, call `handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms = timeout * 1000)`, and exit `1` if `!result.success`. So **exit code 0 on success, 1 on failure.** Timeout is converted seconds→ms here.
 
 ### 8.2 `handle_wait_for_log` (`rust/src/commands/wait_for_log.rs`; originally `src/wait-for-log-command.ts`)
-Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`. The 30s default lives in the CLI layer.
+Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`, `RECENT_LOG_LINES = 20`, `LIVENESS_CHECK_EVERY = 5` (polls). The 30s default lives in the CLI layer.
+
+"Running" (`is_any_running`) means a `processes` row for the project with `killed_at` null whose pid is alive (`filter_alive_processes`), for any of the named services (any service when no name is given). The monitor inserts the row before it writes `process_started` and deletes it just after `process_exited`, so once the start is reported a missing row means the service is gone.
 
 Return shape: `WaitForLogResult { success: bool }` (the TS version also carried an unread `message`).
 
 Algorithm:
 1. `LogIterator({ projectDir, commandNames, limit: 1000 })`. `allInitialLogs = logIterator.getNextLogs()` (uses limit 1000; advances cursor to newest).
 2. `logFilter = LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' })` (**no recency window**). `logFilter.checkLatestLaunchStatus(allInitialLogs)`; `initialLogs = logFilter.filter(allInitialLogs)`.
-3. If `initialLogs.length === 0`: return `{ success: false }` (no console output; caller exits 1).
-4. `hasProcessStarted = initialLogs.some(l => l.log_type === process_start_initiated (3))`. If false: print `Process has not started yet` to **stderr** and return `{ success: false }`.
-5. Scan `initialLogs`: if any `log.content?.includes(message)` (substring match; `content` may be null → skipped): print `Found message "<message>" in existing logs.` and return `{ success: true }`.
+3. Scan `initialLogs`: if any `log.content?.includes(message)` (substring match; `content` may be null → skipped): print `Found message "<message>" in existing logs.` and return `{ success: true }`. This runs first, so a run that has already finished still satisfies the wait if it printed the message.
+4. If `initialLogs` is empty: if nothing is running, fail at once (`fail_not_running`, below, without recent logs). If something is running, its launch marker is older than the 1000-row window, so every row is from the current run: scan `allInitialLogs` for the message, then switch the filter to `ShowLogsFromPreviousLaunch` and poll.
+5. Otherwise: `hasProcessStarted = initialLogs.some(l => l.log_type === process_start_initiated (3))`; if false, print `Process has not started yet` to **stderr** and return `{ success: false }`. If the latest run already ended (`process_exited` or `process_start_failed` in `initialLogs`) and nothing is running, fail at once with recent logs.
 6. Poll loop (`timeStarted = now`):
-   - If `now - timeStarted > timeoutMs`: print `wait-for-log failed: Timed out after <timeoutMs>ms and message "<message>" not found.`, call `printRecentLogs(...)`, return `{ success: false }`.
+   - Once `process_started` has been seen, every `LIVENESS_CHECK_EVERY` polls: if nothing is running, fail with recent logs. Before the start is reported the launch is still in progress, so the missing row is expected.
+   - If `now - timeStarted > timeoutMs`: print `wait-for-log failed: Timed out after <timeoutMs>ms and message "<message>" not found.`, call `print_recent_logs(...)`, return `{ success: false }`.
    - `rawLogs = logIterator.getNextLogs()` (limit 1000); `logs = logFilter.filter(rawLogs)`.
-   - For each log: if `content?.includes(message)` → print `Found message "<message>" in logs.` and return `{ success: true }`. Else if `log_type === process_exited (6)` → print `wait-for-log failed: Process exited before finding message "<message>"`, call `printRecentLogs(...)`, return `{ success: false }`.
+   - For each log: if `content?.includes(message)` → print `Found message "<message>" in logs.` and return `{ success: true }`. Else if `log_type` is `process_exited (6)` or `process_start_failed (4)` → print `wait-for-log failed: Process exited before finding message "<message>"`, call `printRecentLogs(...)`, return `{ success: false }`.
    - Sleep 200ms.
 
 The timeout is checked at the **top** of the loop before fetching; the first check happens immediately (0 elapsed, won't trip). The exit-before-found check is per-log within a batch and is evaluated **after** the message check, so a batch where the matching line and the exit line both appear returns success if the match comes first in chronological order.
 
-### 8.3 `printRecentLogs` (`wait-for-log-command.ts:17-29`)
-Prints on failure paths:
-- `Recent logs for '<commandNames.join(', ')>':`
-- New `LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' })` (fresh, no `checkLatestLaunchStatus` call — so `recentCommandLaunch` is empty; `filter()` discovers the launch inline).
-- `getProcessLogs({ commandNames, limit: 100, projectDir })` → filter → `consoleLogRow(log, { format: 'pretty' })` each.
+### 8.3 `print_recent_logs`
+Prints on failure paths, showing only the tail of the latest run (the Node version printed up to 100 rows, earlier runs included):
+- `get_log_tail({ project_dir, command_names }, RECENT_LOG_LINES)` (§6 of logs.md: the newest 20 printable rows of each command's latest run, plus launch markers), then an `OnlyShowAfterRecentLaunch` filter with `check_latest_launch_status`.
+- Header: `Last 20 lines of the latest run of '<names>':` when the tail was truncated, else `Logs from the latest run of '<names>':`.
+- Each row via `console_log_row` (pretty; `[name] ` prefix when there isn't exactly one name).
+- Footer: `Run 'candle logs <name>' to see more.` (`candle logs` with zero or several names).
 
-Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not call `checkLatestLaunchStatus`, so its filtering relies entirely on `filter()` discovering the `process_start_initiated` row within the 100-row window.
+`fail_not_running` prints `wait-for-log failed: Service '<name>' is not running and message "<m>" was not found.` (`Services '<a, b>' are not running` for several names, `No service in this project is running` for none), then the recent logs when the service has a recorded run.
 
 ### 8.4 Exact output strings (test-load-bearing)
 - `Found message "<m>" in existing logs.` (stdout, success)
 - `Found message "<m>" in logs.` (stdout, success)
 - `wait-for-log failed: Timed out after <ms>ms and message "<m>" not found.` (stdout, failure)
 - `wait-for-log failed: Process exited before finding message "<m>"` (stdout, failure)
+- `wait-for-log failed: Service '<name>' is not running and message "<m>" was not found.` (stdout, failure)
+- `Run 'candle logs <name>' to see more.` (stdout, after the recent logs)
 - `Process has not started yet` (stderr, when logs exist but none are starts)
 - `<m>` is wrapped in literal double-quotes; `<ms>` is the raw timeout in **milliseconds**.
 

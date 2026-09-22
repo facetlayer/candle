@@ -84,7 +84,7 @@ describe('CLI Wait-For-Log Command', () => {
     });
 
     describe('wait-for-log with non-running service', () => {
-        it('should handle non-running service', async () => {
+        it('should error for a service that is not configured', async () => {
             const result = await workspace.runCli([
                 'wait-for-log',
                 'nonexistent-service',
@@ -95,7 +95,78 @@ describe('CLI Wait-For-Log Command', () => {
             ], { ignoreExitCode: true });
 
             expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain("No service 'nonexistent-service' configured");
         }, 5000);
+
+        it('should fail at once when the service is not running', async () => {
+            await workspace.runCli(['kill', 'web']);
+
+            const startTime = Date.now();
+            const result = await workspace.runCli([
+                'wait-for-log', 'web', '--message', 'never printed',
+            ], { ignoreExitCode: true });
+            const elapsed = Date.now() - startTime;
+
+            expect(result.failed()).toBe(true);
+            // The default timeout is 30s; a stopped service must not wait it out.
+            expect(elapsed).toBeLessThan(5000);
+            expect(result.stdoutAsString()).toContain("Service 'web' is not running");
+        }, 15000);
+
+        it('should fail at once when the latest run already exited', async () => {
+            await workspace.runCli([
+                'start', 'exits-fast', '--shell', 'node ../../sampleServers/delayedExitServer.js 1 300',
+            ], { ignoreExitCode: true });
+            // Let the process exit.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            const startTime = Date.now();
+            const result = await workspace.runCli([
+                'wait-for-log', 'exits-fast', '--message', 'never printed',
+            ], { ignoreExitCode: true });
+            const elapsed = Date.now() - startTime;
+
+            expect(result.failed()).toBe(true);
+            expect(elapsed).toBeLessThan(5000);
+            expect(result.stdoutAsString()).toContain("Service 'exits-fast' is not running");
+        }, 15000);
+
+        it('should still find a message a finished run printed', async () => {
+            await workspace.runCli([
+                'start', 'exits-fast-2', '--shell', 'node ../../sampleServers/delayedExitServer.js 0 300',
+            ], { ignoreExitCode: true });
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            const result = await workspace.runCli(['wait-for-log', 'exits-fast-2', '--message', 'exiting with code 0']);
+            expect(result.stdoutAsString()).toContain('Found message');
+        }, 15000);
+    });
+
+    describe('wait-for-log timeout output', () => {
+        it('should show only the tail of the latest run, plus a logs hint', async () => {
+            // A previous run whose output must not be shown.
+            await workspace.runCli(['start', 'tail-test', '--shell', 'node ../../sampleServers/burstServer.js 5 oldrun']);
+            await workspace.runCli(['wait-for-log', 'tail-test', '--message', 'oldrun done']);
+            await workspace.runCli(['kill', 'tail-test']);
+
+            await workspace.runCli(['start', 'tail-test', '--shell', 'node ../../sampleServers/burstServer.js 60 newrun']);
+            await workspace.runCli(['wait-for-log', 'tail-test', '--message', 'newrun done']);
+
+            const result = await workspace.runCli([
+                'wait-for-log', 'tail-test', '--message', 'never printed', '--timeout', '1',
+            ], { ignoreExitCode: true });
+            const output = result.stdoutAsString();
+
+            expect(result.failed()).toBe(true);
+            expect(output).toContain('Timed out');
+            expect(output).not.toContain('oldrun');
+            const lines = output.split('\n').filter((l) => l.startsWith('newrun'));
+            expect(lines.length).toBe(20);
+            expect(lines[lines.length - 1]).toBe('newrun done');
+            expect(output).toContain("Run 'candle logs tail-test' to see more.");
+
+            await workspace.runCli(['kill', 'tail-test']);
+        }, 20000);
     });
 
     describe('wait-for-log with transient processes', () => {

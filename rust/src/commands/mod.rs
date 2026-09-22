@@ -20,6 +20,7 @@ use rusqlite::Connection;
 use crate::config::{find_project_dir, get_service_config_by_name};
 use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::errors::CandleError;
+use crate::logs::process_logs::has_logs_for_command;
 
 /// Validate that each name refers to a known service for the project, erroring
 /// (as a usage error) on the first that does not.
@@ -53,6 +54,49 @@ pub fn assert_valid_command_names(
         get_service_config_by_name(name, Some(cwd))?;
     }
 
+    Ok(())
+}
+
+/// Validate names for the commands that read stored logs (`logs`,
+/// `wait-for-log`), erroring with `No service '<name>' configured` on the first
+/// unknown one.
+///
+/// A name is known if it has stored logs or a process row in `project_dir`
+/// (so a finished transient service still counts), or, when `check_config` is
+/// set, if it resolves to a service configured for `config_dir`. Callers clear
+/// `check_config` when the project has no config file of its own, e.g. a
+/// `--project-dir` that has since been deleted.
+pub fn assert_known_service_names(
+    conn: &Connection,
+    config_dir: &Path,
+    project_dir: &str,
+    names: &[String],
+    check_config: bool,
+) -> Result<(), CandleError> {
+    let db_err = |e: rusqlite::Error| CandleError::ConfigFileError(format!("database error: {e}"));
+    for name in names {
+        if has_logs_for_command(conn, project_dir, name).map_err(db_err)? {
+            continue;
+        }
+        let rows = find_processes_by_command_name_and_project_dir(conn, name, project_dir)
+            .map_err(db_err)?;
+        if !rows.is_empty() {
+            continue;
+        }
+        let configured = check_config
+            && match get_service_config_by_name(name, Some(config_dir)) {
+                Ok(_) => true,
+                Err(CandleError::MissingServiceWithName { .. })
+                | Err(CandleError::MissingSetupFile { .. }) => false,
+                Err(e) => return Err(e),
+            };
+        if !configured {
+            return Err(CandleError::MissingServiceWithName {
+                command_name: name.clone(),
+                cwd: project_dir.to_string(),
+            });
+        }
+    }
     Ok(())
 }
 

@@ -38,6 +38,8 @@ Get recent logs for a specific service.
 - `limit` (number, optional) - Maximum number of log lines to return (default: 200)
 - `projectDir` (string, optional) - Project directory for cross-directory access
 
+When earlier lines from the latest run were left out, the output starts with a hint to pass a larger `limit`.
+
 ### StartService
 
 Start a config-defined service.

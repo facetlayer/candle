@@ -223,7 +223,11 @@ fn tool_get_logs(
         Some(p) => p.to_string(),
         None => resolve_project_dir(cwd)?,
     };
-    crate::commands::logs::handle_logs_command(conn, &project_dir, &[name], limit, None);
+    let options = crate::commands::logs::LogsCommandOptions {
+        more_hint: "pass a larger `limit` to see more".to_string(),
+        ..crate::commands::logs::LogsCommandOptions::cli(limit)
+    };
+    crate::commands::logs::handle_logs_command(conn, &project_dir, &[name], &options);
     Ok(None)
 }
 

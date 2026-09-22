@@ -91,6 +91,30 @@ describe('CLI Help Command', () => {
             const output = result.stdoutAsString() + result.stderrAsString();
             expect(output).toContain('Unknown help topic');
         });
+
+        it('should show command help for `help <command>`', async () => {
+            for (const cmd of ['start', 'logs', 'wait-for-log', 'ls']) {
+                const viaHelp = await workspace.runCli(['help', cmd]);
+                const viaFlag = await workspace.runCli([cmd, '--help']);
+
+                expect(viaHelp.stdoutAsString()).toBe(viaFlag.stdoutAsString());
+                expect(viaHelp.stdoutAsString()).not.toContain('Process Management:');
+            }
+        });
+    });
+
+    describe('internal flags', () => {
+        it('should not list --enable-stdin in command help', async () => {
+            for (const cmd of ['start', 'check-start', 'add-service']) {
+                const result = await workspace.runCli([cmd, '--help']);
+                expect(result.stdoutAsString()).not.toContain('enable-stdin');
+            }
+        });
+
+        it('should still accept --enable-stdin', async () => {
+            const result = await workspace.runCli(['start', 'nonexistent-svc', '--enable-stdin'], { ignoreExitCode: true });
+            expect(result.stderrAsString()).not.toContain('Unknown argument');
+        });
     });
 
     describe('command-specific help', () => {

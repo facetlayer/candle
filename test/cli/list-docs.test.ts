@@ -37,6 +37,27 @@ describe('CLI List-Docs Command', () => {
         });
     });
 
+    describe('list-docs hints', () => {
+        it('should suggest get-doc with the listed key, not the filename', async () => {
+            const result = await workspace.runCli(['list-docs']);
+            const output = result.stdoutAsString();
+
+            expect(output).toContain('candle get-doc agents-intro)');
+            expect(output).not.toMatch(/candle get-doc [^)\s]+\.md/);
+        });
+
+        it('should list keys that get-doc accepts', async () => {
+            const result = await workspace.runCli(['list-docs']);
+            const keys = [...result.stdoutAsString().matchAll(/\(candle get-doc ([^)]+)\)/g)].map((m) => m[1]);
+
+            expect(keys.length).toBeGreaterThan(0);
+            for (const key of keys) {
+                const doc = await workspace.runCli(['get-doc', key]);
+                expect(doc.stdoutAsString().length).toBeGreaterThan(0);
+            }
+        });
+    });
+
     describe('list-docs content', () => {
         it('should include known documentation files', async () => {
             await workspace.runCli(['list-docs']);

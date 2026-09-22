@@ -204,15 +204,16 @@ The Node `info_log(...)` debug file logger from `logs.ts` has no counterpart in 
 
 `rust/src/commands/logs.rs` (ported from `src/logs-command.ts`).
 
-`handle_logs_command(conn, project_dir, command_names, limit, start_at_id)`:
+`handle_logs_command(conn, project_dir, command_names, &LogsCommandOptions { limit, start_at_id, json, more_hint })`:
 1. `is_blended_mode = command_names.len() != 1` (so 0 names ⇒ blended too).
-2. `get_log_tail(conn, { project_dir, command_names, after_log_id: start_at_id }, limit)` (§6). A DB error yields an empty tail.
-3. New `LatestExecutionLogFilter::new(ShowLogsFromPreviousLaunch, None)`; `check_latest_launch_status(&all_logs)`; `logs = filter(&all_logs)`.
-4. If empty: print exactly `No logs found for command '<name>' in project '<projectDir>'.` (when exactly 1 name) else `No logs found for commands in project '<projectDir>'.` Return.
-5. If `truncated`: print exactly `-- showing the last <N> lines; use --count to see more --` (`the last line;` when `N == 1`). A previous run's hidden lines never trigger it.
-6. For each log: `console_log_row(log, { format: Pretty, enable_app_name_prefix: is_blended_mode })`.
+2. Fetch: in single mode, one `get_log_tail(conn, { project_dir, command_names, after_log_id: start_at_id }, limit)` (§6). In blended mode the limit applies **per service**: the names (or, with none given, `command_names_with_logs(project_dir, start_at_id)`) are fetched one `get_log_tail` each, and the results are merged in `id` order. A DB error yields an empty tail.
+3. Each tail goes through a new `LatestExecutionLogFilter::new(ShowLogsFromPreviousLaunch, None)` (`check_latest_launch_status` then `filter`).
+4. With `json`: print a pretty JSON array of `{ id, service, type, content, timestamp }` for the printable rows (`type` is `stdout`, `stderr`, `start_failed` or `exited`; launch markers are skipped) and return. No hint; an empty result is `[]`.
+5. If empty: print exactly `No logs found for service '<name>' in project '<projectDir>'.` (when exactly 1 name) else `No logs found for services in project '<projectDir>'.` Return.
+6. If any tail was `truncated`: single mode prints `-- showing the last <N> lines; <more_hint> --`; blended mode prints `-- showing the last <N> lines per service (<truncated names> had more); <more_hint> --` (`the last line` when `N == 1`). A previous run's hidden lines never trigger it. The CLI's `more_hint` is `use --count to see more`; MCP `GetLogs` passes ``pass a larger `limit` to see more``.
+7. For each log: `console_log_row(log, { format: Pretty, enable_app_name_prefix: is_blended_mode })`.
 
-CLI flags map to: `--count` (limit, default 100), `--start-at` (id). `cmd_logs` in `main.rs` parses both and runs `maybe_run_cleanup` first.
+CLI flags map to: `--count` (limit, default 100), `--start-at` (id), `--json`. `cmd_logs` in `main.rs` parses them, runs `maybe_run_cleanup`, then validates names with `assert_known_service_names`: a name is accepted if it has stored logs or a process row in the project, or is configured; anything else is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
 
 ## 12. clear-logs command
 
@@ -261,4 +262,4 @@ The original TS used a wrapper `db` with: `run(sql, params) -> { changes }`, `li
 7. `console_log_row` reads `row.content` for system/stdout/stderr even though `content` is nullable; a `None` renders as the empty string (in practice stdout/stderr always have content).
 8. Two distinct prefix mechanisms (`prefix` string vs `enableAppNamePrefix`) — `logs` uses the latter, `watch` uses the former; spacing differs subtly.
 9. `LatestExecutionLogFilter.filter` is **stateful** and designed to be called repeatedly across streaming batches; the map is not reset between calls.
-10. Exact user-facing strings (for tests): `'-- showing the last <N> lines; use --count to see more --'`, `"No logs found for command '<name>' in project '<dir>'."`, `'✓ Cleared <n> log entries'` (Unicode checkmark), `'- No logs found to clear'`, `'\nLogs cleared successfully!'`, `'Clearing logs for project: <dir>'`.
+10. Exact user-facing strings (for tests): `'-- showing the last <N> lines; use --count to see more --'`, `"No logs found for service '<name>' in project '<dir>'."`, `'✓ Cleared <n> log entries'` (Unicode checkmark), `'- No logs found to clear'`, `'\nLogs cleared successfully!'`, `'Clearing logs for project: <dir>'`.

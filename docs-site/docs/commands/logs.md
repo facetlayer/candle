@@ -5,7 +5,7 @@ Show recent logs for service(s).
 ## Syntax
 
 ```bash
-candle logs [name...] [--count <number>] [--start-at <id>]
+candle logs [name...] [--count <number>] [--start-at <id>] [--json]
 ```
 
 ## Description
@@ -24,14 +24,28 @@ GET /health 200
 GET /api/users 200
 ```
 
+When more than one service is shown, `--count` applies to each service separately, so one chatty service can't push the others out of the output. The hint names the services that had more lines:
+
+```
+$ candle logs --count 3
+-- showing the last 3 lines per service (api had more); use --count to see more --
+[web] compiled successfully
+[api] listening on port 3000
+[api] GET /health 200
+[api] GET /api/users 200
+```
+
+Naming a service that isn't configured, and that has no stored logs, is an error: `logs` prints `No service '<name>' configured` and exits with status 1.
+
 ## Arguments
 
 - `name` - Name of the service(s) to view logs for. Can specify multiple services. If omitted, shows logs for every service in the project. When more than one service is shown, each line is prefixed with `[service-name]`.
 
 ## Options
 
-- `--count <number>` - Number of log lines to show. Default: 100.
-- `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
+- `--count <number>` - Number of log lines to show, per service. Default: 100.
+- `--start-at <id>` - Only show logs with an ID greater than `<id>`. Log IDs appear in the `--json` output, so pass the `id` of the last entry you've seen to fetch only newer lines.
+- `--json` - Print the logs as a JSON array. Each entry has `id`, `service`, `type` (`stdout`, `stderr`, `exited` or `start_failed`), `content` and `timestamp` (Unix seconds). No truncation hint is printed; an empty result is `[]`.
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
@@ -54,10 +68,34 @@ candle logs api web
 candle logs api --count 10
 ```
 
-### Show logs after a specific log ID
+### Get logs as JSON
 
 ```bash
-candle logs api --start-at 500
+$ candle logs api --count 2 --json
+[
+  {
+    "id": 511,
+    "service": "api",
+    "type": "stdout",
+    "content": "GET /health 200",
+    "timestamp": 1790000000
+  },
+  {
+    "id": 512,
+    "service": "api",
+    "type": "stdout",
+    "content": "GET /api/users 200",
+    "timestamp": 1790000001
+  }
+]
+```
+
+### Show only lines newer than ones you've already seen
+
+Take the `id` of the last entry from `--json` output and pass it to `--start-at`:
+
+```bash
+candle logs api --json --start-at 512
 ```
 
 ## See Also

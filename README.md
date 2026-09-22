@@ -108,7 +108,7 @@ Launch it:
 
 ### `candle --help`
 
-List all CLI commands. `candle help` does the same.
+List all CLI commands. `candle help` does the same, and `candle help <command>` shows one command's help.
 
 Run `candle <command> --help` to see the options for one command.
 
@@ -215,21 +215,24 @@ Example:
     [frontend] Web server available at http://localhost:8080
 
 
-### `candle logs [names] [--count <number>] [--start-at <id>]`
+### `candle logs [names] [--count <number>] [--start-at <id>] [--json]`
 
 Show the recent logs for the given service, from its most recent run.
 
 If `[name]` is not provided: Show recent logs across all services in the project directory.
 When more than one service is shown, each line is prefixed with `[<service name>]`, and the
-`--count` limit applies to the combined output.
+`--count` limit applies to each service separately.
 
 When `--count` cuts off earlier lines from the latest run, the output starts with
 `-- showing the last N lines; use --count to see more --`.
 
+A name that isn't configured and has no stored logs is an error (exit 1).
+
 Options:
 
- - `--count <number>` - Number of log lines to show (default: 100).
- - `--start-at <id>` - Only show logs after this log ID. Useful for pagination.
+ - `--count <number>` - Number of log lines to show per service (default: 100).
+ - `--start-at <id>` - Only show logs with an ID greater than `<id>`. IDs appear in `--json` output.
+ - `--json` - Print the logs as a JSON array of `{ id, service, type, content, timestamp }`.
 
 ### `candle kill`
 
@@ -282,6 +285,10 @@ Example usage:
 
 The command will continue to wait until a certain timeout. The timeout defaults to 30 seconds and can be
 set on the command line as `--timeout [seconds]`.
+
+If the service isn't running (or its latest run already exited without printing the message), it fails
+right away instead of waiting. On failure it prints the last 20 lines of the latest run and suggests
+`candle logs <name>` for the rest.
 
 The pattern of calling `start` then `wait-for-log` will do what you expect: it will wait
 for the most recent process instance to print the log message, and won't be triggered if a
@@ -388,6 +395,8 @@ If no `service names` are provided: Delete the logs for every service in this pr
 ### `candle list-docs` and `candle get-doc <name>`
 
 List and print the documentation files built into the binary (the files in `./docs` plus this README).
+`get-doc` takes the name `list-docs` shows (for example `candle get-doc getting-started`) and matches it
+exactly.
 
 ### `candle erase-database`
 

@@ -13,7 +13,6 @@ use std::process::exit;
 use candle::cli::help;
 use candle::cli::monitor_mode::run_monitor_mode;
 use candle::cli::parser::{canonical_command, parse_command_args, CommandArgs};
-use candle::commands::assert_valid_command_names;
 use candle::commands::clear_logs::handle_clear_logs_command;
 use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list::{
@@ -21,11 +20,12 @@ use candle::commands::list::{
     list_output_to_json,
 };
 use candle::commands::list_ports::{format_list_ports_output, handle_list_ports};
-use candle::commands::logs::handle_logs_command;
+use candle::commands::logs::{handle_logs_command, LogsCommandOptions};
 use candle::commands::open_browser::{format_open_browser_output, handle_open_browser};
 use candle::commands::restart::handle_restart;
 use candle::commands::wait_for_log::handle_wait_for_log;
 use candle::commands::watch::{handle_watch, watch_started_services};
+use candle::commands::{assert_known_service_names, assert_valid_command_names};
 use candle::config::commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,
@@ -108,9 +108,17 @@ fn main() {
     let rest = &argv[cmd_index + 1..];
 
     if canonical == "help" {
+        // `candle help <command>` is the same as `candle <command> --help`.
         if let Some(topic) = rest.iter().find(|a| !a.starts_with('-')) {
-            eprintln!("Unknown help topic: {topic}");
-            exit(1);
+            match canonical_command(topic) {
+                Some(cmd) => println!("{}", help::command_help(cmd)),
+                None => {
+                    eprintln!("Unknown help topic: {topic}");
+                    eprintln!("Run \"candle help\" for available commands.");
+                    exit(1);
+                }
+            }
+            return;
         }
         println!("{}", help::grouped_help());
         return;
@@ -262,7 +270,7 @@ fn cmd_set_config(args: &CommandArgs) {
 fn cmd_list_docs() {
     println!("Available doc files:\n");
     for doc in doc_files::list_docs() {
-        let hint = format!("candle get-doc {}", doc.filename);
+        let hint = format!("candle get-doc {}", doc.name);
         if doc.description.is_empty() {
             println!("  {} ({hint})\n", doc.name);
         } else {
@@ -276,19 +284,12 @@ fn cmd_get_doc(args: &CommandArgs) {
     let name = args.positionals.first().map(String::as_str).unwrap_or("");
     match doc_files::get_doc(name) {
         Ok(doc) => {
-            println!("{}", doc.raw_content);
-            println!("\n(File source: docs/{})", doc.filename);
+            println!("{}", doc.content);
+            println!("\n(File source: {})", doc.source_path);
         }
         Err(DocLookupError::NotFound) => {
             eprintln!("Doc file not found: {name}");
             eprintln!("Run with \"list-docs\" command to see available docs.");
-            exit(1);
-        }
-        Err(DocLookupError::Ambiguous(matches)) => {
-            eprintln!(
-                "Multiple docs match \"{name}\": {}. Please be more specific.",
-                matches.join(", ")
-            );
             exit(1);
         }
     }
@@ -460,7 +461,8 @@ fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
 /// `wait-for-log`: poll the named command's logs for a substring until it
 /// appears, the process exits, or the timeout elapses.
 fn cmd_wait_for_log(args: &CommandArgs) {
-    let project_dir = project_dir_or_exit(&scope_of(args));
+    let scope = scope_of(args);
+    let project_dir = project_dir_or_exit(&scope);
 
     // --message is required (yargs demandOption).
     let message = match args.value("message") {
@@ -481,7 +483,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    // Don't validate command names (transient names are allowed).
+    exit_on_unknown_service_names(&conn, &scope, &project_dir, &args.positionals);
 
     let result = handle_wait_for_log(&conn, &project_dir, &args.positionals, message, timeout_ms);
     if !result.success {
@@ -489,8 +491,26 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     }
 }
 
+/// Exit with `No service '<name>' configured` if a name has neither stored
+/// logs, a process row, nor a config entry. See
+/// [`candle::commands::assert_known_service_names`].
+fn exit_on_unknown_service_names(
+    conn: &Connection,
+    scope: &ProjectScope,
+    project_dir: &str,
+    names: &[String],
+) {
+    let check_config = scope.require_own_config().is_ok();
+    if let Err(e) =
+        assert_known_service_names(conn, scope.base_dir(), project_dir, names, check_config)
+    {
+        fail_with(&e);
+    }
+}
+
 fn cmd_logs(args: &CommandArgs) {
-    let project_dir = project_dir_or_exit(&scope_of(args));
+    let scope = scope_of(args);
+    let project_dir = project_dir_or_exit(&scope);
 
     let limit: i64 = args
         .value("count")
@@ -501,9 +521,14 @@ fn cmd_logs(args: &CommandArgs) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    // Don't validate command names.
+    exit_on_unknown_service_names(&conn, &scope, &project_dir, &args.positionals);
 
-    handle_logs_command(&conn, &project_dir, &args.positionals, limit, start_at_id);
+    let options = LogsCommandOptions {
+        start_at_id,
+        json: args.has("json"),
+        ..LogsCommandOptions::cli(limit)
+    };
+    handle_logs_command(&conn, &project_dir, &args.positionals, &options);
 }
 
 /// `clear-logs`: delete stored output for the named command(s) in the project.

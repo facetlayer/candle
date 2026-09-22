@@ -77,10 +77,10 @@ Run 'candle <command> --help' for more information on a command."
 pub fn command_help(command: &str) -> String {
     match command {
         "start" | "run" => {
-            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
+            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "check-start" => {
-            "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --enable-stdin     Enable stdin message polling from database\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
+            "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "restart" => {
             "candle restart [name...]   Restart running process(es)\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
@@ -92,7 +92,7 @@ pub fn command_help(command: &str) -> String {
         "ps" | "status" => "candle ps [names...]   Compact status table for the current directory\n\nPrints a NAME/STATUS/PID/UPTIME table. Use 'candle list' to also see each\nservice's command and directory. With one or more names, only those\nservices are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "list-all" => "candle list-all   List all processes\n\nOptions:\n  --json   Output as JSON".to_string(),
         "logs" => {
-            "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100)\n  --start-at <id>  Only show logs after this log ID\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
+            "candle logs [name...]   Show recent logs for process(es)\n\nOptions:\n  --count <n>      Number of log lines to show (default: 100). With several\n                   services, the limit applies to each service separately.\n  --start-at <id>  Only show logs after this log ID (IDs appear in --json output)\n  --json           Output as JSON, including each entry's log ID\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "watch" => {
             "candle watch [name...]   Watch live output from running process(es)\n\nWatch never launches processes. With no name, it watches every process in\nthe project (including ones that haven't launched yet). With a name, the\nnamed process must already be running. Press Ctrl+C to stop watching.\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
@@ -105,7 +105,7 @@ pub fn command_help(command: &str) -> String {
         "open-browser" => "candle open-browser [name]   Open a browser to a running service\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "setup-project" => "candle setup-project   Create a new .candle.json in the current directory".to_string(),
         "add-service" => {
-            "candle add-service <name>   Add a new service to .candle.json\n\nOptions:\n  --shell <cmd>      Shell command to run the service (required)\n  --root <dir>       Root directory for the service\n  --enable-stdin     Enable stdin message polling from database".to_string()
+            "candle add-service <name>   Add a new service to .candle.json\n\nOptions:\n  --shell <cmd>      Shell command to run the service (required)\n  --root <dir>       Root directory for the service".to_string()
         }
         "remove-service" => "candle remove-service <name>   Remove a service from .candle.json".to_string(),
         "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json".to_string(),

@@ -23,9 +23,20 @@ candle wait-for-log [name] --message <message> [--timeout <seconds>]
 - `--timeout <number>` - Timeout in seconds (default: 30)
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
+## Failures
+
+`wait-for-log` doesn't wait out the timeout when the message can't arrive. It fails at once when:
+
+- the service isn't running, or its latest run has already exited, and that run never printed the message (`Service '<name>' is not running`);
+- the service isn't configured and has no stored logs (`No service '<name>' configured`).
+
+A message that a finished run did print still counts, so `wait-for-log` succeeds for a short-lived job that has already exited.
+
+When it gives up (timeout, or the process exiting), it prints the last 20 lines from the service's latest run, followed by a hint to run `candle logs <name>` for the rest.
+
 ## Exit Status
 
-Exits with status 0 once the message is found. Exits with status 1 if the timeout expires, if the process exits before the message appears, or if the service has no logs.
+Exits with status 0 once the message is found. Exits with status 1 if the timeout expires, if the process exits before the message appears, if the service isn't running, or if the service isn't configured.
 
 ## Examples
 

@@ -87,11 +87,19 @@ describe('logs for non-running service', () => {
 });
 
 describe('logs for unknown service', () => {
-    it('should handle unknown service name', async () => {
-        const result = await workspace.runCli(['logs', 'nonexistent-service']);
+    it('should error for a service that is not configured', async () => {
+        const result = await workspace.runCli(['logs', 'nonexistent-service'], { ignoreExitCode: true });
 
-        // Returns success with "no logs found" message
-        expect(result.stdoutAsString()).toContain('No logs found');
+        expect(result.failed()).toBe(true);
+        expect(result.stderrAsString()).toContain("No service 'nonexistent-service' configured");
+    });
+
+    it('should say "service" when a configured service has no logs yet', async () => {
+        await workspace.runCli(['clear-logs', 'quick-exit']);
+        const result = await workspace.runCli(['logs', 'quick-exit']);
+
+        expect(result.stdoutAsString()).toContain("No logs found for service 'quick-exit'");
+        expect(result.stdoutAsString()).not.toContain('command');
     });
 });
 
@@ -290,7 +298,66 @@ describe('unrecognized flags', () => {
 
         expect(result.failed()).toBe(true);
         const output = result.stdoutAsString() + result.stderrAsString();
-        expect(output).toContain('Unknown argument');
+        expect(output).toContain('Unknown argument: --bogus-flag');
+    });
+});
+
+describe('--json flag', () => {
+    it('should print log entries as JSON with their IDs', async () => {
+        await workspace.runCli(['start', 'json-burst', '--shell', 'node ../../sampleServers/burstServer.js 5 jb']);
+        await workspace.runCli(['wait-for-log', 'json-burst', '--message', 'jb done']);
+
+        const result = await workspace.runCli(['logs', 'json-burst', '--json']);
+        const entries = JSON.parse(result.stdoutAsString());
+
+        expect(Array.isArray(entries)).toBe(true);
+        const contents = entries.map((e: any) => e.content);
+        expect(contents).toEqual(['jb 0', 'jb 1', 'jb 2', 'jb 3', 'jb 4', 'jb done']);
+        for (const entry of entries) {
+            expect(typeof entry.id).toBe('number');
+            expect(entry.service).toBe('json-burst');
+            expect(entry.type).toBe('stdout');
+        }
+
+        // An ID from the JSON output works with --start-at.
+        const afterId = entries[2].id;
+        const next = await workspace.runCli(['logs', 'json-burst', '--json', '--start-at', String(afterId)]);
+        const nextContents = JSON.parse(next.stdoutAsString()).map((e: any) => e.content);
+        expect(nextContents).toEqual(['jb 3', 'jb 4', 'jb done']);
+
+        await workspace.runCli(['kill', 'json-burst']);
+    });
+
+    it('should print an empty array when there are no logs', async () => {
+        await workspace.runCli(['clear-logs', 'quick-exit']);
+        const result = await workspace.runCli(['logs', 'quick-exit', '--json']);
+
+        expect(JSON.parse(result.stdoutAsString())).toEqual([]);
+    });
+});
+
+describe('blended mode --count', () => {
+    it('should apply --count to each service separately', async () => {
+        await workspace.runCli(['start', 'blend-chatty', '--shell', 'node ../../sampleServers/burstServer.js 30 chatty']);
+        await workspace.runCli(['start', 'blend-quiet', '--shell', 'node ../../sampleServers/burstServer.js 1 quiet']);
+        await workspace.runCli(['wait-for-log', 'blend-chatty', '--message', 'chatty done']);
+        await workspace.runCli(['wait-for-log', 'blend-quiet', '--message', 'quiet done']);
+
+        const result = await workspace.runCli(['logs', 'blend-chatty', 'blend-quiet', '--count', '3']);
+        const output = result.stdoutAsString();
+
+        // The quiet service is not pushed out by the chatty one.
+        expect(output).toContain('[blend-quiet] quiet 0');
+        expect(output).toContain('[blend-quiet] quiet done');
+        const chattyLines = output.split('\n').filter((l) => l.startsWith('[blend-chatty]'));
+        expect(chattyLines).toEqual([
+            '[blend-chatty] chatty 28',
+            '[blend-chatty] chatty 29',
+            '[blend-chatty] chatty done',
+        ]);
+        expect(output).toContain('-- showing the last 3 lines per service (blend-chatty had more); use --count to see more --');
+
+        await workspace.runCli(['kill', 'blend-chatty', 'blend-quiet']);
     });
 });
 

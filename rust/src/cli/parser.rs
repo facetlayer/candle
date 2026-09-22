@@ -67,7 +67,12 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         "list" | "ps" => &[("json", false), ("project-dir", true)],
         // list-all is already system-wide, so a project has nothing to say here.
         "list-all" => &[("json", false)],
-        "logs" => &[("count", true), ("start-at", true), ("project-dir", true)],
+        "logs" => &[
+            ("count", true),
+            ("start-at", true),
+            ("json", false),
+            ("project-dir", true),
+        ],
         "watch" => &[("exit-after-ms", true), ("project-dir", true)],
         "wait-for-log" => &[("message", true), ("timeout", true), ("project-dir", true)],
         "kill" | "clear-logs" | "list-ports" | "open-browser" => &[("project-dir", true)],
@@ -128,10 +133,10 @@ pub fn parse_command_args(command: &str, tokens: &[String]) -> Result<CommandArg
                         out.bools.insert((*flag).to_string());
                     }
                 }
-                None => return Err(format!("Unknown argument: {name}")),
+                None => return Err(format!("Unknown argument: --{name}")),
             }
         } else if tok.starts_with('-') && tok.len() > 1 {
-            return Err(format!("Unknown argument: {}", &tok[1..]));
+            return Err(format!("Unknown argument: {tok}"));
         } else {
             out.positionals.push(tok.clone());
         }
@@ -158,6 +163,16 @@ mod tests {
     fn unknown_flag_errors() {
         let err = parse_command_args("list", &["--bad-flag".to_string()]).unwrap_err();
         assert!(err.contains("Unknown argument"));
+    }
+
+    #[test]
+    fn unknown_flag_error_keeps_dashes() {
+        let err = parse_command_args("list-docs", &["--json".to_string()]).unwrap_err();
+        assert_eq!(err, "Unknown argument: --json");
+        let err = parse_command_args("list-docs", &["--json=1".to_string()]).unwrap_err();
+        assert_eq!(err, "Unknown argument: --json");
+        let err = parse_command_args("list", &["-x".to_string()]).unwrap_err();
+        assert_eq!(err, "Unknown argument: -x");
     }
 
     #[test]

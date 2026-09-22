@@ -2,21 +2,30 @@
 //!
 //! Ported from `src/wait-for-log-command.ts`. Polls the `process_output` table
 //! for a given substring, scoped to the most recent launch of the named
-//! command(s), until the message appears, the process exits, or a timeout is hit.
+//! service(s), until the message appears, the process exits, or a timeout is hit.
+//!
+//! A service that isn't running fails at once rather than waiting out the
+//! timeout: nothing will ever write the message.
 
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
+use crate::db::process_table::find_running_processes_by_project_dir;
 use crate::log_filters::{LatestExecutionLogFilter, ShowPastLogsBehavior};
-use crate::logs::console_log::{console_log_row, ConsoleLogOptions};
-use crate::logs::process_logs::{get_process_logs, LogSearchOptions};
+use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
+use crate::logs::process_logs::{get_log_tail, LogSearchOptions, ProcessLog};
 use crate::logs::{LogIterator, ProcessLogType};
 use crate::output;
+use crate::process_alive::filter_alive_processes;
 
 const POLL_INTERVAL: u64 = 200;
 const LOG_COUNT_SEARCH_LIMIT: i64 = 1000;
+/// Lines of the latest run shown when waiting fails.
+const RECENT_LOG_LINES: i64 = 20;
+/// How often (in polls) to re-check that the service is still running.
+const LIVENESS_CHECK_EVERY: u32 = 5;
 
 /// Result of [`handle_wait_for_log`]. The TS `message` field on failure is never
 /// read by the caller, so a bare success flag is sufficient.
@@ -28,27 +37,94 @@ fn content_contains(content: &Option<String>, message: &str) -> bool {
     content.as_deref().is_some_and(|c| c.contains(message))
 }
 
+fn is_type(log: &ProcessLog, log_type: ProcessLogType) -> bool {
+    log.log_type == log_type.as_i64()
+}
+
+/// A log row that ends a run: the process exited or never started.
+fn ends_run(log: &ProcessLog) -> bool {
+    is_type(log, ProcessLogType::ProcessExited) || is_type(log, ProcessLogType::ProcessStartFailed)
+}
+
+/// The "not running" phrase for one service, several, or the whole project.
+fn describe_services(command_names: &[String]) -> String {
+    match command_names.len() {
+        0 => "No service in this project is running".to_string(),
+        1 => format!("Service '{}' is not running", command_names[0]),
+        _ => format!("Services '{}' are not running", command_names.join(", ")),
+    }
+}
+
+/// Whether any of the named services (every service when `command_names` is
+/// empty) has a live process in the project.
+fn is_any_running(conn: &Connection, project_dir: &str, command_names: &[String]) -> bool {
+    let entries = find_running_processes_by_project_dir(conn, project_dir)
+        .and_then(|entries| filter_alive_processes(conn, entries))
+        .unwrap_or_default();
+    entries
+        .iter()
+        .any(|e| command_names.is_empty() || command_names.contains(&e.command_name))
+}
+
+/// Print the last [`RECENT_LOG_LINES`] lines of the latest run, then a pointer
+/// to `candle logs` for the rest.
 fn print_recent_logs(conn: &Connection, project_dir: &str, command_names: &[String]) {
-    output::out(&format!("Recent logs for '{}':", command_names.join(", ")));
-    let mut filter =
-        LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
-    let all_logs = get_process_logs(
+    let tail = get_log_tail(
         conn,
         &LogSearchOptions {
             project_dir: Some(project_dir.to_string()),
             command_names: command_names.to_vec(),
-            limit: Some(100),
             ..Default::default()
         },
+        RECENT_LOG_LINES,
     )
     .unwrap_or_default();
-    let recent_logs = filter.filter(&all_logs);
+    let mut filter =
+        LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
+    filter.check_latest_launch_status(&tail.logs);
+    let recent_logs = filter.filter(&tail.logs);
+
+    let label = command_names.join(", ");
+    let header = if tail.truncated {
+        format!("Last {RECENT_LOG_LINES} lines of the latest run of '{label}':")
+    } else {
+        format!("Logs from the latest run of '{label}':")
+    };
+    output::out(&header);
+    let options = ConsoleLogOptions {
+        format: Some(OutputFormat::Pretty),
+        prefix: None,
+        enable_app_name_prefix: command_names.len() != 1,
+    };
     for log in &recent_logs {
-        console_log_row(log, &ConsoleLogOptions::pretty());
+        console_log_row(log, &options);
     }
+    let logs_command = if command_names.len() == 1 {
+        format!("candle logs {}", command_names[0])
+    } else {
+        "candle logs".to_string()
+    };
+    output::out(&format!("Run '{logs_command}' to see more."));
 }
 
-/// Wait for `message` to appear in the logs of the given command(s).
+fn fail_not_running(
+    conn: &Connection,
+    project_dir: &str,
+    command_names: &[String],
+    message: &str,
+    has_run: bool,
+) -> WaitForLogResult {
+    output::out(&format!(
+        "wait-for-log failed: {} and message \"{message}\" was not found.",
+        describe_services(command_names)
+    ));
+    if has_run {
+        print_recent_logs(conn, project_dir, command_names);
+    }
+    WaitForLogResult { success: false }
+}
+
+/// Wait for `message` to appear in the logs of the given service(s).
 pub fn handle_wait_for_log(
     conn: &Connection,
     project_dir: &str,
@@ -70,22 +146,8 @@ pub fn handle_wait_for_log(
     log_filter.check_latest_launch_status(&all_initial_logs);
     let initial_logs = log_filter.filter(&all_initial_logs);
 
-    // Check if we have any logs at all for this process
-    if initial_logs.is_empty() {
-        return WaitForLogResult { success: false };
-    }
-
-    // Check if we have any process_has_started events
-    let has_process_started = initial_logs
-        .iter()
-        .any(|log| log.log_type == ProcessLogType::ProcessStartInitiated.as_i64());
-
-    if !has_process_started {
-        output::err("Process has not started yet");
-        return WaitForLogResult { success: false };
-    }
-
-    // Look for the message in existing logs
+    // Look for the message in existing logs. A run that has already finished
+    // still counts if it printed the message.
     for log_event in &initial_logs {
         if content_contains(&log_event.content, message) {
             output::out(&format!("Found message \"{message}\" in existing logs."));
@@ -93,9 +155,57 @@ pub fn handle_wait_for_log(
         }
     }
 
+    // Once the monitor has reported the start, the process row must exist for
+    // as long as the service runs. Before that, a launch is still in progress.
+    let mut start_reported = initial_logs
+        .iter()
+        .any(|log| is_type(log, ProcessLogType::ProcessStarted));
+
+    if initial_logs.is_empty() {
+        // No launch in the search window and nothing running: nothing is
+        // going to write the message.
+        if !is_any_running(conn, project_dir, command_names) {
+            return fail_not_running(conn, project_dir, command_names, message, false);
+        }
+        // Running, but the launch is older than the search window, so every
+        // row in the window (and after it) is from the current run.
+        if all_initial_logs
+            .iter()
+            .any(|log| content_contains(&log.content, message))
+        {
+            output::out(&format!("Found message \"{message}\" in existing logs."));
+            return WaitForLogResult { success: true };
+        }
+        log_filter =
+            LatestExecutionLogFilter::new(ShowPastLogsBehavior::ShowLogsFromPreviousLaunch, None);
+        start_reported = true;
+    } else {
+        let has_process_started = initial_logs
+            .iter()
+            .any(|log| is_type(log, ProcessLogType::ProcessStartInitiated));
+        if !has_process_started {
+            output::err("Process has not started yet");
+            return WaitForLogResult { success: false };
+        }
+
+        // The latest run already ended (and, with several services, none of
+        // them is still running).
+        if initial_logs.iter().any(ends_run) && !is_any_running(conn, project_dir, command_names) {
+            return fail_not_running(conn, project_dir, command_names, message, true);
+        }
+    }
+
     // Poll for logs until we find the message or timeout
     let time_started = Instant::now();
+    let mut polls: u32 = 0;
     loop {
+        if start_reported
+            && polls.is_multiple_of(LIVENESS_CHECK_EVERY)
+            && !is_any_running(conn, project_dir, command_names)
+        {
+            return fail_not_running(conn, project_dir, command_names, message, true);
+        }
+
         if time_started.elapsed().as_millis() > timeout_ms as u128 {
             output::out(&format!(
                 "wait-for-log failed: Timed out after {timeout_ms}ms and message \"{message}\" not found."
@@ -112,7 +222,11 @@ pub fn handle_wait_for_log(
                 return WaitForLogResult { success: true };
             }
 
-            if log.log_type == ProcessLogType::ProcessExited.as_i64() {
+            if is_type(log, ProcessLogType::ProcessStarted) {
+                start_reported = true;
+            }
+
+            if ends_run(log) {
                 output::out(&format!(
                     "wait-for-log failed: Process exited before finding message \"{message}\""
                 ));
@@ -121,6 +235,7 @@ pub fn handle_wait_for_log(
             }
         }
 
+        polls = polls.wrapping_add(1);
         sleep(Duration::from_millis(POLL_INTERVAL));
     }
 }
@@ -172,11 +287,21 @@ mod tests {
         let dir = temp_db_dir("wait-for-log-empty");
         let conn = get_database(Some(&dir)).unwrap();
 
-        let (result, _captured) = output::capture(|| {
+        let started = Instant::now();
+        let (result, captured) = output::capture(|| {
             handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "hello", 30000)
         });
 
         assert!(!result.success);
+        // Fails at once instead of waiting out the 30s timeout.
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(
+            captured.stdout,
+            vec![
+                "wait-for-log failed: Service 'echo' is not running and message \"hello\" was not found."
+                    .to_string()
+            ]
+        );
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
@@ -212,6 +337,104 @@ mod tests {
             == &format!(
                 "wait-for-log failed: Timed out after {timeout_ms}ms and message \"never-appears\" not found."
             )));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn save(conn: &Connection, log_type: ProcessLogType, content: Option<&str>) {
+        save_process_log(conn, "echo", "/proj", log_type, content).unwrap();
+    }
+
+    #[test]
+    fn exited_latest_run_fails_at_once() {
+        let dir = temp_db_dir("wait-for-log-exited");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        save(&conn, ProcessLogType::Stdout, Some("booting"));
+        save(&conn, ProcessLogType::ProcessStarted, None);
+        save(
+            &conn,
+            ProcessLogType::ProcessExited,
+            Some("Process exited with code 1"),
+        );
+
+        let started = Instant::now();
+        let (result, captured) = output::capture(|| {
+            handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "ready", 30000)
+        });
+
+        assert!(!result.success);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(
+            captured.stdout[0],
+            "wait-for-log failed: Service 'echo' is not running and message \"ready\" was not found."
+        );
+        assert!(captured.stdout.contains(&"booting".to_string()));
+        assert_eq!(
+            captured.stdout.last().unwrap(),
+            "Run 'candle logs echo' to see more."
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn started_without_live_process_fails_at_once() {
+        let dir = temp_db_dir("wait-for-log-no-process");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        // The monitor reported the start, but no process row is alive.
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        save(&conn, ProcessLogType::ProcessStarted, None);
+
+        let started = Instant::now();
+        let (result, captured) = output::capture(|| {
+            handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "ready", 30000)
+        });
+
+        assert!(!result.success);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(captured.stdout[0].contains("Service 'echo' is not running"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn timeout_shows_only_the_tail_of_the_latest_run() {
+        let dir = temp_db_dir("wait-for-log-tail");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        // A previous run, then a launch that is still in progress.
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        save(&conn, ProcessLogType::Stdout, Some("old run line"));
+        save(
+            &conn,
+            ProcessLogType::ProcessExited,
+            Some("Process was stopped"),
+        );
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        for i in 0..50 {
+            save(&conn, ProcessLogType::Stdout, Some(&format!("new {i}")));
+        }
+
+        let (result, captured) = output::capture(|| {
+            handle_wait_for_log(&conn, "/proj", &["echo".to_string()], "never", 200)
+        });
+
+        assert!(!result.success);
+        let out = &captured.stdout;
+        assert!(out[0].starts_with("wait-for-log failed: Timed out"));
+        assert_eq!(out[1], "Last 20 lines of the latest run of 'echo':");
+        let lines: Vec<&String> = out.iter().filter(|l| l.starts_with("new ")).collect();
+        assert_eq!(lines.len(), 20);
+        assert_eq!(lines[0], "new 30");
+        assert!(!out.iter().any(|l| l.contains("old run line")));
+        assert!(!out.iter().any(|l| l.contains("Process was stopped")));
+        assert_eq!(out.last().unwrap(), "Run 'candle logs echo' to see more.");
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

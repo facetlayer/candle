@@ -49,7 +49,6 @@ is not a terminal or when run by a coding agent (such as Claude Code). Use
 - `--bg` - Force non-interactive mode: exit as soon as the launch is confirmed
 - `--shell <command>` - Start a transient service with the specified shell command
 - `--root <directory>` - Set the working directory for a transient service
-- `--enable-stdin` - Enable stdin message polling from database
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples

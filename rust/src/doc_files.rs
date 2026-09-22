@@ -17,18 +17,20 @@ pub struct DocInfo {
     pub filename: String,
 }
 
-/// A resolved doc: its filename and full raw content (frontmatter included).
+/// A resolved doc: its filename, where it lives in the repo, and its content
+/// with the frontmatter stripped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocContent {
     pub filename: String,
-    pub raw_content: String,
+    /// Repo-relative path of the source file, e.g. `docs/getting-started.md`.
+    pub source_path: String,
+    pub content: String,
 }
 
 /// Why `get_doc` failed to resolve a name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DocLookupError {
     NotFound,
-    Ambiguous(Vec<String>),
 }
 
 /// All embedded doc files as `(filename, raw_content)`, sorted by filename for stable output, with
@@ -80,6 +82,16 @@ fn stem(filename: &str) -> &str {
     filename.strip_suffix(".md").unwrap_or(filename)
 }
 
+/// Repo-relative path of an embedded doc. `README.md` is the repo's top-level
+/// README; everything else comes from `docs/`.
+fn source_path(filename: &str) -> String {
+    if filename == "README.md" {
+        filename.to_string()
+    } else {
+        format!("docs/{filename}")
+    }
+}
+
 /// List all docs with metadata from frontmatter (`name`/`description`), falling back to the filename
 /// stem for `name`.
 pub fn list_docs() -> Vec<DocInfo> {
@@ -96,43 +108,33 @@ pub fn list_docs() -> Vec<DocInfo> {
         .collect()
 }
 
-/// Resolve a doc by name. Exact `<name>.md` filename wins; otherwise a case-insensitive substring
-/// match against filename or frontmatter name. Zero matches → `NotFound`; multiple → `Ambiguous`.
+/// Resolve a doc by name: the key `list-docs` shows (its frontmatter `name`,
+/// or the filename without `.md`), or the filename itself. Matching is exact
+/// apart from letter case; there is no prefix or substring matching, so
+/// `get-doc start` does not pick up `getting-started`.
 pub fn get_doc(name: &str) -> Result<DocContent, DocLookupError> {
-    let base = name.strip_suffix(".md").unwrap_or(name);
-    let target_filename = format!("{base}.md");
-
-    let docs = all_docs();
-    if let Some((filename, raw)) = docs.iter().find(|(f, _)| f == &target_filename) {
-        return Ok(DocContent {
-            filename: filename.clone(),
-            raw_content: raw.to_string(),
-        });
+    let wanted = name.trim().to_lowercase();
+    let wanted_stem = stem(&wanted).to_string();
+    if wanted_stem.is_empty() {
+        return Err(DocLookupError::NotFound);
     }
 
-    let lower = base.to_lowercase();
-    let infos = list_docs();
-    let matches: Vec<&DocInfo> = infos
-        .iter()
-        .filter(|d| {
-            d.filename.to_lowercase().contains(&lower) || d.name.to_lowercase().contains(&lower)
+    all_docs()
+        .into_iter()
+        .find(|(filename, raw)| {
+            let (front_name, _, _) = parse_frontmatter(raw);
+            stem(filename).to_lowercase() == wanted_stem
+                || front_name.is_some_and(|n| n.to_lowercase() == wanted_stem)
         })
-        .collect();
-
-    match matches.len() {
-        0 => Err(DocLookupError::NotFound),
-        1 => {
-            let filename = matches[0].filename.clone();
-            let raw = docs.iter().find(|(f, _)| f == &filename).unwrap().1;
-            Ok(DocContent {
+        .map(|(filename, raw)| {
+            let (_, _, content) = parse_frontmatter(raw);
+            DocContent {
+                source_path: source_path(&filename),
                 filename,
-                raw_content: raw.to_string(),
-            })
-        }
-        _ => Err(DocLookupError::Ambiguous(
-            matches.iter().map(|d| d.filename.clone()).collect(),
-        )),
-    }
+                content,
+            }
+        })
+        .ok_or(DocLookupError::NotFound)
 }
 
 #[cfg(test)]
@@ -149,13 +151,47 @@ mod tests {
     }
 
     #[test]
-    fn get_doc_exact_and_partial() {
+    fn get_doc_exact_names() {
         let d = get_doc("getting-started").unwrap();
         assert_eq!(d.filename, "getting-started.md");
-        assert!(d.raw_content.contains("Getting Started"));
+        assert_eq!(d.source_path, "docs/getting-started.md");
+        assert!(d.content.contains("Getting Started"));
+
+        // The filename form works too.
+        assert_eq!(
+            get_doc("getting-started.md").unwrap().filename,
+            "getting-started.md"
+        );
 
         let t = get_doc("transient-processes").unwrap();
-        assert!(t.raw_content.contains("Transient"));
+        assert!(t.content.contains("Transient"));
+    }
+
+    #[test]
+    fn get_doc_does_not_prefix_match() {
+        assert_eq!(get_doc("start"), Err(DocLookupError::NotFound));
+        assert_eq!(get_doc("getting"), Err(DocLookupError::NotFound));
+        assert_eq!(get_doc(""), Err(DocLookupError::NotFound));
+    }
+
+    #[test]
+    fn get_doc_strips_frontmatter() {
+        let d = get_doc("agents-intro").unwrap();
+        assert!(!d.content.starts_with("---"));
+        assert!(!d.content.contains("description:"));
+    }
+
+    #[test]
+    fn readme_source_is_repo_root() {
+        let d = get_doc("README").unwrap();
+        assert_eq!(d.source_path, "README.md");
+    }
+
+    #[test]
+    fn every_listed_key_resolves() {
+        for doc in list_docs() {
+            assert_eq!(get_doc(&doc.name).unwrap().filename, doc.filename);
+        }
     }
 
     #[test]

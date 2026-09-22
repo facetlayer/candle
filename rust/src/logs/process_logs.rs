@@ -327,6 +327,39 @@ pub fn get_log_tail(
     })
 }
 
+/// The names of every command with stored logs in `project_dir` (restricted to
+/// rows after `after_log_id` when given), sorted by name.
+pub fn command_names_with_logs(
+    conn: &Connection,
+    project_dir: &str,
+    after_log_id: Option<i64>,
+) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "select distinct command_name from process_output \
+         where project_dir = ?1 and id > ?2 order by command_name",
+    )?;
+    let names = stmt
+        .query_map(
+            rusqlite::params![project_dir, after_log_id.unwrap_or(i64::MIN)],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect();
+    names
+}
+
+/// Whether any logs are stored for `command_name` in `project_dir`.
+pub fn has_logs_for_command(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "select exists(select 1 from process_output where project_dir = ?1 and command_name = ?2)",
+        rusqlite::params![project_dir, command_name],
+        |row| row.get(0),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

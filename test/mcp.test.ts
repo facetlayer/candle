@@ -227,4 +227,30 @@ describe('MCP Integration Tests', () => {
         await app.close();
     });
 
+    it('should point truncated GetLogs output at the limit parameter', async () => {
+        app = workspace.createMcpApp();
+
+        const start = await app.callTool('StartTransientService', {
+            name: 'mcp-burst',
+            shell: 'node ../../sampleServers/burstServer.js 30 mcpburst',
+        });
+        await expect(start).toBeSuccessful();
+
+        let text = '';
+        for (let i = 0; i < 20; i++) {
+            const logs = await app.callTool('GetLogs', { name: 'mcp-burst', limit: 5 });
+            await expect(logs).toBeSuccessful();
+            text = logs.getTextContent() ?? '';
+            if (text.includes('mcpburst done')) break;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+
+        expect(text).toContain('mcpburst done');
+        expect(text).toContain('`limit`');
+        expect(text).not.toContain('--count');
+
+        await app.callTool('KillService', { name: 'mcp-burst' });
+        await app.close();
+    });
+
 });
