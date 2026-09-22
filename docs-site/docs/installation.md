@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh |
 ```
 
 This downloads the latest [GitHub Release](https://github.com/facetlayer/candle/releases)
-for your platform, verifies its SHA-256 checksum, and installs into `~/.local/bin`.
+for your platform, verifies its SHA-256 checksum (when `shasum` or `sha256sum` is available), and installs into `~/.local/bin`.
 No Rust toolchain required.
 
 If `~/.local/bin` is not on your `PATH`, the installer tells you what to add to your
@@ -29,7 +29,7 @@ Pass options after `-s --` when piping to `sh`:
 
 ```bash
 # Install a specific version
-curl -fsSL .../install.sh | sh -s -- --version v0.13.3
+curl -fsSL .../install.sh | sh -s -- --version v0.14.0
 
 # Install somewhere else. System directories are usually not writable by your
 # user, so those need `sudo sh` rather than `sh`.
@@ -40,7 +40,7 @@ curl -fsSL .../install.sh | sudo sh -s -- --bin-dir /usr/local/bin
 | ------ | ----------- |
 | `--version <tag>` | Install a specific release tag. Default: latest. |
 | `--bin-dir <dir>` | Install directory. Default: `~/.local/bin`. |
-| `--uninstall` | Remove installed binaries. |
+| `--uninstall` | Stop running services, then remove the installed binary. |
 
 `CANDLE_VERSION` and `CANDLE_BIN_DIR` work as environment-variable equivalents.
 
@@ -61,7 +61,7 @@ cd candle
 ./install-local.sh
 ```
 
-This installs both binaries into `~/.cargo/bin`. Set `CARGO_INSTALL_ROOT` to install
+This installs the `candle` binary into `~/.cargo/bin`. Set `CARGO_INSTALL_ROOT` to install
 elsewhere.
 
 ## Upgrading

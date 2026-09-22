@@ -55,7 +55,7 @@ describe('log eviction behavior', () => {
         const output = result.stdoutAsString();
 
         expect(output).toContain('Echo server started');
-        expect(output).not.toContain('older logs have been removed');
+        expect(output).not.toContain('use --count to see more');
     });
 });
 

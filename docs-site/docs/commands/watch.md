@@ -16,6 +16,9 @@ The `watch` command displays real-time output from running services. Press
 `watch` only observes — it never launches processes. To launch a service, use
 [start](start), which also enters watch mode when run interactively.
 
+When run by a coding agent (such as Claude Code), `watch` exits with an error
+instead of blocking, and points at `candle logs`.
+
 - If called with no service names, `watch` always succeeds and watches every
   process in the project — including services that haven't launched yet, whose
   output will appear once they start.

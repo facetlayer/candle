@@ -25,7 +25,7 @@ exits as soon as the restart is confirmed.
 
 ## Arguments
 
-- `name` - Name of the service(s) to restart. If omitted, restarts all running services in the current project directory.
+- `name` - Name of the service(s) to restart. If omitted, restarts all running services in the current project directory, and exits with an error if none are running. A named service that isn't running is started.
 
 ## Options
 

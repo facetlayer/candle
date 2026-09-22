@@ -35,5 +35,7 @@ An exception to the project directory rule: there are a few Candle commands whic
 
  - `list-all` - List all running services on the system
  - `kill-all` - Kill all running services on the system
+ - `list-ports-all` - List open ports for all running services on the system
+ - `find-orphans` - List running services whose project no longer accounts for them
 
 

@@ -1,10 +1,9 @@
 # Candle (Rust) — architecture reference
 
 This directory documents how the Rust implementation of the `candle` CLI is built. The Rust code
-under `rust/` is a drop-in reimplementation of the original Node/TypeScript CLI in `../../src`, which
-remains the published npm package and the behavioral source of truth. The existing Vitest suite in
-`../../test` runs against both implementations and is the conformance harness (see
-[testing.md](testing.md)).
+under `rust/` began as a drop-in reimplementation of the original Node/TypeScript CLI, and is now the
+only implementation: the Node code has been removed. The Vitest suite in `../../test` runs against
+the compiled Rust binary and is the conformance harness (see [testing.md](testing.md)).
 
 These are internal docs aimed at developers working on the Rust code. Each subsystem doc describes
 what the code does, the exact strings/SQL/algorithms it must produce, and the subtleties that are
@@ -37,11 +36,11 @@ one file, and the CLI and its monitors can never fall out of version sync.
 
 | Doc | Covers | Primary modules |
 |---|---|---|
-| [database.md](database.md) | SQLite schema, connection bootstrap, process/stdin tables, cleanup & eviction, stale-process cleanup | `db/{mod,process_table,stdin_messages,cleanup}`, `dirs`, `process_alive` |
+| [database.md](database.md) | SQLite schema, connection bootstrap, process/stdin tables, cleanup & eviction, stale-process cleanup, `erase-database` | `db/{mod,process_table,stdin_messages,cleanup}`, `dirs`, `process_alive`, `commands/erase_database` |
 | [config.md](config.md) | `.candle.json` discovery/parse/validate, state-dir resolution, `add-service`/`remove-service`/`set-config`/`setup-project` | `config/{model,paths,validate,file,commands}`, `dirs` |
-| [logs.md](logs.md) | log storage model, query builder, log iterator, latest-execution filtering, `logs`/`clear-logs` | `logs/{log_type,process_logs,log_iterator,console_log}`, `log_filters/*`, `commands/{logs,clear_logs}` |
-| [start-flow.md](start-flow.md) | `start`/`check-start`, the monitor handshake, transient vs configured services, success/failure detection | `start/{launch,start_one_service,start_command}`, `monitor/{launch_info,run}`, `process_alive`, `process_tree` |
-| [kill-restart.md](kill-restart.md) | `kill`/`stop`, `kill-all`, `restart`; process-tree teardown | `kill/*`, `commands/restart`, `process_tree` |
+| [logs.md](logs.md) | log storage model, query builder, `logs --count` tail query, log iterator, latest-execution filtering, `logs`/`clear-logs` | `logs/{log_type,process_logs,log_iterator,console_log}`, `log_filters/*`, `commands/{logs,clear_logs}` |
+| [start-flow.md](start-flow.md) | `start`/`check-start`, the per-service start lock, the monitor handshake, transient vs configured services, success/failure detection | `start/{launch,start_one_service,start_command,service_lock}`, `monitor/{launch_info,run}`, `cli/monitor_mode`, `process_alive`, `process_tree` |
+| [kill-restart.md](kill-restart.md) | `kill`/`stop`, `kill-all`, `restart`; process-tree teardown with SIGKILL escalation | `kill/*`, `commands/restart`, `process_tree` |
 | [watch-wait.md](watch-wait.md) | `watch` (live tailing, agent-mode guard) and `wait-for-log` | `commands/{watch,wait_for_log}`, `logs/log_iterator`, `log_filters/*` |
 | [list-ports-browser.md](list-ports-browser.md) | `list`/`list-all`, `list-ports`/`list-ports-all` (lsof parsing), `open-browser` | `commands/{list,list_ports,open_browser}`, `process_tree` |
 | [mcp.md](mcp.md) | the stdio JSON-RPC MCP server and its nine tools | `mcp/mod`, `output` |
@@ -57,13 +56,14 @@ stdout/stderr. `output::capture(f)` buffers it into a `CapturedOutput` (with `st
 the MCP server capture handler output instead of corrupting the JSON-RPC stream, without
 monkeypatching a global console.
 
-**Synchronous design.** The implementation is synchronous throughout, mirroring `rusqlite`'s sync
+**Synchronous design.** The implementation is synchronous throughout, matching `rusqlite`'s sync
 model and the original TypeScript's synchronous SQLite semantics. Line-buffered stdout/stderr readers
 use threads + channels; there is no async runtime.
 
-**Minimal, hand-rolled dependencies.** The shared crate depends only on `rusqlite` (bundled SQLite),
+**Minimal, hand-rolled dependencies.** The crate depends only on `rusqlite` (bundled SQLite),
 `serde`/`serde_json` (with `preserve_order` for byte-identical, key-order-preserving config
-write-back), and `libc` (signals/`setsid`). The CLI argument parser, the grouped help renderer, and
+write-back), `libc` (signals, `setsid`, `flock`), and `include_dir` (embeds `docs/` for
+`list-docs`/`get-doc`). The CLI argument parser, the grouped help renderer, and
 the MCP JSON-RPC server are all hand-rolled rather than pulled from crates, because each must match
 the original's exact output byte-for-byte (yargs-style `Unknown argument` errors, grouped help
 section headers, MCP content shapes).
@@ -73,15 +73,15 @@ section headers, MCP content shapes).
 These are the contracts the Rust implementation maintains so the shared acceptance suite passes
 against it. They are byte-level and must not drift.
 
-- **SQLite schema is byte-identical** to the Node database (same DDL including
+- **SQLite schema is byte-identical** to the former Node database (same DDL including
   `default (strftime('%s','now'))`, autoincrement, column order, and all four indexes — notably
   `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)`). Migration is
-  additive only. Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
+  `create ... if not exists` only (no column diffing). Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).
 - **Output strings are load-bearing.** Tests substring-match exact bytes, so brackets, backticks,
   quotes, and Unicode are reproduced verbatim — e.g. the start banner
   `[Started process '<name>'] $ <shell>` followed by `[With root directory: <dir>]`, `[Killed '<name>' process with
-  PID: <pid>]`, `✓ Cleared N log entries` (U+2713), `-- older logs have been removed --`. With
+  PID: <pid>]`, `✓ Cleared N log entries` (U+2713), `-- showing the last N lines; use --count to see more --`. With
   `FORCE_COLOR=0` set by the harness, no ANSI is emitted.
 - **Agent-mode detection** keys on the truthiness of any agent marker var — `CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT` (the empty string is *not* agent
   mode). Agent mode disables `watch`. See `run_context` and [watch-wait.md](watch-wait.md).
@@ -94,12 +94,13 @@ against it. They are byte-level and must not drift.
   config file is preserved verbatim as an unknown key and otherwise ignored.
 - **Version** comes from `env!("CARGO_PKG_VERSION")`.
 - **MCP stdout purity.** Only newline-delimited JSON-RPC frames reach stdout; all handler output is
-  captured. Tool list, ordering, content shapes, and error codes match the Node server exactly. See
+  captured. Tool list, ordering, content shapes, and error codes match the former Node server. See
   [mcp.md](mcp.md).
 
 ## Relationship to the Node implementation
 
-The Rust modules mirror the Node subsystems in `../../src`, and the subsystem docs cross-reference the
-original `src/...` files as the behavioral source of truth. The Node implementation is retained and
-still published; the Rust port reaches parity through the shared Vitest suite rather than by sharing
-any code. When the two disagree, the test suite — and the Node behavior it encodes — is authoritative.
+The Rust modules were ported from the Node subsystems that used to live in `../../src`. That
+implementation has been removed, so the `src/...` (TypeScript) paths the subsystem docs mention are
+historical pointers to where each piece came from, not files you can open. The Vitest suite, which
+encoded the Node behavior during the port, is now the behavioral source of truth: when a doc and the
+suite disagree, the suite is authoritative.

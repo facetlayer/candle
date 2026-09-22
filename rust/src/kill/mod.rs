@@ -107,11 +107,12 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
     }
 }
 
-/// Wait until `pid` is gone or `timeout` elapses. Returns whether it exited.
-fn wait_for_exit(pid: i64, timeout: Duration) -> bool {
+/// Wait until every PID in `pids` is gone or `timeout` elapses. Returns
+/// whether they all exited.
+fn wait_for_all_to_exit(pids: &[i64], timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
-        if !is_process_alive(pid) {
+        if !pids.iter().copied().any(is_process_alive) {
             return true;
         }
         if Instant::now() >= deadline {
@@ -121,33 +122,45 @@ fn wait_for_exit(pid: i64, timeout: Duration) -> bool {
     }
 }
 
-/// `SIGTERM` the tree rooted at `pid`, wait up to `grace` for the root to exit,
-/// and escalate to `SIGKILL` on the whole (re-snapshotted) tree if it hasn't.
+/// `SIGTERM` the tree rooted at `pid`, wait up to `grace` for every process in
+/// it to exit, and `SIGKILL` whatever is left.
 ///
 /// A service that traps or ignores `SIGTERM` would otherwise keep running while
-/// Candle's records said it was dead. Returns `Escalated` when `SIGKILL` was
-/// needed, so callers can tell the user. Other outcomes match
-/// [`kill_process_tree`].
+/// Candle's records said it was dead. The whole tree is waited on, not just the
+/// root: when the root shell exits on `SIGTERM`, a child that ignored it gets
+/// reparented to init and would drop out of any re-snapshot taken from the
+/// root. Returns `Escalated` when `SIGKILL` was needed, so callers can tell the
+/// user. Other outcomes match [`kill_process_tree`].
 pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
+    let snapshot = get_process_tree(pid);
+
     match kill_process_tree(pid) {
         KillResult::Success => {}
         KillResult::ProcessNotFound => return KillOutcome::ProcessNotFound,
         KillResult::Error => return KillOutcome::Error,
     }
 
-    if wait_for_exit(pid, grace) {
+    if wait_for_all_to_exit(&snapshot, grace) {
         return KillOutcome::Terminated;
     }
 
-    // Children first again: a re-snapshot picks up anything forked since the
-    // SIGTERM pass.
-    for child_pid in get_process_tree(pid).into_iter().rev() {
+    // Survivors from the snapshot, plus anything they've forked since. Kill
+    // children before parents so a dying parent can't respawn them.
+    let mut targets: Vec<i64> = Vec::new();
+    for survivor in snapshot.iter().copied().filter(|p| is_process_alive(*p)) {
+        for p in get_process_tree(survivor) {
+            if !targets.contains(&p) {
+                targets.push(p);
+            }
+        }
+    }
+    for target in targets.iter().rev() {
         unsafe {
-            libc::kill(child_pid as libc::pid_t, libc::SIGKILL);
+            libc::kill(*target as libc::pid_t, libc::SIGKILL);
         }
     }
 
-    if wait_for_exit(pid, SIGKILL_WAIT) {
+    if wait_for_all_to_exit(&targets, SIGKILL_WAIT) {
         KillOutcome::Escalated
     } else {
         KillOutcome::Error
@@ -157,9 +170,9 @@ pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
 /// Outcome of [`kill_process_tree_and_wait`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KillOutcome {
-    /// Exited on `SIGTERM` within the grace period.
+    /// The whole tree exited on `SIGTERM` within the grace period.
     Terminated,
-    /// Ignored `SIGTERM`; exited only after `SIGKILL`.
+    /// Some process in the tree ignored `SIGTERM` and needed `SIGKILL`.
     Escalated,
     ProcessNotFound,
     /// Could not be signalled, or survived even `SIGKILL`.
@@ -194,7 +207,7 @@ pub fn kill_one_running_process(
             if !quiet {
                 if outcome == KillOutcome::Escalated {
                     output::err(&format!(
-                        "[Process '{}' (PID {}) ignored SIGTERM for {}s; sent SIGKILL]",
+                        "[Process '{}' (PID {}) did not exit {}s after SIGTERM; sent SIGKILL]",
                         entry.command_name,
                         entry.pid,
                         KILL_GRACE_PERIOD.as_secs()

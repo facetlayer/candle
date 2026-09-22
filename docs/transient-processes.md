@@ -24,7 +24,7 @@ candle start api --shell "npm run dev" --root "packages/api"
 
 - A `.candle.json` file must exist in the current directory or a parent directory
 - The `--shell` flag is required when starting a transient process
-- If `--root` is provided, it must be a relative path within the project directory
+- If `--root` is provided, it must be an absolute path or a relative path that stays within the project directory
 
 ## Behavior
 
@@ -35,7 +35,7 @@ Transient processes work with all standard candle commands:
 ```bash
 candle logs myserver    # View process output
 candle kill myserver    # Stop the process
-candle restart myserver # Restart with same shell/root
+candle restart myserver # Restart with the same shell/root
 candle ls               # Shows transient processes alongside config-defined ones
 ```
 
@@ -52,12 +52,12 @@ candle start web --shell "node other-server.js"
 ### Visibility in `ls`
 
 - Transient processes appear in `candle ls` while running
-- When killed, they disappear from the list (unlike config-defined services which show as "NOT LAUNCHED")
+- When killed, they disappear from the list (unlike config-defined services, which show as "not running")
 - If a transient process shadows a config-defined service, `ls` will show a `[config changed]` warning
 
 ### Restart Behavior
 
-When you restart a transient process, it uses the shell command and root directory stored in the database from when it was originally started:
+When you restart a transient process, it uses the shell command and root directory stored in the database from when it was originally started. (If the name is also defined in `.candle.json`, `restart` uses the config instead.)
 
 ```bash
 candle start foo --shell "npm start" --root "src"

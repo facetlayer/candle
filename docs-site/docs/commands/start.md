@@ -19,7 +19,7 @@ The flow of running `start`:
 
 1. If the service is already running, restart it.
 2. Launch and wait for the service to successfully start.
-3. Wait for a 'grace period' (default of 500ms) to make sure the service stays running.
+3. Wait for a 'grace period' (500ms) to make sure the service stays running.
 
 Starts of the same service are serialized. If two `start` commands for one service run at
 the same time, for example from parallel agents or scripts, the second waits for the first
@@ -99,7 +99,7 @@ candle start api --bg
 
 A "transient" service is when you launch a service without defining it in the `.candle.json` config file.
 
-This can be done with the `--shell` option (and optionally `--root` to change the directory).
+This can be done with the `--shell` option (and optionally `--root` to change the directory). `--shell` requires exactly one service name.
 
 ### Start a transient service
 

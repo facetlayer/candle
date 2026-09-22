@@ -5,6 +5,10 @@
       "shell": "trap 'echo ignoring TERM' TERM; echo ready; while true; do sleep 0.2; done"
     },
     {
+      "name": "stubborn-child",
+      "shell": "sh -c \"trap '' TERM; echo ready; while true; do sleep 0.2; done\" & wait"
+    },
+    {
       "name": "slow",
       "shell": "echo ready; sleep 600"
     },

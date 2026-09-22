@@ -10,7 +10,7 @@ candle open-browser [name]
 
 ## Description
 
-The `open-browser` command finds the open port for a running service and opens a browser window to `http://localhost:<port>`.
+The `open-browser` command finds the open port for a running service and opens a browser window to `http://localhost:<port>`. If the service listens on more than one port, the lowest-numbered port is used.
 
 This command uses the same port detection as `list-ports` - it finds the actual listening port of the running process.
 
@@ -61,7 +61,6 @@ The command will fail if:
 
 - **macOS**: Uses `open` command
 - **Linux**: Uses `xdg-open` command
-- **Windows**: Uses `start` command
 
 ## See Also
 

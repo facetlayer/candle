@@ -8,7 +8,7 @@ Candle is a lightweight process manager designed for local development. It allow
 - **Project-Scoped** - Commands are scoped to your current project directory by default
 - **Log Aggregation** - All service output is stored in a SQLite database for easy retrieval
 - **Watch Mode** - Monitor live output from running services
-- **Transient Services** - Run one-off commands without configuration
+- **Transient Services** - Run one-off commands without adding them to your config
 - **MCP Integration** - Built-in Model Context Protocol server for AI agent integration
 
 ## Quick Start
@@ -42,7 +42,7 @@ A service is a named process defined in your `.candle.json` configuration file. 
 Candle tracks services by project directory. When you run commands like `list` or `kill` without arguments, they only affect services started from the current project directory.
 
 ### Transient Services
-You can also run services without defining them in a config file using the `--shell` flag:
+You can also run services without defining them in the config file using the `--shell` flag (a `.candle.json` must still exist in the project):
 
 ```bash
 candle start server --shell "python -m http.server 8080"

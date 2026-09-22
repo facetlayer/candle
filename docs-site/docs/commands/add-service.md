@@ -10,7 +10,7 @@ candle add-service <name> --shell <command> [options]
 
 ## Description
 
-The `add-service` command adds a new service definition to your `.candle.json` configuration file. If the file doesn't exist, it will be created.
+The `add-service` command adds a new service definition to your `.candle.json` configuration file. Candle uses the nearest `.candle.json` in the current directory or a parent directory. If there isn't one, it creates `.candle.json` in the current directory.
 
 ## Arguments
 
@@ -58,7 +58,7 @@ candle add-service api --shell "npm run dev" --root packages/api
 
 - Service names must be unique within a configuration file
 - The shell command is stored as-is and executed in a shell environment
-- Root paths must be relative and cannot escape the project directory
+- A relative root path can't use `..` to escape the project directory
 
 ## See Also
 

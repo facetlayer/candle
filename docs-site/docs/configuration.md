@@ -53,11 +53,10 @@ The shell command to execute when starting the service.
 
 ### root (optional)
 
-A relative directory path where the command will run. Must be relative to the config file location.
+The directory where the command will run. A relative path is resolved against the config file location. An absolute path is used as-is.
 
 **Constraints:**
-- Cannot be an absolute path
-- Cannot use `..` to escape the project directory
+- A relative path cannot use `..` to escape the project directory
 
 ```json
 {
@@ -86,7 +85,7 @@ Maximum age of log entries in seconds. Logs older than this are deleted during c
 }
 ```
 
-When viewing logs, Candle displays a `-- older logs have been removed --` indicator if some log entries were evicted and are no longer available.
+Cleanup runs at most once every 10 minutes, as part of a normal Candle command. Evicted logs are gone for good; `candle logs` doesn't flag them. It prints `-- showing the last N lines; use --count to see more --` only when `--count` cut off lines from the latest run.
 
 ## Log monitoring
 

@@ -26,7 +26,7 @@ Use the `add-service` command to add a new configured service:
 candle add-service api --shell "npm run dev"
 ```
 
-This will create a `.candle.json` file in the current directory.
+This adds the service to the nearest `.candle.json`, creating one in the current directory if none exists.
 
 ## Project Organization
 

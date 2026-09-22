@@ -25,9 +25,9 @@ of the nearest `.candle.json` file).
 
 More commands are available by running: `candle help`
 
-Candle can also help with localhost port reservations, see: `candle help port-reservation`
+See which ports a running service is listening on: `candle list-ports`
 
 # Commands to avoid
 
-Do NOT use `candle watch`. It is an interactive command and will block your execution
-until killed. Use `candle logs` instead.
+Do NOT use `candle watch`. It is an interactive command that blocks until killed, so in agent
+mode Candle refuses to run it. Use `candle logs` instead.

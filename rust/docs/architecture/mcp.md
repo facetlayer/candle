@@ -1,10 +1,10 @@
 # MCP server
 
-Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/src/mcp/mod.rs`](../../src/mcp/mod.rs), with the output-capture layer in [`rust/src/output.rs`](../../src/output.rs). It mirrors the original Node implementation in `src/mcp/mcp-main.ts` and `src/mcp/ConsoleLogInterceptor.ts`, which remains the source-of-truth for exact behavior.
+Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/src/mcp/mod.rs`](../../src/mcp/mod.rs), with the output-capture layer in [`rust/src/output.rs`](../../src/output.rs). It was ported from the original Node implementation in `src/mcp/mcp-main.ts` and `src/mcp/ConsoleLogInterceptor.ts`. That implementation has been removed; those paths (and the other `src/...` references below) are historical pointers only.
 
 ## 1. Overview & entry point
 
-The server is launched by the CLI when the user runs `candle mcp` or passes the `--mcp` flag. CLI dispatch routes both forms to `serve_mcp()` (`mcp/mod.rs`), which is the whole subsystem — it opens the database, captures the current working directory, and runs the blocking server loop. It diverges (`-> !`): it never returns, exiting the process when stdin closes.
+The server is launched by the CLI when the user runs `candle mcp` or passes the `--mcp` flag. CLI dispatch in `main.rs` routes both forms to `serve_mcp()` (`--mcp` is checked after `--monitor`, `--version`, and `--help`) (`mcp/mod.rs`), which is the whole subsystem — it opens the database, captures the current working directory, and runs the blocking server loop. It diverges (`-> !`): it never returns, exiting the process when stdin closes.
 
 ## 2. Transport
 
@@ -60,17 +60,18 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `List services with structured output`
 - properties: `showAll` (boolean, "Show all services or just current directory (optional)")
 - required: none
-- handler: `handle_list(conn, cwd, showAll)` (mirrors the original `src/list-command.ts`) → `ListOutput`:
+- handler: `handle_list(conn, cwd, showAll)` (originally `src/list-command.ts`) → `ListOutput`, serialized as:
   ```
-  { processes: { command, workingDir, uptime, pid, status, serviceName, configChanged? }[], showAll?, message? }
+  { processes: { serviceName, command, workingDir, uptime, pid, status, configChanged? }[] }
   ```
+  (The Node type also declared optional `showAll` / `message` fields that were never set; the Rust struct has only `processes`.)
   `showAll=true` lists all DB processes (no config file needed, status always `RUNNING`); otherwise lists processes for the current project dir.
 
 ### 5.2 `ListPorts`
 - description: `List open ports for running services`
 - properties: `showAll` (boolean), `serviceName` (string, "Filter to a specific service name (optional)")
 - required: none
-- handler: `handle_list_ports(conn, cwd, showAll, command_names)` (mirrors `src/list-ports-command.ts`) → `ListPortsOutput`:
+- handler: `handle_list_ports(conn, cwd, showAll, command_names)` (originally `src/list-ports-command.ts`) → `ListPortsOutput`:
   ```
   { ports: { serviceName, pid, port, address, protocol, isChildProcess }[] }
   ```
@@ -81,14 +82,15 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - properties: `name` (string), `limit` (number, "Maximum number of log lines to return (optional)"), `projectDir` (string, "Project directory where the service is defined (optional - for cross-directory access)")
 - required: `["name"]`
 - handler: validates `name` is present (else error `Service name is required`); resolves the project dir (from `projectDir` if given, else `find_project_dir(cwd)`); calls `handle_logs_command(conn, projectDir, [name], limit, None)`.
-  - `DEFAULT_LOGS_LIMIT = 200`. The limit is nullish-defaulted: an explicit `0` passes through (the code only falls back to 200 when `limit` is absent or `null`, not when it is a falsy number).
+  - `DEFAULT_LOGS_LIMIT = 200`. The limit is nullish-defaulted: an explicit `0` passes through (the code only falls back to 200 when `limit` is absent or `null`, not when it is a falsy number; a non-integer value also falls back to 200).
+  - The limit has the same meaning as `logs --count`: it counts only printable lines from the service's latest run (`get_log_tail`, see [logs.md](logs.md) §6), and when lines were cut off the captured output starts with `-- showing the last N lines; use --count to see more --`.
   - `handle_logs_command` returns nothing — it **emits logs through [`crate::output`]**, so the actual log output is captured and surfaced through the response's `logs`, not through `result` (the handler returns `Ok(None)`). This is the one tool whose output flows entirely through the output-capture path.
 
 ### 5.4 `StartService`
 - description: `Start a config-defined service (use StartTransientService for transient processes)`
 - properties: `name` (string)
 - required: `["name"]`
-- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None` (mirrors `src/start/startOneService.ts`) → returns `{ projectDir, serviceName }`.
+- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None`, `check_start: false` (originally `src/start/startOneService.ts`) → returns `{ projectDir, serviceName }`. Like the CLI, this takes the per-service start lock, kills any existing instance, and waits up to 10s for the start result (see [start-flow.md](start-flow.md)).
 
 ### 5.5 `StartTransientService`
 - description: `Start a transient process with a custom shell command (not defined in config file)`
@@ -100,7 +102,7 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `Kill a running service`
 - properties: `name` (string)
 - required: `["name"]`
-- handler: validate `name`; resolve project dir; `handle_kill_command(conn, projectDir, [name], …)`. **Returns nothing** (`Ok(None)`) — the response contains only captured logs (if any) with `isError: false`.
+- handler: validate `name`; resolve project dir; `handle_kill_command(conn, projectDir, [name], false, false)`. **Returns nothing** (`Ok(None)`) — the response contains only captured logs (if any) with `isError: false`. The call can block for up to about 6s if the service ignores SIGTERM (5s grace, then SIGKILL; see [kill-restart.md](kill-restart.md)).
 
 ### 5.7 `RestartService`
 - description: `Restart a running service. If no name provided, restarts all running services in the project.`
@@ -119,7 +121,7 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `Open a browser window to a running service's port` (note the literal apostrophe)
 - properties: `serviceName` (string, "Name of the service to open in browser")
 - required: `["serviceName"]`
-- handler: validate `serviceName` present (else `Service name is required`); resolve project dir; `handle_open_browser(conn, cwd, projectDir, serviceName)` (mirrors `src/open-browser-command.ts`) → `OpenBrowserOutput` `{ serviceName, port, url }`. Spawns the platform browser opener.
+- handler: validate `serviceName` present (else `Service name is required`); resolve project dir; `handle_open_browser(conn, cwd, projectDir, serviceName)` (originally `src/open-browser-command.ts`) → `OpenBrowserOutput` `{ serviceName, port, url }`. Spawns the platform browser opener.
 
 ## 6. Output capture (`crate::output`)
 

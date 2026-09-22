@@ -2,7 +2,7 @@
 
 This covers the `candle watch` and `candle wait-for-log` CLI commands and their supporting log-tailing infrastructure. Both poll a SQLite `process_output` table for new log rows; they differ in what they do when a new row appears.
 
-The Rust implementation lives in `rust/src/commands/{watch,wait_for_log}.rs`, with the shared tailing machinery in `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, and the filters in `rust/src/log_filters/`. It mirrors the original Node implementation under `src/`, whose files are cross-referenced below as the historical source of truth.
+The Rust implementation lives in `rust/src/commands/{watch,wait_for_log}.rs`, with the shared tailing machinery in `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, and the filters in `rust/src/log_filters/`. It was ported from the original Node implementation under `src/`. That implementation has been removed; the `src/...` files cross-referenced below are historical pointers only, not files in the repo.
 
 ## 1. Shared data model
 
@@ -39,7 +39,7 @@ process_exited          = 6
 
 ## 2. The DB query: `buildLogSearchQuery` (`src/logs/buildLogSearchQuery.ts`)
 
-`LogSearchOptions = { projectDir, commandNames?, limit?, sinceTimestamp?, afterLogId? }`.
+`LogSearchOptions = { projectDir, commandNames?, limit?, sinceTimestamp?, afterLogId? }` in the original. The Rust struct adds `min_log_id`, `log_types`, and `latest_launch_only`, used only by `logs --count` (`get_log_tail`, see [logs.md](logs.md) §5-6); watch and wait leave them at their defaults.
 
 Query construction (note the table alias `po`):
 - 1 command name: `select po.* from process_output po where po.project_dir = ? and po.command_name = ?`
@@ -58,12 +58,12 @@ Subtle ordering detail: ordering by `(timestamp desc, id desc)` then reversing i
 
 ## 3. `LogIterator` (`src/logs/LogIterator.ts`, Rust `logs/log_iterator.rs`)
 
-Stateful cursor over `getProcessLogs`. Fields: `currentLogId: Option<i64>` (starts `None`), plus the `LogSearchOptions`.
+Stateful cursor over `get_process_logs`. Fields: `project_dir`, `command_names`, a default `limit`, and `current_log_id: Option<i64>` (starts `None`).
 
-- `peekNextLogs(partialOpts)`: merges `{...options, ...partial, afterLogId: currentLogId}` and calls `getProcessLogs`. When `currentLogId` is `None`, `afterLogId` is null → no `id >` filter → fetches the most recent `limit` rows.
-- `getNextLogs(partialOpts)`: calls peek; if non-empty, sets `currentLogId = logs[last].id` (last = newest since chronological). Returns the batch.
+- `peek_next_logs(conn, limit_override)`: queries with `after_log_id: current_log_id` and `limit_override.or(default limit)`. When `current_log_id` is `None` → no `id >` filter → fetches the most recent `limit` rows.
+- `get_next_logs(conn, limit_override)`: calls peek; if non-empty, sets `current_log_id` to the last row's id (last = newest since chronological). Returns the batch.
 
-Key behavior: because the cursor advances by **max id seen**, and the query filters `id > currentLogId`, each `getNextLogs` returns strictly new rows. The `limit` passed per-call caps batch size; `watchProcess` passes `limit: INITIAL_LOG_COUNT (100)` only on the first call and no limit afterward.
+Key behavior: because the cursor advances by **max id seen**, and the query filters `id > current_log_id`, each `get_next_logs` returns strictly new rows. The limit caps batch size; `watch_process` passes `Some(INITIAL_LOG_COUNT)` (100) only on the first call and `None` afterward.
 
 ## 4. `LatestExecutionLogFilter` (`src/log-filters/LatestExecutionLogFilter.ts`, Rust `log_filters/latest_execution_log_filter.rs`)
 
@@ -109,67 +109,71 @@ All output goes to **stdout**, even errors except where noted in §8. Each call 
 
 ## 7. `watch` command (`rust/src/commands/watch.rs`)
 
-### 7.1 CLI definition (`src/main-cli.ts:154-164`)
-`watch [name...]` — positional `name` (variadic, strings). Hidden option `--exit-after-ms` (number, marked hidden — `#[arg(hide = true)]` in the clap definition). Unknown flags are rejected (strict options).
+### 7.1 CLI definition (`cmd_watch` in `rust/src/main.rs`; originally `src/main-cli.ts:154-164`)
+`watch [name...]` — positional `name` (variadic, strings). Options `--exit-after-ms <ms>` (accepted by the hand-rolled parser but not listed in `watch --help`, so effectively hidden) and `--project-dir <dir>` (must contain its own config, `require_own_config`). Unknown flags are rejected (`Unknown argument`).
 
-### 7.2 Agent-mode disabling (`src/runContext.ts`, `main-cli.ts:434-441`)
-`is_run_by_agent` is derived from the coding-agent marker environment variables (see `run_context`). In the `watch` case, when run by an agent the command prints to **stderr** and exits with code **1**:
+### 7.2 Agent-mode disabling (`run_context.rs`; originally `src/runContext.ts`, `main-cli.ts:434-441`)
+`is_run_by_agent` is derived from the coding-agent marker environment variables (see `run_context`). In the `watch` case, when run by an agent `cmd_watch` prints to **stderr** and exits with code **1**, before touching the database:
 ```
-Error: 'watch' is not available in agent mode. Use 'candle logs' to view process output.
+Error: 'watch' blocks and is not available in agent mode. Use 'candle logs' to view process output.
 ```
-That exact stderr string and exit code 1 are preserved. Agent mode also blanks the watch-related help lines (`main-cli.ts:42`) — cosmetic.
+That exact stderr string and exit code 1 are load-bearing. Agent mode also hides the `watch` line in grouped help (`cli/help.rs`), which is cosmetic.
 
 `is_run_by_agent` is evaluated once: agent mode iff **any** of `CLAUDECODE` / `GEMINI_CLI` / `CURSOR_AGENT` is present and non-empty. The empty string means not-set; `"0"`/`"false"` are non-empty and therefore still count.
 
-### 7.3 `handleWatch` (`src/watch-command.ts`)
-1. `projectDir = findProjectDir()` (searches up for `.candle.json`; uses the current working directory).
-2. `commandNames = resolveCommandNamesOrAll(projectDir, options.commandNames)` — if none given, expands to all configured service names; throws `UsageError('No services configured in .candle.json')` if config empty (`configFile.ts:259`).
-3. For each name: `startOneService({ projectDir, commandName: name, consoleOutputFormat: 'pretty', checkStart: true })` — `checkStart:true` is a no-op for already-running services. (Watch ensures services are up before tailing.)
-4. Print header to stdout:
+### 7.3 `handle_watch(conn, cwd, command_names, exit_after_ms)` (`rust/src/commands/watch.rs`; originally `src/watch-command.ts`)
+
+`watch` **never launches processes** (the Node original ran `startOneService({ checkStart: true })` for each name first; the Rust command does not).
+1. `project_dir = find_project_dir(cwd)` (searches up for the config file from the scope's base dir).
+2. **No names**: print `Watching all processes in this project.` and watch every command in the project (the empty name list is passed straight through, so services that haven't launched yet show up when they do). Names are not expanded from config.
+3. **With names**: each must be running (`killed_at is null` rows filtered through `filter_alive_processes`, which also deletes dead rows). Otherwise → `UsageError("Process '<name>' is not running. Start it with: candle start <name>")` (stderr, exit 1). Then print the header:
    - 1 name: `Watching process '<name>'`
    - N names: `Watching <N> processes:` then for each `  - '<name>'`
-   - Then `Press Ctrl+C to stop watching.` and a blank line.
-5. Call `watchProcess({ projectDir, commandNames, consoleOutputFormat: 'pretty', exitAfterMs })`.
+4. Print `Press Ctrl+C to stop watching.` and a blank line.
+5. Call `watch_process(conn, project_dir, command_names, exit_after_ms, ShowLogsFromPreviousLaunch, Some(RECENT_LOG_WINDOW_MS))`.
+
+`watch_started_services(conn, project_dir, names, exit_after_ms)` is the same loop used by interactive `start`/`restart`: it prints `[Now watching console logs. Press Ctrl+C to stop watching.]` and a blank line, then calls `watch_process` with `OnlyShowAfterRecentLaunch` and no recency window, so only the fresh launch's output shows.
 
 ### 7.4 `watchProcess` — the tail loop
 Constants: `INITIAL_LOG_COUNT = 100`, `POLL_INTERVAL = 200` (ms), `RECENT_LOG_WINDOW_MS = 10_000`.
 
-- `isBlendedMode = commandNames.length > 1`.
-- `LogIterator({ projectDir, commandNames })`.
-- `LogFilter = LatestExecutionLogFilter({ showPastLogsBehavior: 'show_logs_from_previous_launch' (default), recentWindowMs: 10_000 })`. (Watch passes no `showPastLogsBehavior`, so the default applies; `run` uses `only_show_after_recent_launch`.)
-- `initialLogs = logIterator.getNextLogs({ limit: 100 })`; then `logFilter.checkLatestLaunchStatus(initialLogs)`.
+`watch_process(conn, project_dir, command_names, exit_after_ms, show_past_logs, recent_window_ms)`:
+- `is_blended = command_names.len() != 1` (so the watch-everything case, with zero names, is blended too).
+- `LogIterator::new(project_dir, command_names)`.
+- `filter = LatestExecutionLogFilter::new(show_past_logs, recent_window_ms)`: `watch` passes `ShowLogsFromPreviousLaunch` + 10_000ms; `watch_started_services` passes `OnlyShowAfterRecentLaunch` + no window.
+- `initial_logs = iterator.get_next_logs(conn, Some(100))`; then `filter.check_latest_launch_status(&initial_logs)`.
 
 Ordering note: `getNextLogs({limit:100})` is called **before** `checkLatestLaunchStatus`, and it already advances `currentLogId` to the newest of those 100. So the window cutoff is computed at that point, and the initial 100 are both the status-seed and the first printed batch — there is no double-fetch.
 
-- `--exit-after-ms`: if `exitAfterMs > 0`, a timer fires after that many ms, prints `consoleLogSystemMessage(format, 'Exiting watch mode after <exitAfterMs>ms timeout')` (pretty → `[Exiting watch mode after Nms timeout]`), and sets `watching = false`.
-- Install `SIGINT`/`SIGTERM` handlers (`stopWatching`) that set `watching = false` and clear the timer.
-- `printLogs(logs)`: `executionStatusTracker.apply(logs)`, then `logFilter.filter(logs)`, then per filtered log `consoleLogRow(log, { format, prefix })` where `prefix = isBlendedMode ? "[<command_name>] " : undefined`.
-- Print initial logs once (`printLogs(initialLogs)`).
-- Loop while `watching`: `printLogs(logIterator.getNextLogs({}))` (no limit), then sleep 200ms.
-- After loop: clear timer; compute `runningProcesses = executionStatusTracker.countRunningProcesses()`:
+- Install `SIGINT`/`SIGTERM` handlers (`libc::signal`) that set a static `STOP: AtomicBool` (reset to false at the start of each call).
+- `--exit-after-ms`: if `exit_after_ms > 0`, a deadline is computed. There is no timer thread; the loop checks the deadline each iteration and, once passed, prints `console_log_system_message(Pretty, 'Exiting watch mode after <exit_after_ms>ms timeout')` (→ `[Exiting watch mode after Nms timeout]`) and breaks.
+- `print_batch(logs)`: `tracker.apply(logs)`, then `filter.filter(logs)`, then per filtered log `console_log_row(log, { Pretty, prefix })` where `prefix = is_blended ? "[<command_name>] " : None`.
+- Print the initial batch once.
+- Loop until `STOP` or the deadline: `print_batch(iterator.get_next_logs(conn, None))` (no limit), then sleep 200ms.
+- After loop: compute `running = tracker.count_running_processes()`:
   - `== 1`: `consoleLogSystemMessage(format, 'Stopped watching. Process is still running in the background.')`
   - `> 1`: `Stopped watching. <N> processes are still running in the background.`
   - `0`: nothing.
-- Remove signal listeners.
+- Restore `SIG_DFL` for `SIGINT`/`SIGTERM`.
 
-Subtlety: the function returns normally (no forced exit); the process exits naturally. With `--exit-after-ms`, the only thing that ends the loop is `watching=false` on the next poll boundary, so actual stop latency is up to `POLL_INTERVAL` (200ms) after the timer fires.
+Subtlety: the function returns normally (no forced exit); the process exits naturally. Both `STOP` and the deadline are checked only at the top of each iteration, so actual stop latency is up to `POLL_INTERVAL` (200ms) plus one fetch.
 
 ## 8. `wait-for-log` command (`rust/src/commands/wait_for_log.rs`)
 
-### 8.1 CLI definition (`src/main-cli.ts:165-178`)
-`wait-for-log [name]` — single positional `name`. Required option `--message <string>`. Option `--timeout <number>` in seconds, default `30`. Strict options. **Not** disabled in agent mode.
+### 8.1 CLI definition (`cmd_wait_for_log` in `rust/src/main.rs`; originally `src/main-cli.ts:165-178`)
+`wait-for-log [name]` — positional name(s), all passed through as `command_names`. Required option `--message <string>` (missing → stderr `Missing required argument: message`, exit 1). Option `--timeout <number>` in seconds, default `30`. Option `--project-dir <dir>`. Strict options. **Not** disabled in agent mode. Names are not validated (transient names are allowed).
 
-Dispatch (`main-cli.ts:444-458`): resolve `projectDir`, call `handleWaitForLog({ projectDir, commandNames, message, timeoutMs: timeout * 1000 })`, and exit `1` if `!result.success`. So **exit code 0 on success, 1 on failure.** Timeout is converted seconds→ms here.
+Dispatch: resolve `project_dir`, call `handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms = timeout * 1000)`, and exit `1` if `!result.success`. So **exit code 0 on success, 1 on failure.** Timeout is converted seconds→ms here.
 
-### 8.2 `handleWaitForLog` (`src/wait-for-log-command.ts`)
-Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`. Default `timeoutMs = 30000` if unset.
+### 8.2 `handle_wait_for_log` (`rust/src/commands/wait_for_log.rs`; originally `src/wait-for-log-command.ts`)
+Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`. The 30s default lives in the CLI layer.
 
-Return shape: `{ success: boolean, message?: string }`. Caller only checks `success`.
+Return shape: `WaitForLogResult { success: bool }` (the TS version also carried an unread `message`).
 
 Algorithm:
 1. `LogIterator({ projectDir, commandNames, limit: 1000 })`. `allInitialLogs = logIterator.getNextLogs()` (uses limit 1000; advances cursor to newest).
 2. `logFilter = LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' })` (**no recency window**). `logFilter.checkLatestLaunchStatus(allInitialLogs)`; `initialLogs = logFilter.filter(allInitialLogs)`.
-3. If `initialLogs.length === 0`: return `{ success: false, message: 'Process has not started yet' }` (no console output; caller exits 1).
+3. If `initialLogs.length === 0`: return `{ success: false }` (no console output; caller exits 1).
 4. `hasProcessStarted = initialLogs.some(l => l.log_type === process_start_initiated (3))`. If false: print `Process has not started yet` to **stderr** and return `{ success: false }`.
 5. Scan `initialLogs`: if any `log.content?.includes(message)` (substring match; `content` may be null → skipped): print `Found message "<message>" in existing logs.` and return `{ success: true }`.
 6. Poll loop (`timeStarted = now`):
@@ -198,10 +202,10 @@ Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not cal
 
 ## 9. Implementation dependencies
 
-- **SQLite access** (`getDatabase()`, list/get/run): the Rust implementation uses `rusqlite` (synchronous), which preserves the synchronous query semantics of the original `better-sqlite3` code exactly.
-- **CLI parsing**: `clap`, with `--exit-after-ms` declared as a hidden arg (`#[arg(hide = true)]`).
-- **Timers/sleep**: the 200ms poll and the exit-after-ms timer are the only timing primitives.
-- **Signals** (`SIGINT`/`SIGTERM`): flip a shared `watching` flag.
+- **SQLite access** (`getDatabase()`, list/get/run): the Rust implementation uses `rusqlite` (synchronous), which preserves the synchronous query semantics of the original `node:sqlite` code exactly.
+- **CLI parsing**: the hand-rolled parser in `rust/src/cli/parser.rs` (no `clap`); `--exit-after-ms` is simply omitted from the help text.
+- **Timers/sleep**: `std::thread::sleep` for the 200ms poll and an `Instant` deadline for exit-after-ms are the only timing primitives.
+- **Signals** (`SIGINT`/`SIGTERM`): `libc::signal` handlers flip a static `STOP` flag.
 - No other third-party dependencies in this subsystem.
 
 ## 10. Platform / correctness gotchas
@@ -212,7 +216,7 @@ Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not cal
 4. **`content` is nullable;** a null `content` skips the substring search. Substring match is plain `str::contains` (case-sensitive, no regex).
 5. **Stateful filter mutation:** `LatestExecutionLogFilter.filter` mutates `recentCommandLaunch`; the same instance is reused across poll iterations in both commands. It is a mutable struct, not a pure function.
 6. **Exit codes:** `wait-for-log` → exit `1` on `!success`, `0` otherwise. `watch` in agent mode → exit `1` with the exact stderr message; otherwise exits 0 naturally.
-7. **stdout vs stderr:** nearly everything is stdout. Exceptions: the agent-mode watch error and the "Process has not started yet" (step 4) go to **stderr**. Step 3's "Process has not started yet" is only a return-value `message` field, never printed.
+7. **stdout vs stderr:** nearly everything is stdout. Exceptions: the agent-mode watch error, the `watch` "is not running" usage error, and the "Process has not started yet" (step 4) go to **stderr**. Step 3 prints nothing.
 8. **Cursor pre-advance in watch:** `getNextLogs({limit:100})` advances the cursor before `checkLatestLaunchStatus`; the initial 100 are both the status-seed and the first printed batch (`printLogs(initialLogs)`), then the loop continues from the new cursor — no double-fetch.
 9. **`is_run_by_agent` is evaluated once** from the agent marker vars (`CLAUDECODE` / `GEMINI_CLI` / `CURSOR_AGENT`): any one present and non-empty = agent mode. `"0"`/`"false"` are non-empty and therefore still count; only unset or empty is non-agent.
 
@@ -220,4 +224,4 @@ Subtlety: it calls `getProcessLogs` directly (not the iterator) and does not cal
 
 Rust modules: `rust/src/commands/watch.rs`, `rust/src/commands/wait_for_log.rs`, `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, `rust/src/logs/log_type.rs`, `rust/src/log_filters/latest_execution_log_filter.rs`, `rust/src/log_filters/execution_status_tracker.rs`.
 
-Historical Node source of truth: `src/watch-command.ts`, `src/watchProcess.ts`, `src/wait-for-log-command.ts`, `src/logs/LogIterator.ts`, `src/log-filters/LatestExecutionLogFilter.ts`, `src/log-filters/ExecutionStatusTracker.ts`, `src/logs/processLogs.ts`, `src/logs/buildLogSearchQuery.ts`, `src/logs/SqlBuilder.ts`, `src/logs/ProcessLogType.ts`, `src/logs.ts`, `src/runContext.ts`, `src/main-cli.ts`, `src/database/database.ts`, `src/configFile.ts`.
+Historical Node sources (removed from the repo): `src/watch-command.ts`, `src/watchProcess.ts`, `src/wait-for-log-command.ts`, `src/logs/LogIterator.ts`, `src/log-filters/LatestExecutionLogFilter.ts`, `src/log-filters/ExecutionStatusTracker.ts`, `src/logs/processLogs.ts`, `src/logs/buildLogSearchQuery.ts`, `src/logs/SqlBuilder.ts`, `src/logs/ProcessLogType.ts`, `src/logs.ts`, `src/runContext.ts`, `src/main-cli.ts`, `src/database/database.ts`, `src/configFile.ts`.

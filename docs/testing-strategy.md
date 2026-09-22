@@ -11,7 +11,7 @@ Candle uses CLI subprocess tests that run the CLI as end users would use it, tes
 Each test suite uses a dedicated workspace directory under `test/workspaces/`. These workspaces:
 
 - Contain committed `.candle.json` configuration files
-- Use relative paths to reference scripts in `test/sampleServers/`
+- Use relative paths (`../../sampleServers/`) to reference scripts in `test/sampleServers/`
 - Serve as both the working directory (`cwd`) and database directory (`CANDLE_DATABASE_DIR`)
 
 ### Directory Structure
@@ -23,14 +23,15 @@ test/
 │   ├── testProcess.js        # Generic long-running process
 │   ├── echoServer.js         # Outputs to stdout/stderr regularly
 │   ├── delayedLogger.js      # Multi-stage startup for timing tests
-│   └── simpleServer.js       # HTTP server
+│   ├── simpleServer.js       # HTTP server
+│   └── ...                   # Other sample servers
 ├── workspaces/               # Test workspace directories
 │   ├── functional/           # General functional tests
 │   ├── cli-start/            # Start command tests
 │   ├── cli-kill/             # Kill command tests
 │   ├── invalid-config/       # Error handling tests
 │   └── ...                   # Other test-specific workspaces
-└── cli/                      # CLI test files
+└── cli/                      # CLI test files (import TestWorkspace from ./utils)
 ```
 
 ### Workspace Configuration
@@ -42,34 +43,33 @@ Each workspace has a `.candle.json` file committed to git:
   "services": [
     {
       "name": "web",
-      "shell": "node ../sampleServers/testProcess.js"
+      "shell": "node ../../sampleServers/testProcess.js"
     },
     {
       "name": "echo",
-      "shell": "node ../sampleServers/echoServer.js"
+      "shell": "node ../../sampleServers/echoServer.js"
     }
   ]
 }
 ```
 
-Note the relative paths `../sampleServers/` - this allows all workspaces to share the same test server scripts.
+Note the relative paths `../../sampleServers/` - this allows all workspaces to share the same test server scripts.
 
 ## TestWorkspace Class
 
 The `TestWorkspace` class manages test isolation:
 
 ```typescript
-import { TestWorkspace } from '../TestWorkspace';
+import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-start');
-const cli = workspace.createCli();
 
 describe('CLI Start Command', () => {
     afterAll(() => workspace.cleanup());
 
     it('should start a service', async () => {
-        const result = await cli(['start', 'web']);
-        expect(result.code).toBe(0);
+        const result = await workspace.runCli(['start', 'web']);
+        expect(result.stdoutAsString()).toContain('Started');
     });
 });
 ```
@@ -79,28 +79,29 @@ describe('CLI Start Command', () => {
 - `workspace.name` - The workspace name
 - `workspace.dbDir` - Full path to the workspace directory
 
-### createCli()
+### runCli()
 
-Creates a function to run CLI commands:
+Runs a CLI command against the compiled binary at `rust/target/release/candle`:
 
 ```typescript
-const cli = workspace.createCli();
-
-const result = await cli(['start', 'my-service']);
-expect(result.code).toBe(0);
-expect(result.stdout).toContain('Started');
+const result = await workspace.runCli(['start', 'my-service']);
+expect(result.stdoutAsString()).toContain('Started');
 ```
 
-The CLI function:
+`runCli`:
 - Sets `CANDLE_DATABASE_DIR` to the workspace directory
 - Sets `cwd` to the workspace directory by default
-- Returns `{ stdout, stderr, code }`
+- Blanks the coding-agent variables (`CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT`) so tests always run in non-agent mode
+- Returns a `SubprocessResult` (`stdoutAsString()`, `stderrAsString()`, `failed()`, ...)
+- Throws if the command exits non-zero, unless `ignoreExitCode: true` is passed
 
 To run a command in a different directory:
 
 ```typescript
-const result = await cli(['list'], { cwd: '/other/path' });
+const result = await workspace.runCli(['list'], { cwd: '/other/path' });
 ```
+
+For MCP tests, `workspace.createMcpApp()` starts `candle --mcp` in the workspace.
 
 ### cleanup()
 
@@ -129,12 +130,12 @@ The `test/sampleServers/` directory contains reusable test processes:
 
 ```typescript
 it('should show running service in list', async () => {
-    await cli(['start', 'echo']);
-    await cli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-    const result = await cli(['list']);
-    expect(result.stdout).toContain('echo');
-    expect(result.stdout).toContain('RUNNING');
+    const result = await workspace.runCli(['list']);
+    expect(result.stdoutAsString()).toContain('echo');
+    expect(result.stdoutAsString()).toContain('RUNNING');
 });
 ```
 
@@ -142,9 +143,9 @@ it('should show running service in list', async () => {
 
 ```typescript
 it('should error for unknown service', async () => {
-    const result = await cli(['start', 'nonexistent']);
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain('nonexistent');
+    const result = await workspace.runCli(['start', 'nonexistent'], { ignoreExitCode: true });
+    expect(result.failed()).toBe(true);
+    expect(result.stderrAsString()).toContain('nonexistent');
 });
 ```
 
@@ -154,8 +155,8 @@ it('should error for unknown service', async () => {
 import { normalizeOutput } from './utils';
 
 it('should have consistent help format', async () => {
-    const result = await cli(['--help']);
-    const normalized = normalizeOutput(result.stdout);
+    const result = await workspace.runCli(['--help']);
+    const normalized = normalizeOutput(result.stdoutAsString());
     expect(normalized).toMatchSnapshot();
 });
 ```
@@ -165,13 +166,13 @@ it('should have consistent help format', async () => {
 1. **Always use afterAll cleanup** - Call `workspace.cleanup()` to stop processes
 2. **Never delete databases** - Just kill processes; deleting databases causes orphaned processes
 3. **Wait for process readiness** - Use `wait-for-log` before making assertions
-4. **Use relative paths in configs** - Point to `../sampleServers/` for shared scripts
+4. **Use relative paths in configs** - Point to `../../sampleServers/` for shared scripts
 5. **One workspace per test suite** - Each describe block should have its own workspace
 
 ## Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (builds the release binary first)
 pnpm test
 
 # Run specific test file
@@ -188,10 +189,9 @@ pnpm test:watch
 3. Create your test file using `TestWorkspace`:
 
 ```typescript
-import { TestWorkspace } from '../TestWorkspace';
+import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('my-test');
-const cli = workspace.createCli();
 
 describe('My Test Suite', () => {
     afterAll(() => workspace.cleanup());

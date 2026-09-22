@@ -27,7 +27,7 @@ Candle makes sure that each service is only launched as one process at a time (p
 
 Candle detects when the CLI is being launched by a coding agent, and it will always use
 non-blocking responses (where the shell prints something and exits immediately) for
-agents, which works better for them. Agents can use `candle log ...` to fetch & search the
+agents, which works better for them. Agents can use `candle logs ...` to fetch the
 console logs for any running service.
 
 ### Other quality of life commands ###
@@ -102,13 +102,15 @@ Add services:
 Launch it:
 
     candle start                # all services
-    candle start [service name] # one services
+    candle start [service name] # one service
 
 # All Commands #
 
 ### `candle --help`
 
-List all CLI commands.
+List all CLI commands. `candle help` does the same.
+
+Run `candle <command> --help` to see the options for one command.
 
 ## Main usage commands ##
 
@@ -139,7 +141,8 @@ Alias for `candle start`.
 ### `candle check-start`
 
 Similar to `start` but only starts the service(s) if they are not already running.
-If the service is running already, this command is a no-op.
+If the service is running already, this command is a no-op. Unlike `start`, it never
+watches logs afterward.
 
 ### `candle list`
 
@@ -196,8 +199,14 @@ This will interactively print any log messages from the service as they happen.
 If no `service names` are provided: Watch every process in the project (including
 any processes that are launched after `watch` is started)
 
+If service names are provided, those services must already be running. `watch` never launches
+processes.
+
 If multiple services are being watched, then the output lines will include prefixes
 that looks like `[<service name>] ...`
+
+`watch` blocks until Ctrl-C, so it refuses to run in agent mode (see "Interactive mode detection"
+below), and agent mode leaves it out of `candle --help`. Agents should use `candle logs` instead.
 
 Example:
 
@@ -211,6 +220,11 @@ Example:
 Show the recent logs for the given service, from its most recent run.
 
 If `[name]` is not provided: Show recent logs across all services in the project directory.
+When more than one service is shown, each line is prefixed with `[<service name>]`, and the
+`--count` limit applies to the combined output.
+
+When `--count` cuts off earlier lines from the latest run, the output starts with
+`-- showing the last N lines; use --count to see more --`.
 
 Options:
 
@@ -222,12 +236,14 @@ Options:
     candle kill
     candle kill [service name(s)]
 
+Alias: `candle stop`
+
 Kill named service(s)
 
 If no `service names` are provided: Kill all services for this project directory.
 
-Candle sends `SIGTERM` to the service and its child processes, and escalates to `SIGKILL` if the
-service is still running 5 seconds later.
+Candle sends `SIGTERM` to the service and its child processes, and escalates to `SIGKILL` for any of
+them still running 5 seconds later. The escalation is reported on stderr.
 
 ### `candle restart`
 
@@ -237,6 +253,10 @@ service is still running 5 seconds later.
 Restart running service(s) for this current directory.
 
 If no `service names` are provided: Restart all running services for this project directory
+
+Config-defined services are reloaded from `.candle.json`, so edits to `shell` or `root` take
+effect. Like `start`, `restart` watches the logs afterward in interactive mode, and accepts
+`--watch` and `--bg`.
 
 ### `candle wait-for-log`
 
@@ -284,16 +304,16 @@ If no `[names]` are provided: Show ports for all running services in the current
 ### `candle open-browser`
 
     candle open-browser
-    candle open-browser [service name(s)]
+    candle open-browser [service name]
 
 Attempts to detect the listening port for a target service, then opens a web
 browser to `http://localhost:<port>` for that service.
 
-The port is auto-detected using the same logic as `list-ports`.
+If no service name is provided, the project must have exactly one service running.
 
-The `open-browser` command isn't perfect, and it can be confused by certain
-situations (such as if your service has multiple listening ports). But in
-most simple cases it works pretty well.
+The port is auto-detected using the same logic as `list-ports`. If the service is
+listening on more than one port, Candle opens the lowest-numbered one, which may not
+be the one you want. But in most simple cases it works pretty well.
 
 ## Project setup commands ##
 
@@ -308,7 +328,20 @@ Create a new `.candle.json` config file in the current directory.
 
 Add a new service to the nearest `.candle.json` config file.
 
-If the config file doesn't exist yet, it will be created.
+If the config file doesn't exist yet, it will be created in the current directory.
+
+### `candle remove-service`
+
+    candle remove-service [service name]
+
+Remove a service from the nearest `.candle.json` config file.
+
+### `candle set-config`
+
+    candle set-config <key> <value>
+
+Set a configuration option in `.candle.json`. The valid keys are `logEviction.maxLogsPerService`
+(default 1000) and `logEviction.maxRetentionSeconds` (default 86400). Both take a positive integer.
 
 # Less frequently used commands #
 
@@ -344,9 +377,21 @@ directory that no longer exists.
 
 Like `list-ports` but shows open ports for all Candle-managed processes across the entire system.
 
+### `candle clear-logs`
+
+    candle clear-logs [service name(s)]
+
+Delete the stored logs for the named service(s) in this project.
+
+If no `service names` are provided: Delete the logs for every service in this project.
+
+### `candle list-docs` and `candle get-doc <name>`
+
+List and print the documentation files built into the binary (the files in `./docs` plus this README).
+
 ### `candle erase-database`
 
-Delete the database stored in `~/.local/state/candle`.
+Delete Candle's database (by default in `~/.local/state/candle`; see "Database location" below).
 
 This command can help if the database is corrupted or it needs a full SQL schema rebuild.
 
@@ -367,7 +412,7 @@ Accepted by the commands that act on a single project: `start`, `run`, `check-st
 `open-browser`. The system-wide commands (`list-all`, `list-ports-all`, `kill-all`,
 `find-orphans`) don't take it.
 
-Unlike the default search, `--project-dir` never falls back to a parent directory — naming a
+Unlike the default search, `--project-dir` never falls back to a parent directory. Naming a
 subdirectory of a project is an error rather than a silent match on the parent.
 
 ## Projects that no longer exist ##
@@ -393,7 +438,15 @@ Candle uses **interactive mode** only when:
    driving the CLI. This is "agent mode".
 
 Candle currently checks for these environment variables to detect a coding agent: `CLAUDECODE`,
-`GEMINI_CLI`, `CURSOR_AGENT`.
+`GEMINI_CLI`, `CURSOR_AGENT`. A variable counts only when it is set to a non-empty value.
+
+# Database location #
+
+Candle stores service state and logs in a SQLite database, `candle.db`, in its state directory:
+
+ - `$CANDLE_DATABASE_DIR` if set,
+ - otherwise `$XDG_STATE_HOME/candle` if `XDG_STATE_HOME` is set,
+ - otherwise `~/.local/state/candle`.
 
 # License #
 

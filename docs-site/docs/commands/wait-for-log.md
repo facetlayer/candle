@@ -10,18 +10,22 @@ a log that happened on a previous launch. If you use `candle wait-for-log` immed
 ## Syntax
 
 ```bash
-candle wait-for-log <name> --message <message> [--timeout <seconds>]
+candle wait-for-log [name] --message <message> [--timeout <seconds>]
 ```
 
 ## Arguments
 
-- `name` - Name of the service to monitor (required)
+- `name` - Name of the service to monitor. If omitted, the logs of every service in the project are searched.
 
 ## Options
 
 - `--message <string>` - The exact log message substring to wait for (required)
 - `--timeout <number>` - Timeout in seconds (default: 30)
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
+
+## Exit Status
+
+Exits with status 0 once the message is found. Exits with status 1 if the timeout expires, if the process exits before the message appears, or if the service has no logs.
 
 ## Examples
 

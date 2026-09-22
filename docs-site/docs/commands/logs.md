@@ -26,7 +26,7 @@ GET /api/users 200
 
 ## Arguments
 
-- `name` - Name of the service(s) to view logs for. Can specify multiple services.
+- `name` - Name of the service(s) to view logs for. Can specify multiple services. If omitted, shows logs for every service in the project. When more than one service is shown, each line is prefixed with `[service-name]`.
 
 ## Options
 

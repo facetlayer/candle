@@ -6,7 +6,7 @@
 #     curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
 #
 # Options (pass after `| sh -s --` when piping):
-#     --version <tag>    Install a specific release (e.g. v0.13.3). Default: latest.
+#     --version <tag>    Install a specific release (e.g. v0.14.0). Default: latest.
 #     --bin-dir <dir>    Where to install. Default: $HOME/.local/bin.
 #     --uninstall        Stop running services, then remove the installed binary.
 #     --help             Show this message.

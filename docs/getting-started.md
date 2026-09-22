@@ -20,7 +20,7 @@ candle start service1 service2
 ### Managing Running Services
 
 ```bash
-# List running services
+# List the project's services and their status
 candle list
 
 # View logs for a service
@@ -29,7 +29,7 @@ candle logs my-service
 # Watch live output
 candle watch my-service
 
-# Stop a service
+# Stop a service (`stop` is an alias for `kill`)
 candle stop my-service
 candle kill my-service
 ```
@@ -60,4 +60,5 @@ Candle can be used as an MCP server for AI assistants:
 candle --mcp
 ```
 
-This exposes tools for listing, starting, stopping, and viewing logs of services.
+This exposes tools for listing, starting, stopping, and restarting services, viewing their logs,
+listing their ports, and adding services to the config.

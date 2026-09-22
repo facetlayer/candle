@@ -21,13 +21,21 @@ List services with structured output.
 **Parameters:**
 - `showAll` (boolean, optional) - Show all services globally, not just current directory
 
+### ListPorts
+
+List open ports for running services.
+
+**Parameters:**
+- `showAll` (boolean, optional) - Show ports for all services globally, not just the current project
+- `serviceName` (string, optional) - Filter to a specific service
+
 ### GetLogs
 
 Get recent logs for a specific service.
 
 **Parameters:**
 - `name` (string, required) - Name of the service
-- `limit` (number, optional) - Maximum number of log lines to return
+- `limit` (number, optional) - Maximum number of log lines to return (default: 200)
 - `projectDir` (string, optional) - Project directory for cross-directory access
 
 ### StartService
@@ -69,6 +77,13 @@ Add a new server configuration to the config file.
 - `shell` (string, required) - Shell command to run
 - `root` (string, optional) - Root directory for the service
 
+### OpenBrowser
+
+Open a browser window to a running service's lowest listening port.
+
+**Parameters:**
+- `serviceName` (string, required) - Name of the service to open
+
 ## Claude Code Integration
 
 To use Candle with Claude Code, add it to your MCP configuration. Claude Code can then:
@@ -82,7 +97,7 @@ To use Candle with Claude Code, add it to your MCP configuration. Claude Code ca
 
 Before using MCP tools, you'll typically want to configure your services. You can do this via:
 
-- The CLI: `candle add-service api "npm run dev"`
+- The CLI: `candle add-service api --shell "npm run dev"`
 - The MCP `AddServerConfig` tool (see above)
 
 See [add-service](commands/add-service) for CLI usage details.

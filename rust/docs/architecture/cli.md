@@ -1,10 +1,10 @@
 # CLI & miscellaneous subsystem
 
-Covers errors, debug logging, run context, doc files, project-scope resolution, command-name validation, the public library API, version handling, and the `wait-for-log` command.
+Covers errors, debug logging, run context, doc files, project-scope resolution, `find-orphans`, command-name validation, the library module surface, version handling, and the `wait-for-log` command.
 
-The Rust implementation lives in `rust/src/` — `errors.rs`, `debug.rs`, `run_context.rs`, `doc_files.rs`, `commands/mod.rs` (command-name validation), `commands/wait_for_log.rs`, and `lib.rs` (module surface) — with CLI dispatch in `main.rs` and help/parsing in `cli/{help,parser}.rs`. It mirrors the original `src/errors.ts`, `src/debug.ts`, `src/runContext.ts`, `src/docFiles/DocFilesHelper.ts`, `src/index.ts`, `src/cli/assertValidCommandName.ts`, `src/wait-for-log-command.ts`, plus `src/findPackageJson.ts` and version handling in `src/main-cli.ts`.
+The Rust implementation lives in `rust/src/` — `errors.rs`, `debug.rs`, `run_context.rs`, `doc_files.rs`, `commands/mod.rs` (command-name validation), `commands/wait_for_log.rs`, and `lib.rs` (module surface) — with CLI dispatch in `main.rs` and help/parsing in `cli/{help,parser}.rs`. It was ported from the original Node implementation, which has been removed; the following `src/...` files are named for history only: `src/errors.ts`, `src/debug.ts`, `src/runContext.ts`, `src/docFiles/DocFilesHelper.ts`, `src/index.ts`, `src/cli/assertValidCommandName.ts`, `src/wait-for-log-command.ts`, plus `src/findPackageJson.ts` and version handling in `src/main-cli.ts`.
 
-## 1. Errors (`errors.rs`, mirrors `src/errors.ts`)
+## 1. Errors (`errors.rs`, originally `src/errors.ts`)
 
 The codebase uses a **structural** error-classification convention, not `instanceof`. An error is "usage" if and only if it carries a truthy `isUsageError` property. The original top-level handler tests it dynamically:
 
@@ -38,9 +38,9 @@ In the Node original all extend JS `Error`. The `.name` value is set explicitly 
 `ConfigFileError` is the only one **without** `isUsageError`, so it prints with full detail.
 
 ### Rust implementation
-A single error enum (`CandleError`) with a method `is_usage_error(&self) -> bool`. Each variant carries its data (`cwd`, `command_name`, `recent_logs`). `Display` produces the exact message templates above. A separate `name()` accessor returns the literal `.name` strings for parity. The top-level handler: if `is_usage_error()`, print only the `Display`/message to stderr; otherwise print a fuller debug representation. Exit code on any uncaught error is `1` (matching `process.exit(1)` in the original `.catch`).
+A single error enum (`CandleError`: `UsageError`, `ConfigFileError`, `MissingServiceWithName { command_name, cwd }`, `MissingSetupFile { cwd }`, `ProcessStartFailed { command_name, recent_logs: String }`, `Generic`) with a method `is_usage_error(&self) -> bool` (true for all but `ConfigFileError` and `Generic`). `recent_logs` is already the joined content string. `Display` produces the exact message templates above. A separate `name()` accessor returns the literal `.name` strings for parity (`"Error"` for `Generic`). The top-level handler, `fail_with` in `main.rs`, prints the `Display` message to stderr for **every** error, usage or not (there is no stack/debug form), and exits `1`.
 
-## 2. Debug logging (`debug.rs`, mirrors `src/debug.ts`)
+## 2. Debug logging (`debug.rs`, originally `src/debug.ts`)
 
 The Node original:
 
@@ -61,7 +61,7 @@ Behavior:
 ### Rust implementation
 `fn debug_log(msg: &str)` → if `std::env::var("CANDLE_ENABLE_LOGS").map(|v| !v.is_empty()).unwrap_or(false)`, open `cwd/candle.log` with `OpenOptions::new().create(true).append(true)` and write `msg` + `"\n"`. cwd is resolved via `std::env::current_dir()` on each call (it can change). IO errors are swallowed to match the fire-and-forget nature — silently ignored so the CLI never crashes on a read-only cwd.
 
-## 3. Run context (`run_context.rs`, mirrors `src/runContext.ts`)
+## 3. Run context (`run_context.rs`, originally `src/runContext.ts`)
 
 The Node original:
 
@@ -72,16 +72,17 @@ export const isRunByAgent = !!process.env.CLAUDECODE;
 - A single cached value: true iff **any** of the agent marker env vars `CLAUDECODE` (Claude Code), `GEMINI_CLI` (Gemini CLI), or `CURSOR_AGENT` (Cursor) is present and non-empty (empty string → false). Codex's `CODEX_SANDBOX` is deliberately excluded: it marks an active sandbox, not the agent, and is unset under `--sandbox danger-full-access`.
 - Evaluated **once at process start**. The Rust code computes it once via `OnceLock`, reading the marker vars.
 
-Effects of `isRunByAgent` (from the CLI dispatch, originally `src/main-cli.ts`):
-- Help text: when true, the `watch [name...]` line is **omitted** from grouped help (`const watchLines = isRunByAgent ? '' : "...watch..."`, line 42).
-- Line 435: alters behavior of an agent-aware command branch — outside this subsystem's core, but the flag drives CLI presentation/behavior differences. The flag is globally accessible.
+Effects of `is_run_by_agent()` in the Rust CLI:
+- Help text: when true, the `watch [name...]` line is **omitted** from grouped help (`cli/help.rs`).
+- `cmd_watch` refuses to run (stderr `Error: 'watch' blocks and is not available in agent mode. Use 'candle logs' to view process output.`, exit 1).
+- It feeds `is_interactive()` = `!is_run_by_agent() && stdout is a TTY`, which decides whether `start`/`restart` watch logs after launching (overridable with `--watch` / `--bg`).
 
 ### Rust implementation
 `pub fn is_run_by_agent() -> bool { static V: OnceLock<bool> = ...; *V.get_or_init(|| detect_agent(|n| std::env::var(n).ok())) }`, where `detect_agent` tests each name in `AGENT_ENV_VARS` for a non-empty value.
 
-## 4. DocFilesHelper (`doc_files.rs`, mirrors `src/docFiles/DocFilesHelper.ts`)
+## 4. DocFilesHelper (`doc_files.rs`, originally `src/docFiles/DocFilesHelper.ts`)
 
-An in-repo implementation of the `list-docs` / `get-doc` subset of `@facetlayer/docs-tool`. No external dependency.
+An in-repo implementation of the `list-docs` / `get-doc` subset of `@facetlayer/docs-tool`. Most of this section describes the Node original; the Rust differences are summarized under "Rust implementation" at the end.
 
 ### Where docs come from
 In the Node original, constructed in `src/main-cli.ts:36-39`:
@@ -138,7 +139,7 @@ if (binName === '.' || binName.endsWith('.js') || binName.endsWith('.mjs') || bi
     return `node ${script} ${subcommand} ${filename}`;
 return `${binName} ${subcommand} ${filename}`;
 ```
-⚠️ `relative(cwd, argv[1])` can produce `'.'` (when argv[1] equals cwd) → first branch. The Rust code bases this on `std::env::args().nth(0)` (the executable path) instead of an `argv[1]` script path. For a real installed binary `binName = "candle"` → produces `candle get-doc <file>`. The default `get-doc` subcommand is kept.
+⚠️ `relative(cwd, argv[1])` can produce `'.'` (when argv[1] equals cwd) → first branch. The Rust code does not compute this: it always prints `candle get-doc <file>`, which is what the Node logic produced for an installed `candle` binary.
 
 ### `printDocFileList()` — used by `list-docs`
 Exact stdout format:
@@ -160,7 +161,11 @@ Available doc files:
 - ⚠️ Note it prints `rawContent` (with frontmatter), not the trimmed `content`. And the error message uses the original `name` arg, not the normalized baseName.
 
 ### Rust implementation
-Module `doc_files`. `parse_frontmatter(&str) -> ParsedDocument`. Struct `DocFilesHelper { file_map: IndexMap<String, PathBuf>, get_doc_subcommand: Option<String> }` (an order-preserving `indexmap` to match insertion-order iteration). The `regex` crate handles the frontmatter regex. Stdout strings match exactly for test parity.
+Module `doc_files` has free functions, not a helper struct. The docs are **embedded at compile time** with `include_dir!("$CARGO_MANIFEST_DIR/../docs")` plus `include_str!("../../README.md")`, so the binary is relocatable and never reads the filesystem for docs.
+- `all_docs()`: the embedded top-level `*.md` files **sorted by filename**, then `README.md` last.
+- `parse_frontmatter(&str) -> (name, description, content)`: hand-written (no `regex`). Normalizes `\r\n` to `\n`, requires a leading `---\n` and a closing `\n---\n`, and reads only the `name` and `description` keys; otherwise returns the full text unchanged.
+- `list_docs() -> Vec<DocInfo { name, description, filename }>` and `get_doc(name) -> Result<DocContent { filename, raw_content }, DocLookupError::{NotFound, Ambiguous(Vec<String>)}>`, with the same exact-then-substring lookup as above.
+- Printing lives in `main.rs`. `cmd_list_docs` always uses `candle get-doc <filename>` as the command hint (there is no `formatGetDocCommand` equivalent). `cmd_get_doc` prints `raw_content`, then `\n(File source: docs/<filename>)` (a relative label, since there is no on-disk path); `NotFound` prints the two `Doc file not found` lines and `Ambiguous` prints `Multiple docs match "<name>": <files>. Please be more specific.`, both to stderr with exit 1.
 
 ## 4b. Project scope (`project_scope.rs`)
 
@@ -196,8 +201,8 @@ up is the point there.
 left to validate against, so an unknown name reports "No running processes found" rather than
 failing.
 
-`list-all`, `list-ports-all`, `kill-all`, and `find-orphans` do not accept the flag at all — the
-parser rejects it as `Unknown argument` — because they are already system-wide.
+`list-all`, `list-ports-all`, `kill-all`, `find-orphans`, and `erase-database` do not accept the flag at all — the
+parser rejects it as `Unknown argument` — because they are already system-wide. (`erase-database`'s only flag is `--force`; see [database.md](database.md) §10.)
 
 ## 4c. find-orphans (`commands/find_orphans.rs`)
 
@@ -219,7 +224,7 @@ reaper, not an orphan. Output is the human report from `format_find_orphans` or,
 serialized `FindOrphansOutput` (reasons serialize camelCase: `missingProjectDir`,
 `missingConfigFile`, `serviceNotInConfig`).
 
-## 5. assertValidCommandName (`commands/mod.rs`, mirrors `src/cli/assertValidCommandName.ts`)
+## 5. assertValidCommandName (`commands/mod.rs`, originally `src/cli/assertValidCommandName.ts`)
 
 The Node original:
 
@@ -245,11 +250,13 @@ There are **no syntactic name rules**. "Valid" = resolvable via `getServiceInfoB
 So `assertValidCommandName` propagates `MissingSetupFileError` or `MissingServiceWithNameError` (both usage errors). `assertValidCommandNames` short-circuits on the first invalid name.
 
 ### Rust implementation
-`fn assert_valid_command_name(name)` / `..._names(names: &[String])` delegate to `get_service_info_by_name`. Loose-matching and DB lookup live in the config/db subsystems — this module is a thin validator with a fail-fast (first error wins) loop.
+There is a single `assert_valid_command_names(conn, cwd, names) -> Result<(), CandleError>` (no per-name function and no `get_service_info_by_name`). Empty `names` → `Ok`. Otherwise `project_dir = find_project_dir(cwd)?`, and for each name: if `find_processes_by_command_name_and_project_dir` returns **any** row (running or killed, so transient names pass), continue; else `get_service_config_by_name(name, Some(cwd))?`. Fail-fast: the first error wins. Callers: `kill` (skipped under an explicit `--project-dir`) and `restart`.
 
-## 6. Public library API (`lib.rs`, mirrors `src/index.ts`)
+## 6. Library surface (`lib.rs`) and the former public API (`src/index.ts`)
 
-The Node original is the entrypoint exported as `@facetlayer/candle` for programmatic/GUI use, with exactly these exports. The Rust crate re-exports the equivalents:
+The Rust `lib.rs` is **not** a curated public API: it declares every module `pub` (`cli`, `commands`, `config`, `db`, `debug`, `dirs`, `doc_files`, `errors`, `kill`, `log_filters`, `logs`, `mcp`, `monitor`, `output`, `process_alive`, `process_tree`, `project_scope`, `run_context`, `start`) so the integration tests in `rust/tests/` can reach internals, and re-exports nothing at the crate root. There is no `AfterProcessStartLogFilter` alias.
+
+For history, the Node original was exported as `@facetlayer/candle` for programmatic/GUI use, with exactly these exports:
 
 **Process listing** (from `./list-command.ts`):
 - `handleList`, `printListOutput`, `formatUptime`
@@ -269,7 +276,7 @@ The Node original is the entrypoint exported as `@facetlayer/candle` for program
 - `findAllProcesses`, `findProcessesByProjectDir`, `findProcessesByCommandNameAndProjectDir` (from `./database/processTable.ts`)
 - type `ProcessEntry`
 
-This public surface does **not** include the error classes, `debugLog`, `isRunByAgent`, `DocFilesHelper`, or `assertValidCommandName` — those are internal. The Rust public crate API is the same listing/logs/config/db set; the alias rename `LatestExecutionLogFilter → AfterProcessStartLogFilter` is preserved for GUI/consumer parity.
+That public surface did **not** include the error classes, `debugLog`, `isRunByAgent`, `DocFilesHelper`, or `assertValidCommandName`. The Rust crate has no equivalent curated API.
 
 ## 7. Version handling
 
@@ -283,9 +290,9 @@ The Node original used two mechanisms:
 
 3. yargs `.version()` (line 234) is configured but the manual check at line 290 wins because it fires first.
 
-⚠️ In the original, two different path-resolution strategies coexisted: the inline `--version` handler only checked `../package.json` (one level up from the script dir), while `findPackageJson` checked two candidate depths. The Rust implementation compiles the version in at build time via `env!("CARGO_PKG_VERSION")` (in `rust/src/`) rather than reading `package.json` at runtime — avoiding the dual-path fragility. `-v`/`--version` is handled before command dispatch; output is the bare version string + newline on stdout, exit 0.
+⚠️ In the original, two different path-resolution strategies coexisted: the inline `--version` handler only checked `../package.json` (one level up from the script dir), while `findPackageJson` checked two candidate depths. The Rust implementation compiles the version in at build time via `env!("CARGO_PKG_VERSION")` (`help::version()` in `rust/src/cli/help.rs`, from `rust/Cargo.toml`) rather than reading `package.json` at runtime — avoiding the dual-path fragility. In `main()`, `-v`/`--version` anywhere in argv is handled right after the `--monitor` check and before help and command dispatch; output is the bare version string + newline on stdout, exit 0.
 
-## 8. wait-for-log command (`commands/wait_for_log.rs`, mirrors `src/wait-for-log-command.ts`)
+## 8. wait-for-log command (`commands/wait_for_log.rs`, originally `src/wait-for-log-command.ts`)
 
 `handle_wait_for_log(options)` polls logs until a target substring appears or timeout. Belongs partly to the logs subsystem but the control flow is self-contained.
 
@@ -316,7 +323,9 @@ Algorithm:
 - The `LogIterator` is stateful — `getNextLogs()` returns only logs newer than the last call (cursor). The filter (`logFilter`) is also stateful across calls in the loop (same instance reused), distinct from `printRecentLogs` which creates a fresh filter.
 
 ### Rust implementation
-`async fn handle_wait_for_log(opts) -> WaitForLogResult { success: bool, message: Option<String> }`, depending on the logs subsystem (`LogIterator`, `LatestExecutionLogFilter`, `get_process_logs`, `console_log_row`, `ProcessLogType`) plus `tokio` for the 200ms poll loop.
+`fn handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms) -> WaitForLogResult { success: bool }` (synchronous; the TS failure `message` was never read, so it is dropped). It uses the logs subsystem (`LogIterator::with_limit(.., Some(1000))`, `LatestExecutionLogFilter`, `get_process_logs`, `console_log_row`, `ProcessLogType`) and `std::thread::sleep` for the 200ms poll. `print_recent_logs` does not call `check_latest_launch_status` on its fresh filter; the filter picks up the launch boundary as it streams.
+
+`cmd_wait_for_log` in `main.rs`: `--message` is required (else stderr `Missing required argument: message`, exit 1); `--timeout` is in **seconds** (default 30, fractional allowed) and converted to ms; names are not validated; a `success: false` result exits 1.
 
 ## 9. External npm dependencies & Rust crate equivalents
 
@@ -327,10 +336,10 @@ The Node original's dependencies map onto the following in the Rust implementati
 | `node:fs` (`appendFileSync`, `readFileSync`, `readdirSync`, `existsSync`) | debug log, doc reading, package.json | `std::fs` |
 | `node:path` (`join`, `basename`, `relative`, `dirname`) | path building | `std::path::{Path, PathBuf}` |
 | `node:url` (`fileURLToPath`) | resolve module dir | n/a (uses `std::env::current_exe()` / build-time paths) |
-| frontmatter regex | `parseFrontmatter` | `regex` crate |
-| insertion-ordered `Map` | `fileMap` iteration order | `indexmap` crate |
+| frontmatter regex | `parseFrontmatter` | hand-written string parsing (no `regex`) |
+| insertion-ordered `Map` / runtime `readdirSync` | `fileMap` iteration order, doc discovery | `include_dir` (compile-time embedding) + a sorted `Vec` |
 | `process.env` | env reads | `std::env::var` |
 | `yargs` (`.version()`) | CLI parsing/version | hand-rolled parser in `rust/src/cli/parser.rs`; version via `env!("CARGO_PKG_VERSION")` |
-| `setTimeout`/promises | poll loop | `tokio::time::sleep` |
+| `setTimeout`/promises | poll loop | `std::thread::sleep` (no async runtime) |
 
 No third-party npm deps in this subsystem itself — `@facetlayer/docs-tool` was intentionally removed and replaced by the in-repo `DocFilesHelper` (per the file header comment).

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { TestWorkspace } from './utils';
 
 // Guarantees a process manager has to keep: kill really kills, one start
@@ -36,6 +37,20 @@ describe('process safety', () => {
             expect(result.stderrAsString()).toContain('sent SIGKILL');
             expect(result.stdoutAsString()).toContain("Killed 'stubborn'");
             expect(isAlive(pid)).toBe(false);
+        }, 20000);
+
+        it('SIGKILLs a child that ignores SIGTERM after its parent exits', async () => {
+            await workspace.runCli(['start', 'stubborn-child']);
+            await workspace.runCli(['wait-for-log', 'stubborn-child', '--message', 'ready']);
+            const pid = await pidOf('stubborn-child');
+            const childPid = Number(execFileSync('pgrep', ['-P', String(pid)]).toString().trim().split('\n')[0]);
+            expect(childPid).toBeGreaterThan(0);
+
+            const result = await workspace.runCli(['kill', 'stubborn-child']);
+
+            expect(result.stderrAsString()).toContain('sent SIGKILL');
+            expect(isAlive(pid)).toBe(false);
+            expect(isAlive(childPid)).toBe(false);
         }, 20000);
     });
 

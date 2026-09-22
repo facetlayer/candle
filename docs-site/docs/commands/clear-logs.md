@@ -42,9 +42,9 @@ candle clear-logs
 
 ## Behavior
 
-1. Deletes log entries from the SQLite database
-2. Optimizes the database to reclaim space
-3. Removes orphaned log entries
+1. Deletes log entries for the named services, or for every service in the project when no names are given
+2. Removes orphaned log entries (logs for any service, in any project, that Candle no longer tracks)
+3. Optimizes the database to reclaim space
 
 ## Notes
 

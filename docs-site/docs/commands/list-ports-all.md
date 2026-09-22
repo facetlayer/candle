@@ -24,7 +24,7 @@ The command outputs a table with the following columns:
 | PID | Process ID that has the port open |
 | PORT | Port number |
 | ADDRESS | Network address (e.g., 127.0.0.1, 0.0.0.0) |
-| PROTOCOL | Network protocol (TCP/UDP), with "(child)" suffix for child processes |
+| PROTOCOL | Network protocol (always TCP, since only listening TCP sockets are detected), with "(child)" suffix for child processes |
 
 ## Example
 
@@ -36,6 +36,7 @@ Example output:
 
 ```
 SERVICE  PID    PORT  ADDRESS    PROTOCOL
+-------  -----  ----  ---------  -----------
 api      12345  3000  127.0.0.1  TCP
 api      12346  3001  127.0.0.1  TCP (child)
 web      12400  8080  0.0.0.0    TCP

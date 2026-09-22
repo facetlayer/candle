@@ -10,3 +10,4 @@ test/workspaces/
 .docusaurus
 docs-site/build
 .env
+.temp/
