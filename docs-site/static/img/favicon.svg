@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Candle: a flame over a wax body -->
+  <path d="M16 2c3.2 4 4.6 6.6 4.6 8.9a4.6 4.6 0 0 1-9.2 0C11.4 8.6 12.8 6 16 2z" fill="#f59e0b"/>
+  <path d="M16 7.2c1.3 1.8 1.9 3 1.9 4a1.9 1.9 0 0 1-3.8 0c0-1 .6-2.2 1.9-4z" fill="#fde68a"/>
+  <rect x="15.2" y="15" width="1.6" height="2.4" rx=".8" fill="#374151"/>
+  <rect x="10" y="17" width="12" height="13" rx="2" fill="#6366f1"/>
+  <rect x="10" y="17" width="12" height="3" rx="1.5" fill="#818cf8"/>
+</svg>
