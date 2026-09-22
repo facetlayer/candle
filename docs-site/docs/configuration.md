@@ -64,6 +64,16 @@ The directory where the command will run. A relative path is resolved against th
 }
 ```
 
+## Unknown keys
+
+Candle warns on stderr about any key it doesn't recognize, at the top level or inside a service, each time it loads the config. The command still runs. When the key looks like a known one, the warning suggests it:
+
+```
+Warning: unknown key "cwd" in service "api" in .candle.json (did you mean "root"?)
+```
+
+Unknown keys are kept as-is when `add-service`, `remove-service` or `set-config` rewrites the file.
+
 ## Log Eviction
 
 The `logEviction` field controls how Candle manages stored log data. By default, Candle keeps up to 1000 log entries per service and deletes logs older than 24 hours.
@@ -98,7 +108,8 @@ binary and nothing to configure.
 Older versions had a `logCollector` field for choosing between a Node.js and a Rust
 collector sidecar. Neither exists anymore, so the field is gone: `candle set-config
 logCollector ...` now reports an unknown key. A leftover `"logCollector"` entry in an
-existing `.candle.json` is harmless — it is ignored and preserved as-is.
+existing `.candle.json` is harmless: Candle ignores it, preserves it as-is, and prints an
+unknown-key warning. Delete the entry to silence the warning.
 :::
 
 ## Complete Example

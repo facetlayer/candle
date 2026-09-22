@@ -165,6 +165,10 @@ describe('CLI --project-dir', () => {
             });
 
             expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain(
+                `No .candle.json in ${child} (--project-dir doesn't search parent directories)`
+            );
+            expect(result.stderrAsString()).not.toContain('current directory');
         });
     });
 

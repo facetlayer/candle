@@ -139,5 +139,36 @@ describe('CLI Remove-Service Command', () => {
             expect(config.services).toHaveLength(0);
             expect(config.logEviction.maxLogsPerService).toBe(500);
         });
+
+        it('should preserve unknown keys on the remaining services and end with a newline', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(configPath, JSON.stringify({
+                services: [
+                    { name: 'keep', shell: 'npm start', env: { A: '1' } },
+                    { name: 'drop', shell: 'npm test' },
+                ],
+            }, null, 2));
+
+            await workspace.runCli(['remove-service', 'drop'], { cwd: tempDir });
+
+            const text = fs.readFileSync(configPath, 'utf8');
+            expect(text.endsWith('}\n')).toBe(true);
+            expect(JSON.parse(text).services).toEqual([{ name: 'keep', shell: 'npm start', env: { A: '1' } }]);
+        });
+
+        it('should keep unknown per-service keys through set-config', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(configPath, JSON.stringify({
+                services: [{ name: 'keep', shell: 'npm start', note: 'hello' }],
+            }, null, 2));
+
+            await workspace.runCli(['set-config', 'logEviction.maxLogsPerService', '50'], { cwd: tempDir });
+
+            const text = fs.readFileSync(configPath, 'utf8');
+            expect(text.endsWith('}\n')).toBe(true);
+            const config = JSON.parse(text);
+            expect(config.services).toEqual([{ name: 'keep', shell: 'npm start', note: 'hello' }]);
+            expect(config.logEviction.maxLogsPerService).toBe(50);
+        });
     });
 });

@@ -154,6 +154,14 @@ describe('CLI Error Handling', () => {
             expect(result.stderrAsString()).toMatch(/\.candle\.json|\.candle-setup\.json|config/i);
         });
 
+        it('should suggest how to create a config on first run', async () => {
+            const result = await workspace.runCli(['ps'], { cwd: '/tmp', ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('candle add-service <name> --shell <cmd>');
+            expect(result.stderrAsString()).toContain('candle setup-project');
+        });
+
         it('should have descriptive error for unknown service', async () => {
             const result = await workspace.runCli(['start', 'unknown-xyz'], { ignoreExitCode: true });
 

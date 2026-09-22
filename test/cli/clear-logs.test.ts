@@ -64,6 +64,24 @@ describe('CLI Clear-Logs Command', () => {
 
             expect(result.stdoutAsString()).toContain('Logs cleared successfully');
         });
+
+        it('should clear logs for every service in the project, including running and transient ones', async () => {
+            // Running services keep their process rows, so the orphan sweep alone
+            // wouldn't remove these logs.
+            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+            await workspace.runCli(['start', 'all-transient', '--shell', 'node ../../sampleServers/echoServer.js']);
+            await workspace.runCli(['wait-for-log', 'all-transient', '--message', 'Echo server started']);
+
+            const result = await workspace.runCli(['clear-logs']);
+
+            expect(result.stdoutAsString()).toMatch(/Cleared \d+ log entries/);
+            expect(result.stdoutAsString()).not.toContain('No logs found to clear');
+            expect((await workspace.runCli(['logs', 'echo'])).stdoutAsString()).not.toContain('Echo server started');
+            expect((await workspace.runCli(['logs', 'all-transient'])).stdoutAsString()).not.toContain('Echo server started');
+
+            await workspace.runCli(['kill', 'echo', 'all-transient']);
+        });
     });
 
     describe('clear-logs for unknown service', () => {

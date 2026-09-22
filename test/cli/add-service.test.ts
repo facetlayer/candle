@@ -104,10 +104,102 @@ describe('CLI Add-Service Command', () => {
             const configPath = path.join(tempDir, '.candle-setup.json');
             fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
 
+            fs.mkdirSync(path.join(tempDir, 'packages/backend'), { recursive: true });
+
             await workspace.runCli(['add-service', 'backend', '--shell', 'npm start', '--root', 'packages/backend'], { cwd: tempDir });
 
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             expect(config.services[0].root).toBe('packages/backend');
+        });
+
+        it('should reject a root directory that does not exist', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
+
+            const result = await workspace.runCli(['add-service', 'backend', '--shell', 'npm start', '--root', './sub'], {
+                cwd: tempDir,
+                ignoreExitCode: true,
+            });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('Root directory does not exist');
+            expect(result.stderrAsString()).toContain(path.join(tempDir, 'sub'));
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            expect(config.services).toHaveLength(0);
+        });
+    });
+
+    describe('name validation', () => {
+        for (const badName of ['bad name!', 'a;b', '$(whoami)', 'x/y']) {
+            it(`should reject ${JSON.stringify(badName)}`, async () => {
+                const configPath = path.join(tempDir, '.candle.json');
+                fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
+
+                const result = await workspace.runCli(['add-service', badName, '--shell', 'npm start'], {
+                    cwd: tempDir,
+                    ignoreExitCode: true,
+                });
+
+                expect(result.failed()).toBe(true);
+                expect(result.stderrAsString()).toContain('Invalid service name');
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                expect(config.services).toHaveLength(0);
+            });
+        }
+
+        it('should accept letters, digits, dashes, underscores and dots', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
+
+            await workspace.runCli(['add-service', 'Web_2.api-v1', '--shell', 'npm start'], { cwd: tempDir });
+
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            expect(config.services[0].name).toBe('Web_2.api-v1');
+        });
+    });
+
+    describe('config file rewriting', () => {
+        it('should end the written file with a newline', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(configPath, JSON.stringify({ services: [] }, null, 2));
+
+            await workspace.runCli(['add-service', 'api', '--shell', 'npm start'], { cwd: tempDir });
+
+            expect(fs.readFileSync(configPath, 'utf8').endsWith('}\n')).toBe(true);
+        });
+
+        it('should preserve unknown per-service keys', async () => {
+            const configPath = path.join(tempDir, '.candle.json');
+            fs.writeFileSync(
+                configPath,
+                JSON.stringify({ services: [{ name: 'existing', shell: 'echo hi', env: { PORT: '3000' }, note: 'keep' }] }, null, 2)
+            );
+
+            const result = await workspace.runCli(['add-service', 'api', '--shell', 'npm start'], { cwd: tempDir });
+
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            expect(config.services[0]).toEqual({ name: 'existing', shell: 'echo hi', env: { PORT: '3000' }, note: 'keep' });
+            expect(config.services[1]).toEqual({ name: 'api', shell: 'npm start' });
+            // Unknown keys still warn.
+            expect(result.stderrAsString()).toContain('unknown key "env" in service "existing"');
+        });
+    });
+
+    describe('unknown config keys', () => {
+        it('should warn (not fail) on an unknown service key, suggesting the likely one', async () => {
+            fs.writeFileSync(
+                path.join(tempDir, '.candle.json'),
+                JSON.stringify({ services: [{ name: 'web', shell: 'echo hi', cwd: 'sub' }], extra: 1 }, null, 2)
+            );
+
+            const result = await workspace.runCli(['list'], { cwd: tempDir });
+
+            const stderr = result.stderrAsString();
+            expect(stderr).toContain('Warning: unknown key "cwd" in service "web" in .candle.json (did you mean "root"?)');
+            expect(stderr).toContain('Warning: unknown key "extra" in .candle.json');
+            // Printed once, even though the config is read more than once.
+            expect(stderr.split('"cwd"').length - 1).toBe(1);
+            expect(result.stdoutAsString()).toContain('web');
         });
     });
 

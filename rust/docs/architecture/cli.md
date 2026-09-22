@@ -28,7 +28,7 @@ In the Node original all extend JS `Error`. The `.name` value is set explicitly 
 | `UsageError` | `true` | `"UsageError"` | — | (caller-supplied) |
 | `ConfigFileError` | **absent** (not a usage error) | `"ConfigFileError"` | — | (caller-supplied) |
 | `MissingServiceWithNameError` | `true` | `"NeedRunCommandError"` ⚠️ | `cwd: string`, `commandName: string` | `` No service '${commandName}' configured for directory: ${cwd} `` |
-| `MissingSetupFileError` | `true` | `"MissingSetupFile"` ⚠️ | `cwd: string` | `` No .candle.json file found in (or above) current directory: ${cwd} `` |
+| `MissingSetupFileError` | `true` | `"MissingSetupFile"` ⚠️ | `cwd: string`, `explicit: bool` | Discovery: `` No .candle.json file found in (or above) current directory: ${cwd} `` plus a second line suggesting `candle add-service <name> --shell <cmd>` or `candle setup-project`. `--project-dir` (`explicit`): `` No .candle.json in ${cwd} (--project-dir doesn't search parent directories) `` |
 | `ProcessStartFailedError` | `true` | `"ProcessStartFailedError"` | — | `` Process '${commandName}' failed to start. Recent logs:\n${recentLogs} `` (Rust: blank/content-less rows dropped; just `Process '<name>' failed to start.` when there are none) |
 
 ⚠️ **Easy to get wrong:** `MissingServiceWithNameError.name === "NeedRunCommandError"` and `MissingSetupFileError.name === "MissingSetupFile"` — the `name` strings do not match the class identifiers. These literal strings are preserved because tests and logs may depend on `error.name`.

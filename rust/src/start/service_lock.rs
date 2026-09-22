@@ -17,8 +17,63 @@ use std::path::{Path, PathBuf};
 use crate::dirs::get_state_directory;
 
 /// Holds the lock until dropped.
+///
+/// Also holds a shared lock on the database lock file, so `erase-database`
+/// (which takes it exclusively) can't erase while a start is in progress.
 pub struct ServiceStartLock {
+    _database: DatabaseLock,
     _file: File,
+}
+
+/// A shared or exclusive hold on the database lock file. Released on drop.
+pub struct DatabaseLock {
+    _file: File,
+}
+
+/// Path of the lock file that `erase-database` takes exclusively and every
+/// start takes shared.
+pub fn database_lock_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("locks").join("database.lock")
+}
+
+fn open_lock_file(path: &Path) -> std::io::Result<File> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+}
+
+/// Block until `flock(operation)` succeeds on `file`, retrying on EINTR.
+fn flock_blocking(file: &File, operation: libc::c_int) -> std::io::Result<()> {
+    loop {
+        let rc = unsafe { libc::flock(file.as_raw_fd(), operation) };
+        if rc == 0 {
+            return Ok(());
+        }
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err);
+        }
+    }
+}
+
+/// Take the database lock shared (starts) or exclusive (`erase-database`).
+pub fn acquire_database_lock_in(
+    state_dir: &Path,
+    exclusive: bool,
+) -> std::io::Result<DatabaseLock> {
+    let file = open_lock_file(&database_lock_path(state_dir))?;
+    let op = if exclusive {
+        libc::LOCK_EX
+    } else {
+        libc::LOCK_SH
+    };
+    flock_blocking(&file, op)?;
+    Ok(DatabaseLock { _file: file })
 }
 
 /// Stable 64-bit FNV-1a, so every candle build maps a service to the same file.
@@ -48,26 +103,15 @@ pub fn acquire_in(
     project_dir: &str,
     service_name: &str,
 ) -> std::io::Result<ServiceStartLock> {
-    let path = lock_path(state_dir, project_dir, service_name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)?;
-
-    loop {
-        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-        if rc == 0 {
-            return Ok(ServiceStartLock { _file: file });
-        }
-        let err = std::io::Error::last_os_error();
-        if err.kind() != std::io::ErrorKind::Interrupted {
-            return Err(err);
-        }
-    }
+    // Always database lock first, then the service lock. Erase only ever takes
+    // the database lock, so this fixed order can't deadlock.
+    let database = acquire_database_lock_in(state_dir, false)?;
+    let file = open_lock_file(&lock_path(state_dir, project_dir, service_name))?;
+    flock_blocking(&file, libc::LOCK_EX)?;
+    Ok(ServiceStartLock {
+        _database: database,
+        _file: file,
+    })
 }
 
 /// [`acquire_in`] using the resolved state directory.

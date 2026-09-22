@@ -87,6 +87,7 @@ impl ProjectScope {
 
         Err(CandleError::MissingSetupFile {
             cwd: dir.display().to_string(),
+            explicit: true,
         })
     }
 

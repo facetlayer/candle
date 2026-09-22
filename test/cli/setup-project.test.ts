@@ -33,8 +33,9 @@ describe('CLI setup-project Command', () => {
         await workspace.runCli(['setup-project'], { cwd: tempDir });
 
         const configPath = path.join(tempDir, '.candle.json');
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        expect(config).toEqual({ services: [] });
+        const text = fs.readFileSync(configPath, 'utf8');
+        expect(JSON.parse(text)).toEqual({ services: [] });
+        expect(text.endsWith('}\n')).toBe(true);
     });
 
     it('should print success message', async () => {
