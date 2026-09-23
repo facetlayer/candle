@@ -1,5 +1,5 @@
 
-# Unreleased
+# 0.15.0
  - Lots of bug fixes and improvements.
  - Add `--json` option to many commands.
  - Add `--project-dir` option to many commands.
