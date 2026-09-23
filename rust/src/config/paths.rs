@@ -1,25 +1,23 @@
 //! Lexical path validation and resolution helpers.
 //!
-//! Ported from `isValidRootPath` / `isValidRelativePath` / `getServiceCwd` in
-//! `src/configFile.ts`. All operations are purely lexical (string-level) and
-//! must NOT touch the filesystem — in particular do not use `canonicalize`,
-//! which resolves symlinks and requires the path to exist. This mirrors Node's
-//! `path.normalize`, which only folds `.` / `..` segments textually.
+//! All operations are purely lexical (string-level) and must NOT touch the
+//! filesystem — in particular do not use `canonicalize`, which resolves
+//! symlinks and requires the path to exist. `.` / `..` segments are folded
+//! textually.
 
 use std::path::{Path, PathBuf};
 
 use crate::config::model::ServiceConfig;
 
-/// POSIX absolute-path test (target platform is macOS/Linux, matching Node's
-/// `path.isAbsolute` on those platforms).
+/// POSIX absolute-path test (target platform is macOS/Linux).
 pub fn is_absolute(p: &str) -> bool {
     p.starts_with('/')
 }
 
 /// Lexically normalize a POSIX-style path, folding `.` and `..` segments and
-/// collapsing redundant separators. Mirrors `path.normalize`.
+/// collapsing redundant separators.
 ///
-/// Note the deliberate quirk reproduced from the Node code: the validity check
+/// Note the deliberate quirk: the validity check
 /// is a STRING `starts_with("..")` test on the normalized result, so a path
 /// segment literally named `..foo` normalizes to `..foo` and is therefore
 /// treated as escaping.
@@ -87,7 +85,7 @@ pub fn path_resolve(base: &Path, p: &str) -> PathBuf {
 }
 
 /// Resolve a service's working directory given the config file path.
-/// Mirrors `getServiceCwd`: `dirname(configPath)` joined with `service.root`
+/// The result is `dirname(configPath)` joined with `service.root`
 /// (absolute root wins), or just `dirname(configPath)` when no root is set.
 pub fn get_service_cwd(config_path: &Path, service: &ServiceConfig) -> PathBuf {
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));

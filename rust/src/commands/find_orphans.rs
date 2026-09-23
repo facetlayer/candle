@@ -99,10 +99,8 @@ fn classify(project_dir: &str, service_name: &str) -> Option<OrphanReason> {
 /// Only processes that are actually alive are considered — a dead row is stale
 /// bookkeeping for the reaper to clear, not an orphan anyone needs to kill.
 pub fn handle_find_orphans(conn: &Connection) -> Result<FindOrphansOutput, CandleError> {
-    let db_err = |e: rusqlite::Error| CandleError::ConfigFileError(format!("database error: {e}"));
-
-    let running = find_all_running_processes(conn).map_err(db_err)?;
-    let alive = filter_alive_processes(conn, running).map_err(db_err)?;
+    let running = find_all_running_processes(conn)?;
+    let alive = filter_alive_processes(conn, running)?;
 
     let orphans = alive
         .into_iter()

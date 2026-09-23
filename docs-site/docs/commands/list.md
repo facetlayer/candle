@@ -53,9 +53,10 @@ api  not running
 
 `pid` and `uptime` are omitted for services that aren't running. A service
 whose latest run exited with a non-zero code shows `EXITED (<code>)` instead of
-`not running`, and one whose latest start failed without an exit code (missing
-`root` directory, shell couldn't be launched, killed by a signal during startup)
-shows `FAILED`. A service stopped with `candle kill` or `candle restart` is never
+`not running`, and one whose latest run ended without an exit code for any
+reason but a deliberate stop (missing `root` directory, shell couldn't be
+launched, or killed by a signal Candle didn't send, such as a segfault or the
+OOM killer) shows `FAILED`. A service stopped with `candle kill` or `candle restart` is never
 `FAILED`:
 
 ```

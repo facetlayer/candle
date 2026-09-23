@@ -1,9 +1,7 @@
 //! Console rendering of `process_output` rows.
 //!
-//! Ported from `src/logs.ts` (`consoleLogRow` / `consoleLogSystemMessage` and the
-//! stdout/stderr helpers). All output goes through [`crate::output::out`] — even
-//! stderr-typed log lines, which Node renders via `console.log` (stdout) with a
-//! `[stderr]` prefix, not via `console.error`.
+//! All output goes through [`crate::output::out`] — even stderr-typed log lines,
+//! which are rendered to stdout with a `[stderr]` prefix rather than to stderr.
 //!
 //! There are no ANSI colors in this code path, so `FORCE_COLOR` has no effect.
 
@@ -18,7 +16,7 @@ pub enum OutputFormat {
     Json,
 }
 
-/// Options controlling how a row is rendered, mirroring `ConsoleLogOptions`.
+/// Options controlling how a row is rendered.
 #[derive(Debug, Clone, Default)]
 pub struct ConsoleLogOptions {
     pub format: Option<OutputFormat>,
@@ -86,7 +84,7 @@ pub fn console_log_row(row: &ProcessLog, options: &ConsoleLogOptions) {
     let fmt = format(options);
 
     // Build the effective prefix. enable_app_name_prefix prepends `[cmd] ` to any
-    // existing prefix, exactly like the Node `[${command_name}] ${prefix || ''}`.
+    // existing prefix.
     let base_prefix = options.prefix.clone().unwrap_or_default();
     let prefix = if options.enable_app_name_prefix {
         format!("[{}] {}", row.command_name, base_prefix)

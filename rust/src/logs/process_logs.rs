@@ -1,13 +1,11 @@
 //! Process output (log) storage and retrieval.
 //!
-//! Ported from `src/logs/processLogs.ts` and `src/logs/buildLogSearchQuery.ts`.
 //! Rows are written by the monitor process and read back by the CLI / MCP
 //! server. The `timestamp` column is populated by its SQLite `DEFAULT
-//! (strftime('%s','now'))`, exactly like the Node `saveProcessLog`, so it is NOT
-//! supplied on insert.
+//! (strftime('%s','now'))`, so it is not supplied on insert.
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, ToSql};
+use rusqlite::{params_from_iter, Connection};
 
 use crate::logs::log_type::ProcessLogType;
 
@@ -26,8 +24,7 @@ pub struct ProcessLog {
     pub run_id: Option<i64>,
 }
 
-/// Search parameters for [`get_process_logs`], mirroring `LogSearchOptions` in
-/// `processLogs.ts`. At least one of `project_dir` / `command_names` must be set.
+/// Search parameters for [`get_process_logs`]. At least one of `project_dir` / `command_names` must be set.
 #[derive(Debug, Clone, Default)]
 pub struct LogSearchOptions {
     pub project_dir: Option<String>,
@@ -111,13 +108,14 @@ pub fn latest_run_ids(
         "select po.command_name, max(po.run_id) from process_output po where {scope} \
          and po.run_id is not null group by po.command_name"
     );
-    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(refs.as_slice(), |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let rows = stmt.query_map(params_from_iter(params), |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
     rows.collect()
 }
 
-/// Build the log-search SQL + params, faithfully porting `buildLogSearchQuery`.
+/// Build the log-search SQL + params.
 ///
 /// Returns rows in newest-first order (`timestamp desc, id desc`); callers that
 /// want chronological order should reverse the result (see [`get_process_logs`]).
@@ -163,35 +161,23 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
 
 /// The project/command part of a `where` clause over `process_output po`.
 fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
-    let mut params: Vec<Value> = Vec::new();
-    let names_clause = |params: &mut Vec<Value>| {
-        if options.command_names.len() == 1 {
-            params.push(Value::Text(options.command_names[0].clone()));
-            "po.command_name = ?".to_string()
-        } else {
-            let placeholders = vec!["?"; options.command_names.len()].join(", ");
-            for name in &options.command_names {
-                params.push(Value::Text(name.clone()));
-            }
-            format!("po.command_name in ({placeholders})")
-        }
-    };
-
-    let clause = match (&options.project_dir, options.command_names.is_empty()) {
-        (Some(project_dir), false) => {
-            params.push(Value::Text(project_dir.clone()));
-            let names = names_clause(&mut params);
-            format!("po.project_dir = ? and {names}")
-        }
-        (Some(project_dir), true) => {
-            params.push(Value::Text(project_dir.clone()));
-            "po.project_dir = ?".to_string()
-        }
-        (None, false) => names_clause(&mut params),
-        // Caller error; mirrors the JS `throw`. Yields nothing rather than panicking.
-        (None, true) => "1 = 0".to_string(),
-    };
-    (clause, params)
+    let mut conditions = Vec::new();
+    let mut params = Vec::new();
+    if let Some(project_dir) = &options.project_dir {
+        conditions.push("po.project_dir = ?".to_string());
+        params.push(Value::Text(project_dir.clone()));
+    }
+    if !options.command_names.is_empty() {
+        let placeholders = vec!["?"; options.command_names.len()].join(", ");
+        conditions.push(format!("po.command_name in ({placeholders})"));
+        params.extend(options.command_names.iter().cloned().map(Value::Text));
+    }
+    if conditions.is_empty() {
+        // Neither a project nor names: a caller error. Match nothing rather
+        // than every row in the database.
+        conditions.push("1 = 0".to_string());
+    }
+    (conditions.join(" and "), params)
 }
 
 /// Keep only rows from the row's command's latest run. `is` rather than `=` so
@@ -209,9 +195,7 @@ fn push_log_type_filter(sql: &mut String, params: &mut Vec<Value>, log_types: &[
     }
     let placeholders = vec!["?"; log_types.len()].join(", ");
     sql.push_str(&format!(" and po.log_type in ({placeholders})"));
-    for t in log_types {
-        params.push(Value::Integer(*t));
-    }
+    params.extend(log_types.iter().copied().map(Value::Integer));
 }
 
 fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
@@ -226,7 +210,7 @@ fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
     })
 }
 
-/// Result of [`get_process_logs_with_eviction_info`], mirroring `ProcessLogResult`.
+/// Result of [`get_process_logs_with_eviction_info`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessLogResult {
     /// Logs in chronological (oldest-first) order.
@@ -237,7 +221,7 @@ pub struct ProcessLogResult {
 
 /// Fetch process logs in chronological (oldest-first) order.
 ///
-/// Mirrors `getProcessLogs`: the SQL fetches newest-first (so a `limit` keeps the
+/// The SQL fetches newest-first (so a `limit` keeps the
 /// most recent rows); the result is then reversed into chronological order.
 pub fn get_process_logs(
     conn: &Connection,
@@ -248,7 +232,7 @@ pub fn get_process_logs(
 
 /// Fetch process logs plus a flag indicating whether older logs were evicted.
 ///
-/// Mirrors `getProcessLogsWithEvictionInfo`: when a `limit` is set and we got at
+/// When a `limit` is set and we got at
 /// least that many rows, re-run the same (limitless) query wrapped in a
 /// `count(*)` subquery; if the total exceeds what we returned, older logs were
 /// truncated.
@@ -257,11 +241,9 @@ pub fn get_process_logs_with_eviction_info(
     options: &LogSearchOptions,
 ) -> rusqlite::Result<ProcessLogResult> {
     let (sql, params) = build_log_search_query(options);
-    let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-
     let mut stmt = conn.prepare(&sql)?;
     let mut logs: Vec<ProcessLog> = stmt
-        .query_map(param_refs.as_slice(), row_to_log)?
+        .query_map(params_from_iter(params), row_to_log)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let mut logs_were_evicted = false;
@@ -273,9 +255,8 @@ pub fn get_process_logs_with_eviction_info(
             };
             let (inner_sql, count_params) = build_log_search_query(&count_options);
             let count_sql = format!("select count(*) as total from ({inner_sql})");
-            let count_refs: Vec<&dyn ToSql> =
-                count_params.iter().map(|v| v as &dyn ToSql).collect();
-            let total: i64 = conn.query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))?;
+            let total: i64 =
+                conn.query_row(&count_sql, params_from_iter(count_params), |row| row.get(0))?;
             if total > logs.len() as i64 {
                 logs_were_evicted = true;
             }

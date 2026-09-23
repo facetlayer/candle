@@ -1,6 +1,6 @@
 //! Starting a single service.
 //!
-//! Ports `startOneService` from `src/start/startOneService.ts`. The flow:
+//! The flow:
 //! check-start dedup → resolve the service config (transient or from file) →
 //! check the launch directory exists → kill any existing instance → record
 //! `process_start_initiated`, whose id becomes the new run id → launch the
@@ -16,7 +16,6 @@ use rusqlite::Connection;
 
 use crate::config::model::ServiceConfig;
 use crate::config::{get_service_config_by_name, is_valid_root_path};
-use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::dirs::candle_db_path;
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
@@ -24,16 +23,15 @@ use crate::logs::process_logs::{get_process_logs, save_run_log, start_run, LogSe
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 use crate::output;
-use crate::process_alive::filter_alive_processes;
+use crate::process_alive::is_service_running;
 use crate::start::launch::launch_monitor;
 
 /// How long the CLI watches the log table for a start result before giving up.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
-/// Poll interval while watching the log table (matches Node's `setTimeout(100)`).
+/// Poll interval while watching the log table.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Options for [`start_one_service`], mirroring the relevant fields of Node's
-/// `RunOptions`.
+/// Options for [`start_one_service`].
 #[derive(Debug, Clone)]
 pub struct RunOptions {
     pub command_name: String,
@@ -44,15 +42,11 @@ pub struct RunOptions {
     pub check_start: bool,
 }
 
-/// Result of a successful (or skipped) start. Mirrors `StartResult`.
+/// Result of a successful (or skipped) start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartResult {
     pub project_dir: String,
     pub service_name: String,
-}
-
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::Generic(format!("database error: {e}"))
 }
 
 /// (device, inode) of the file at the connection's database path, or `None`
@@ -75,16 +69,10 @@ fn record_start_failure_if_idle(
     service_name: &str,
     reason: &str,
 ) -> Result<(), CandleError> {
-    let rows = find_processes_by_command_name_and_project_dir(conn, service_name, project_dir)
-        .map_err(db_err)?;
-    let not_killed: Vec<_> = rows.into_iter().filter(|p| p.killed_at.is_none()).collect();
-    if !filter_alive_processes(conn, not_killed)
-        .map_err(db_err)?
-        .is_empty()
-    {
+    if is_service_running(conn, project_dir, service_name)? {
         return Ok(());
     }
-    let run_id = start_run(conn, service_name, project_dir).map_err(db_err)?;
+    let run_id = start_run(conn, service_name, project_dir)?;
     save_run_log(
         conn,
         Some(run_id),
@@ -92,8 +80,7 @@ fn record_start_failure_if_idle(
         project_dir,
         ProcessLogType::ProcessStartFailed,
         Some(&format!("Process failed to start: {reason}")),
-    )
-    .map_err(db_err)?;
+    )?;
     Ok(())
 }
 
@@ -116,47 +103,30 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         ));
     }
 
+    // Configured services are looked up by name below; the other paths use
+    // the name as given.
+    if opts.command_name.is_empty() && (opts.check_start || opts.shell.is_some()) {
+        return Err(CandleError::UsageError(
+            "Command name is required".to_string(),
+        ));
+    }
+
     // 1. check-start dedup — runs BEFORE config resolution so it works for
     //    transient names that aren't in the config file.
-    if opts.check_start {
-        if opts.command_name.is_empty() {
-            return Err(CandleError::UsageError(
-                "Command name is required".to_string(),
-            ));
-        }
-        let existing = find_processes_by_command_name_and_project_dir(
-            conn,
-            &opts.command_name,
-            &opts.project_dir,
-        )
-        .map_err(db_err)?;
-        // Only entries with no killed_at AND a live PID count as running.
-        // `filter_alive_processes` also deletes the dead rows it finds.
-        let not_killed: Vec<_> = existing
-            .into_iter()
-            .filter(|p| p.killed_at.is_none())
-            .collect();
-        let running = filter_alive_processes(conn, not_killed).map_err(db_err)?;
-        if !running.is_empty() {
-            output::out(&format!(
-                "[Service '{}' is already running]",
-                opts.command_name
-            ));
-            return Ok(StartResult {
-                project_dir: opts.project_dir,
-                service_name: opts.command_name,
-            });
-        }
+    if opts.check_start && is_service_running(conn, &opts.project_dir, &opts.command_name)? {
+        output::out(&format!(
+            "[Service '{}' is already running]",
+            opts.command_name
+        ));
+        return Ok(StartResult {
+            project_dir: opts.project_dir,
+            service_name: opts.command_name,
+        });
     }
 
     // 2. Resolve the service config.
     let service: ServiceConfig = if let Some(shell) = &opts.shell {
         // Transient process.
-        if opts.command_name.is_empty() {
-            return Err(CandleError::UsageError(
-                "Command name is required".to_string(),
-            ));
-        }
         if let Some(root) = &opts.root {
             if !is_valid_root_path(root) {
                 return Err(CandleError::UsageError(format!(
@@ -202,11 +172,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         std::slice::from_ref(&service.name),
         true,
         false,
-    )
-    .map_err(db_err)?;
+    )?;
 
     // 4. Record the launch. Its row id is the new run id.
-    let run_id = start_run(conn, &service.name, &opts.project_dir).map_err(db_err)?;
+    let run_id = start_run(conn, &service.name, &opts.project_dir)?;
 
     // 5. Launch the detached monitor process (`candle --monitor`).
     let info = MonitorLaunchInfo {
@@ -233,44 +202,36 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
                 ..Default::default()
             },
         )
-        .map_err(db_err)
     };
     let deadline = Instant::now() + START_TIMEOUT;
-    let mut started = false;
     loop {
-        let results = this_run(vec![
+        let outcome = this_run(vec![
             ProcessLogType::ProcessStarted.as_i64(),
             ProcessLogType::ProcessStartFailed.as_i64(),
         ])?;
-        if let Some(result) = results.first() {
-            if result.log_type == ProcessLogType::ProcessStarted.as_i64() {
-                started = true;
-                break;
+        match outcome.first() {
+            Some(log) if log.log_type == ProcessLogType::ProcessStarted.as_i64() => break,
+            Some(_) => {
+                // Lifecycle rows such as `process_start_initiated` carry no
+                // content; skip them rather than emit blank lines.
+                let recent_logs = this_run(vec![])?
+                    .into_iter()
+                    .filter_map(|l| l.content)
+                    .filter(|c| !c.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(CandleError::ProcessStartFailed {
+                    command_name: service.name.clone(),
+                    recent_logs,
+                });
             }
-            // Lifecycle rows such as `process_start_initiated` carry no
-            // content; skip them rather than emit blank lines.
-            let recent_logs = this_run(vec![])?
-                .iter()
-                .filter_map(|l| l.content.clone())
-                .filter(|c| !c.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
-            return Err(CandleError::ProcessStartFailed {
-                command_name: service.name.clone(),
-                recent_logs,
-            });
+            None if Instant::now() >= deadline => {
+                return Err(CandleError::Generic(
+                    "Process failed to start (timed out while waiting)".to_string(),
+                ));
+            }
+            None => thread::sleep(POLL_INTERVAL),
         }
-
-        if Instant::now() >= deadline {
-            break;
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-
-    if !started {
-        return Err(CandleError::Generic(
-            "Process failed to start (timed out while waiting)".to_string(),
-        ));
     }
 
     // 7. Success banner. `launch_dir` comes from `resolve_launch_dir`, which

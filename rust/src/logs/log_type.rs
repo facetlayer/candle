@@ -1,13 +1,21 @@
 //! Process log type enum.
 //!
-//! Ported from `src/logs/ProcessLogType.ts`. Stored in the `process_output.log_type`
-//! integer column.
+//! Stored in the `process_output.log_type` integer column.
 
 /// Content of the `process_start_failed` row the monitor writes when Candle
 /// itself stopped the process (`kill`, `restart`, or a `start` replacing it)
 /// during the startup grace period. `ps` / `list` read it to tell that
 /// deliberate stop apart from a failed start, which shows as `FAILED`.
 pub const STOPPED_WHILE_STARTING_MESSAGE: &str = "Process was stopped while starting";
+
+/// Marks a run that ended by a signal Candle didn't send (a segfault, the OOM
+/// killer); `ps` / `list` show such a run as `FAILED`.
+pub const KILLED_BY_SIGNAL: &str = "killed by signal";
+
+/// `Process was killed by signal <n>`, the exit row for a crash by signal.
+pub fn killed_by_signal_message(signal: i32) -> String {
+    format!("Process was {KILLED_BY_SIGNAL} {signal}")
+}
 
 /// Type of a captured process log line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,9 +1,7 @@
 //! Config subsystem: `.candle.json` parsing, discovery, validation, and the
 //! mutating commands (setup-project / add-service / remove-service / set-config).
 //!
-//! Ported from `src/configFile.ts`, `src/addServerConfig.ts`,
-//! `src/removeServerConfig.ts`, `src/set-config-command.ts`, and
-//! `src/setup-project-command.ts`. See `rust/docs/architecture/config.md`.
+//! See `rust/docs/architecture/config.md`.
 
 pub mod commands;
 pub mod file;

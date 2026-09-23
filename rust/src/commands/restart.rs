@@ -1,10 +1,9 @@
 //! `restart` command handler.
 //!
-//! Ported from `src/restart-command.ts`. Kills the named (or all running)
-//! processes for the project, then starts each one again. Config-defined
-//! services are reloaded from `.candle.json` so edits to `shell`/`root` take
-//! effect; transient (not-in-config) services reuse the `shell`/`root` captured
-//! on the stored DB row.
+//! Kills the named (or all running) processes for the project, then starts each
+//! one again. Config-defined services are reloaded from `.candle.json` so edits
+//! to `shell`/`root` take effect; transient (not-in-config) services reuse the
+//! `shell`/`root` captured on the stored DB row.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -20,14 +19,10 @@ use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
 use crate::start::start_one_service::{start_one_service, RunOptions};
 
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::Generic(format!("database error: {e}"))
-}
-
 /// Returns true if the named service has an entry in the project's
-/// `.candle.json`. Mirrors `isServiceDefinedInConfig`: restart reloads
-/// config-defined services from the config file (picking up edits to
-/// `shell`/`root`) rather than relaunching with the captured command.
+/// `.candle.json`. Restart reloads config-defined services from the config
+/// file (picking up edits to `shell`/`root`) rather than relaunching with the
+/// captured command.
 fn is_service_defined_in_config(project_dir: &str, name: &str) -> bool {
     find_config_file(Path::new(project_dir))
         .map(|f| find_service_by_name(&f.config, name).is_some())
@@ -48,7 +43,7 @@ pub fn handle_restart(
 ) -> Result<Vec<String>, CandleError> {
     // Resolve the list of command names to restart.
     let names: Vec<String> = if command_names.is_empty() {
-        let running = find_running_processes_by_project_dir(conn, project_dir).map_err(db_err)?;
+        let running = find_running_processes_by_project_dir(conn, project_dir)?;
         if running.is_empty() {
             return Err(CandleError::UsageError(
                 "No running processes found in this project to restart".to_string(),
@@ -72,13 +67,13 @@ pub fn handle_restart(
         // Fetch process info for all command names before killing.
         let mut process_info: Vec<(&String, Option<ProcessEntry>)> = Vec::new();
         for name in &names {
-            let processes = find_processes_by_command_name_and_project_dir(conn, name, project_dir)
-                .map_err(db_err)?;
+            let processes =
+                find_processes_by_command_name_and_project_dir(conn, name, project_dir)?;
             process_info.push((name, processes.into_iter().next()));
         }
 
         // Kill all existing processes (deduped inside handle_kill_command).
-        handle_kill_command(conn, project_dir, &names, false, false).map_err(db_err)?;
+        handle_kill_command(conn, project_dir, &names, false, false)?;
 
         // Restart each service. For config-defined services, pass shell/root as
         // None so start_one_service reloads from .candle.json. Only transient
@@ -122,12 +117,12 @@ mod tests {
     use crate::db::{get_database, temp_db_dir};
 
     #[test]
-    fn empty_names_no_running_is_usage_error() {
+    fn empty_names_no_running_errors() {
         let dir = temp_db_dir("restart-no-running");
         let conn = get_database(Some(&dir)).unwrap();
 
         let err = handle_restart(&conn, "/proj", &[]).unwrap_err();
-        assert!(err.is_usage_error());
+        assert!(matches!(err, CandleError::UsageError(_)));
         assert!(err.to_string().contains("No running processes"));
 
         drop(conn);

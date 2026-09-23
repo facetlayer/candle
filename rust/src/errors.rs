@@ -1,9 +1,4 @@
 //! Error types.
-//!
-//! Ported from `src/errors.ts`. The Node code uses a structural convention where
-//! an error is a "usage error" iff it carries a truthy `isUsageError` property,
-//! and each class sets an explicit `.name` string (which does not always match the
-//! class identifier). Both are reproduced here for parity.
 
 use std::fmt;
 
@@ -21,13 +16,12 @@ pub enum CandleError {
     /// never searches parent directories.
     MissingSetupFile { cwd: String, explicit: bool },
     /// A service failed to start; carries the joined content of the recent log
-    /// lines captured during launch. Mirrors `ProcessStartFailedError`.
+    /// lines captured during launch.
     ProcessStartFailed {
         command_name: String,
         recent_logs: String,
     },
-    /// A generic, non-usage error (timeouts, launch/IO failures). Mirrors a plain
-    /// `Error` thrown in the Node start flow.
+    /// A generic, non-usage error (timeouts, launch/IO failures).
     Generic(String),
 }
 
@@ -41,37 +35,6 @@ impl CandleError {
         CandleError::MissingServiceWithName {
             command_name: name.to_string(),
             cwd: project_dir.to_string(),
-        }
-    }
-
-    /// Whether this error is a user-facing usage error.
-    ///
-    /// True for everything except `ConfigFileError`, matching the `isUsageError`
-    /// flag in `src/errors.ts`.
-    pub fn is_usage_error(&self) -> bool {
-        match self {
-            CandleError::UsageError(_) => true,
-            CandleError::ConfigFileError(_) => false,
-            CandleError::MissingServiceWithName { .. } => true,
-            CandleError::MissingSetupFile { .. } => true,
-            CandleError::ProcessStartFailed { .. } => true,
-            CandleError::Generic(_) => false,
-        }
-    }
-
-    /// The literal `.name` string the Node class assigns to itself.
-    ///
-    /// Note these do not always match the variant name: `MissingServiceWithName`
-    /// reports `"NeedRunCommandError"` and `MissingSetupFile` reports
-    /// `"MissingSetupFile"`.
-    pub fn name(&self) -> &str {
-        match self {
-            CandleError::UsageError(_) => "UsageError",
-            CandleError::ConfigFileError(_) => "ConfigFileError",
-            CandleError::MissingServiceWithName { .. } => "NeedRunCommandError",
-            CandleError::MissingSetupFile { .. } => "MissingSetupFile",
-            CandleError::ProcessStartFailed { .. } => "ProcessStartFailedError",
-            CandleError::Generic(_) => "Error",
         }
     }
 }
@@ -120,6 +83,12 @@ impl fmt::Display for CandleError {
 
 impl std::error::Error for CandleError {}
 
+impl From<rusqlite::Error> for CandleError {
+    fn from(e: rusqlite::Error) -> Self {
+        CandleError::Generic(format!("database error: {e}"))
+    }
+}
+
 /// The one prefix every fatal user-facing error carries on stderr.
 pub const ERROR_PREFIX: &str = "Error: ";
 
@@ -149,23 +118,19 @@ mod tests {
     }
 
     #[test]
-    fn usage_error_display_and_flags() {
+    fn usage_error_display() {
         let err = CandleError::UsageError("bad args".to_string());
         assert_eq!(err.to_string(), "bad args");
-        assert!(err.is_usage_error());
-        assert_eq!(err.name(), "UsageError");
     }
 
     #[test]
-    fn config_file_error_is_not_usage_error() {
+    fn config_file_error_display() {
         let err = CandleError::ConfigFileError("Config file error: oops".to_string());
         assert_eq!(err.to_string(), "Config file error: oops");
-        assert!(!err.is_usage_error());
-        assert_eq!(err.name(), "ConfigFileError");
     }
 
     #[test]
-    fn missing_service_display_name_and_flag() {
+    fn missing_service_display() {
         let err = CandleError::MissingServiceWithName {
             command_name: "api".to_string(),
             cwd: "/proj".to_string(),
@@ -174,8 +139,6 @@ mod tests {
             err.to_string(),
             "No service 'api' configured for directory: /proj"
         );
-        assert!(err.is_usage_error());
-        assert_eq!(err.name(), "NeedRunCommandError");
     }
 
     #[test]
@@ -208,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_setup_file_display_name_and_flag() {
+    fn missing_setup_file_display() {
         let err = CandleError::MissingSetupFile {
             cwd: "/proj".to_string(),
             explicit: false,
@@ -218,8 +181,6 @@ mod tests {
             "No .candle.json file found in (or above) current directory: /proj\n\
              To create one, run `candle add-service <name> --shell <cmd>` or `candle setup-project`."
         );
-        assert!(err.is_usage_error());
-        assert_eq!(err.name(), "MissingSetupFile");
     }
 
     #[test]

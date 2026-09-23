@@ -1,6 +1,6 @@
 // Hand-rolled argument parser for the candle CLI.
 //
-// We deliberately do not use clap: the Vitest suite asserts on yargs-specific behavior — the literal
+// We deliberately do not use clap: the Vitest suite asserts on specific CLI behavior — the literal
 // substring `Unknown argument` for unrecognized flags, `Unrecognized command '<cmd>'`, exact grouped
 // help, and exit-code conventions. A small hand-rolled parser reproduces these precisely.
 
@@ -103,7 +103,7 @@ impl CommandArgs {
 }
 
 /// Parse the tokens following a command, enforcing the command's option spec. Returns the
-/// yargs-style `Unknown argument: <flag>` error string on an unrecognized flag.
+/// `Unknown argument: <flag>` error string on an unrecognized flag.
 pub fn parse_command_args(command: &str, tokens: &[String]) -> Result<CommandArgs, String> {
     let spec = option_spec(command);
     let mut out = CommandArgs::default();

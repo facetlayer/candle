@@ -1,8 +1,7 @@
 //! `processes` table CRUD.
 //!
-//! Ported from `src/database/processTable.ts`. Updates and deletes are keyed on
-//! `(command_name, project_dir, pid)` exactly as the Node code does (the real PK
-//! column `id` is exposed but not used as the mutation key).
+//! Updates and deletes are keyed on `(command_name, project_dir, pid)` (the real
+//! PK column `id` is exposed but not used as the mutation key).
 
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};

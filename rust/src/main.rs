@@ -294,6 +294,17 @@ fn fatal(message: impl std::fmt::Display) -> ! {
     exit(1);
 }
 
+/// The value of a numeric flag, or `None` when it isn't given. A value that
+/// doesn't parse (`--count abc`, `--exit-after-ms -5`) is a fatal usage error
+/// rather than silently falling back to the default.
+fn numeric_flag<T: std::str::FromStr>(args: &CommandArgs, name: &str) -> Option<T> {
+    let raw = args.value(name)?;
+    match raw.parse() {
+        Ok(value) => Some(value),
+        Err(_) => fatal(format!("--{name} must be a number, got '{raw}'")),
+    }
+}
+
 /// Print a CandleError to stderr and exit 1.
 fn fail_with(err: &CandleError) -> ! {
     fatal(err)
@@ -387,8 +398,7 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
     match handle_start_command(&conn, opts) {
         Ok(started) => {
             if watch_after {
-                let exit_after_ms: Option<u64> =
-                    args.value("exit-after-ms").and_then(|s| s.parse().ok());
+                let exit_after_ms: Option<u64> = numeric_flag(args, "exit-after-ms");
                 if let Err(e) = watch_started_services(&conn, &project_dir, &started, exit_after_ms)
                 {
                     fail_with(&e);
@@ -452,7 +462,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = project_dir_or_exit(&scope);
 
-    // --message is required (yargs demandOption).
+    // --message is required.
     let message = match args.value("message") {
         Some(m) => m,
         None => {
@@ -460,11 +470,13 @@ fn cmd_wait_for_log(args: &CommandArgs) {
         }
     };
 
-    // --timeout is in seconds, default 30; convert to ms like TS `timeout * 1000`.
-    let timeout_secs: f64 = args
-        .value("timeout")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(30.0);
+    // --timeout is in seconds, default 30; convert to ms.
+    let timeout_secs: f64 = numeric_flag(args, "timeout").unwrap_or(30.0);
+    if !(timeout_secs.is_finite() && timeout_secs >= 0.0) {
+        fatal(format!(
+            "--timeout must be a non-negative number of seconds, got '{timeout_secs}'"
+        ));
+    }
     let timeout_ms = (timeout_secs * 1000.0) as u64;
 
     let conn = open_db();
@@ -496,11 +508,11 @@ fn cmd_logs(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = project_dir_or_exit(&scope);
 
-    let limit: i64 = args
-        .value("count")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100);
-    let start_at_id: Option<i64> = args.value("start-at").and_then(|s| s.parse().ok());
+    let limit: i64 = numeric_flag(args, "count").unwrap_or(100);
+    if limit < 1 {
+        fatal(format!("--count must be at least 1, got {limit}"));
+    }
+    let start_at_id: Option<i64> = numeric_flag(args, "start-at");
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -553,8 +565,7 @@ fn cmd_restart(args: &CommandArgs) {
     match handle_restart(&conn, &project_dir, &args.positionals) {
         Ok(restarted) => {
             if watch_after {
-                let exit_after_ms: Option<u64> =
-                    args.value("exit-after-ms").and_then(|s| s.parse().ok());
+                let exit_after_ms: Option<u64> = numeric_flag(args, "exit-after-ms");
                 if let Err(e) =
                     watch_started_services(&conn, &project_dir, &restarted, exit_after_ms)
                 {
@@ -584,7 +595,7 @@ fn cmd_watch(args: &CommandArgs) {
     if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
         fail_with(&e);
     }
-    let exit_after_ms: Option<u64> = args.value("exit-after-ms").and_then(|s| s.parse().ok());
+    let exit_after_ms: Option<u64> = numeric_flag(args, "exit-after-ms");
     match handle_watch(&conn, scope.base_dir(), &args.positionals, exit_after_ms) {
         Ok(()) => {}
         Err(e) => fail_with(&e),

@@ -1,8 +1,7 @@
 //! Process-tree discovery.
 //!
-//! Ported from `src/process-tree.ts`. Collects a root PID plus all of its
-//! transitive descendants by repeatedly querying for child PIDs with a
-//! platform-specific command:
+//! Collects a root PID plus all of its transitive descendants by repeatedly
+//! querying for child PIDs with a platform-specific command:
 //! - macOS: `pgrep -P <pid>`
 //! - Linux: `ps -o pid --no-headers --ppid <pid>`
 //! - Windows: PowerShell `Get-CimInstance Win32_Process -Filter "ParentProcessId=<pid>"`
@@ -72,8 +71,7 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
 /// Run `command args`, parsing stdout as a newline-separated list of PIDs.
 ///
 /// stdin and stderr are silenced; stdout is captured. Non-numeric and blank
-/// lines are dropped. On any spawn failure the result is an empty list (matching
-/// the Node `error` event handler).
+/// lines are dropped. On any spawn failure the result is an empty list.
 #[cfg_attr(
     not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
     allow(dead_code)

@@ -1,9 +1,7 @@
 //! Process killing: signalling a process tree, the per-entry kill state machine,
 //! and the `kill` / `kill-all` command handlers.
 //!
-//! Ports `src/kill/killProcessTree.ts`, `src/kill/killOneRunningProcess.ts`,
-//! `src/kill-command.ts`, and `src/kill-all-command.ts`. See
-//! `rust/docs/architecture/kill-restart.md`.
+//! See `rust/docs/architecture/kill-restart.md`.
 //!
 //! Kill is a *mark*, not a hard delete: the normal success path only sets
 //! `killed_at` so `candle list` immediately stops reporting the row as RUNNING;
@@ -34,11 +32,10 @@ const SIGKILL_WAIT: Duration = Duration::from_secs(1);
 const KILL_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// How long after `killed_at` an entry is considered stale and hard-deleted on a
-/// repeat kill (5 minutes), matching `killOneRunningProcess`.
+/// repeat kill (5 minutes).
 const STALE_ENTRY_SECONDS: i64 = 5 * 60;
 
-/// Outcome of signalling a process tree. Mirrors the Node string union
-/// `'success' | 'process_not_found' | 'error'`.
+/// Outcome of signalling a process tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KillResult {
     Success,
@@ -55,7 +52,6 @@ fn now_unix_seconds() -> i64 {
 
 /// Send `SIGTERM` to every process in the tree rooted at `pid`, children first.
 ///
-/// Mirrors `killProcessTree`:
 /// - The whole tree is snapshotted up front; newly-forked grandchildren are not
 ///   pursued.
 /// - Order is deepest-descendant-first, root shell last.
@@ -182,9 +178,9 @@ pub enum KillOutcome {
 
 /// Kill one process entry and update its database row accordingly.
 ///
-/// Mirrors `killOneRunningProcess`. A falsy (zero) PID is a no-op. Otherwise
-/// the row is marked `killed_at = now` *before* the process is signalled (so the
-/// monitor can tell a deliberate stop from a failed start), and then:
+/// A zero PID is a no-op. Otherwise the row is marked `killed_at = now`
+/// *before* the process is signalled (so the monitor can tell a deliberate stop
+/// from a failed start), and then:
 /// - **Success**: print `[Killed ...]` (unless `quiet`); then if the row was
 ///   already marked killed over 5 minutes ago, warn + hard-delete it; otherwise
 ///   mark `killed_at = now`.
@@ -203,7 +199,7 @@ pub fn kill_one_running_process(
     entry: &ProcessEntry,
     quiet: bool,
 ) -> rusqlite::Result<bool> {
-    // Falsy PID (Node `if (process.pid)`): nothing to kill.
+    // Zero PID: nothing to kill.
     if entry.pid == 0 {
         return Ok(false);
     }
@@ -297,7 +293,6 @@ pub fn kill_one_running_process(
 
 /// Handle `candle kill [name...]`.
 ///
-/// Mirrors `handleKillCommand`:
 /// - With names: dedupe (first-occurrence order) and kill each name's entries,
 ///   querying **all** matching rows (including already-killed). A name with no
 ///   *live* process prints the per-service "No running processes" message unless
@@ -368,8 +363,8 @@ fn kill_by_command_name(
 
 /// Handle `candle kill-all`: kill every row across every project, system-wide.
 ///
-/// Mirrors `handleKillAll` — uses `find_all_processes` (no project/killed filter)
-/// so already-killed-but-unreaped rows are cleaned up as a side effect. Prints
+/// Uses `find_all_processes` (no project/killed filter) so
+/// already-killed-but-unreaped rows are cleaned up as a side effect. Prints
 /// `No running processes found` when there were no rows at all.
 pub fn handle_kill_all(conn: &Connection, quiet: bool) -> rusqlite::Result<()> {
     let processes = find_all_processes(conn)?;

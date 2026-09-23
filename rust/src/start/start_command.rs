@@ -1,8 +1,7 @@
 //! The `start` / `check-start` command handler.
 //!
-//! Ports `handleStartCommand` from `src/start-command.ts`: resolve which
-//! services to start (all configured ones when none are named), enforce the
-//! transient `--shell` rules, and start each service sequentially.
+//! Resolves which services to start (all configured ones when none are named),
+//! enforces the transient `--shell` rules, and starts each service sequentially.
 
 use std::path::Path;
 
@@ -12,7 +11,7 @@ use crate::config::{get_service_config_by_name, resolve_command_names_or_all};
 use crate::errors::CandleError;
 use crate::start::start_one_service::{start_one_service, RunOptions};
 
-/// Options for [`handle_start_command`], mirroring Node's `StartOptions`.
+/// Options for [`handle_start_command`].
 #[derive(Debug, Clone)]
 pub struct StartCommandOptions {
     pub project_dir: String,

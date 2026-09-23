@@ -1,10 +1,10 @@
 //! `logs` command handler.
 //!
-//! Ported from `src/logs-command.ts`. Fetches stored process output for the
-//! given service(s) (or all services in the project when none are named),
-//! filters to the most recent launch (showing logs from a previous launch when
-//! there is no launch marker), and renders each row through the output sink,
-//! either as text or (with `--json`) as a JSON array that carries each row's ID.
+//! Fetches stored process output for the given service(s) (or all services in
+//! the project when none are named), filters to the most recent launch
+//! (showing logs from a previous launch when there is no launch marker), and
+//! renders each row through the output sink, either as text or (with `--json`)
+//! as a JSON array that carries each row's ID.
 
 use rusqlite::Connection;
 use serde_json::json;

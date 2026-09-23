@@ -1,21 +1,18 @@
 //! Config data model and order-preserving serialization.
 //!
-//! Ported from the `CandleSetupConfig` / `ServiceConfig` / `LogEvictionConfig`
-//! interfaces in `src/configFile.ts`.
-//!
 //! Design note: rather than relying on `#[serde(flatten)]` (whose serialization
-//! order is fixed by struct-field order and therefore cannot reproduce JS object
-//! insertion order for interspersed unknown keys), this module keeps the parsed
+//! order is fixed by struct-field order and therefore cannot reproduce the
+//! file's original key order for interspersed unknown keys), this module keeps the parsed
 //! config as typed fields *plus* a `key_order` list and an `extra` map. The
 //! canonical write-back path (`to_value` / `to_json_string`) reconstructs the
-//! object in the original insertion order, matching `JSON.stringify(config, null, 2)`
-//! for the common cases (2-space indent, falsy `root` / `enableStdin` omitted,
-//! unknown top-level and per-service keys preserved), plus a trailing newline.
+//! object in the original insertion order, as 2-space-indented JSON (falsy
+//! `root` / `enableStdin` omitted, unknown top-level and per-service keys
+//! preserved) with a trailing newline.
 
 use serde_json::{Map, Value};
 
 /// Config filenames in priority order (first match wins). `.candle-setup.json`
-/// is deprecated but still supported. Mirrors `CONFIG_FILENAMES` in configFile.ts.
+/// is deprecated but still supported.
 pub const CONFIG_FILENAMES: [&str; 2] = [".candle.json", ".candle-setup.json"];
 
 /// Default filename used when creating a new config file.
@@ -57,7 +54,7 @@ pub struct ResolvedLogEvictionConfig {
 pub struct CandleSetupConfig {
     pub services: Vec<ServiceConfig>,
     pub log_eviction: Option<LogEvictionConfig>,
-    /// Top-level key insertion order, used to reproduce JS object ordering on
+    /// Top-level key insertion order, used to preserve the file's key ordering on
     /// write-back. Known keys (`services` / `logEviction`) and unknown keys (held
     /// in `extra`) both appear here.
     pub(crate) key_order: Vec<String>,
@@ -97,7 +94,7 @@ impl LogEvictionConfig {
 
 impl ServiceConfig {
     /// Serialize with fields in the canonical insertion order used by
-    /// `addServerConfig`: `name`, `shell`, then `root` / `enableStdin` only when
+    /// `add-service`: `name`, `shell`, then `root` / `enableStdin` only when
     /// truthy.
     fn to_value(&self) -> Value {
         let mut m = Map::new();
@@ -178,7 +175,7 @@ impl CandleSetupConfig {
     }
 
     /// Ensure a top-level key is present in `key_order` (appending it at the end
-    /// if missing), matching JS where assigning a new key appends it.
+    /// if missing), so newly set keys are written after existing ones.
     pub(crate) fn ensure_key(&mut self, key: &str) {
         if !self.key_order.iter().any(|k| k == key) {
             self.key_order.push(key.to_string());

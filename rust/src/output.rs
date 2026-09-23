@@ -47,9 +47,9 @@ impl CapturedOutput {
             .join("\n")
     }
 
-    /// The captured lines formatted for an MCP tool response, mirroring the Node
-    /// `ConsoleLogInterceptor`: stderr lines get a `"[stderr] "` prefix, stdout
-    /// lines pass through verbatim, emission order preserved.
+    /// The captured lines formatted for an MCP tool response: stderr lines get a
+    /// `"[stderr] "` prefix, stdout lines pass through verbatim, emission order
+    /// preserved.
     pub fn mcp_log_lines(&self) -> Vec<String> {
         self.combined
             .iter()

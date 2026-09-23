@@ -1,8 +1,7 @@
 //! `list` / `list-all` command.
 //!
-//! Ported from `src/list-command.ts`. Produces a structured listing of services
-//! and running processes, plus a pretty-table formatter and the JSON shape the
-//! `--json` flag and MCP consume.
+//! Produces a structured listing of services and running processes, plus a
+//! pretty-table formatter and the JSON shape the `--json` flag and MCP consume.
 //!
 //! RUNNING is determined by liveness: the `list` query is already restricted to
 //! `killed_at is null`, and [`filter_alive_processes`] drops (and deletes) rows
@@ -20,12 +19,12 @@ use crate::db::process_table::{
 };
 use crate::dirs::resolve_launch_dir;
 use crate::errors::CandleError;
-use crate::logs::log_type::STOPPED_WHILE_STARTING_MESSAGE;
+use crate::logs::log_type::{KILLED_BY_SIGNAL, STOPPED_WHILE_STARTING_MESSAGE};
 use crate::logs::ProcessLogType;
 use crate::process_alive::filter_alive_processes;
 
-/// One row in a `list` result. Field order and (camelCase) names match the JSON
-/// objects `handleList` emits, which `--json` serializes directly.
+/// One row in a `list` result. Serialized directly by `--json`, so field order
+/// and (camelCase) names define the JSON output shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListProcess {
     #[serde(rename = "serviceName")]
@@ -48,7 +47,7 @@ pub struct ListProcess {
     pub exit_code: Option<i64>,
 }
 
-/// Result of [`handle_list`]. Mirrors `ListOutput`; only `processes` is ever set.
+/// Result of [`handle_list`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListOutput {
     pub processes: Vec<ListProcess>,
@@ -72,15 +71,8 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
-/// Wrap a database error as a (non-usage) config error so the single `CandleError`
-/// return type can carry it. These should not occur in practice.
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::ConfigFileError(format!("database error: {e}"))
-}
-
 /// Whether a running process's stored command differs from its config entry.
-/// Mirrors `hasConfigDrift`: compares `shell`, and `root` with empty/null/None
-/// normalized to "unset".
+/// Compares `shell`, and `root` with empty/null/None normalized to "unset".
 fn has_config_drift(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> bool {
     let service = match service {
         Some(s) => s,
@@ -109,8 +101,8 @@ fn resolve_shell(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> Strin
 }
 
 /// Format a duration in milliseconds as `"1d 2h"`, `"3m 5s"`, `"0s"`, etc.
-/// Mirrors `formatUptime`: only non-zero components are shown, and an all-zero
-/// duration renders as `"0s"`.
+/// Only non-zero components are shown, and an all-zero duration renders as
+/// `"0s"`.
 pub fn format_uptime(milliseconds: i64) -> String {
     let total_seconds = (milliseconds / 1000).max(0);
     let days = total_seconds / 86400;
@@ -170,9 +162,9 @@ enum LatestRun {
     /// Ended with a non-zero exit code (a crash, or a start that exited
     /// non-zero): status `EXITED (<code>)`.
     Exited(i64),
-    /// Failed to start without an exit code: the shell couldn't be spawned, the
-    /// root directory was missing, or it was killed by a signal Candle didn't
-    /// send during the startup grace period. Status `FAILED`.
+    /// Ended without an exit code for a reason other than a deliberate stop:
+    /// the shell couldn't be spawned, the root directory was missing, or it was
+    /// killed by a signal Candle didn't send (a crash). Status `FAILED`.
     Failed,
 }
 
@@ -201,8 +193,7 @@ fn latest_run(
             ],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .optional()
-        .map_err(db_err)?;
+        .optional()?;
 
     let Some((log_type, content)) = row else {
         return Ok(LatestRun::Unremarkable);
@@ -213,6 +204,7 @@ fn latest_run(
     if log_type == ProcessLogType::ProcessExited.as_i64() {
         return Ok(match nonzero_code {
             Some(code) => LatestRun::Exited(code),
+            None if content.contains(KILLED_BY_SIGNAL) => LatestRun::Failed,
             None => LatestRun::Unremarkable,
         });
     }
@@ -239,8 +231,7 @@ pub fn handle_list(
     show_all: bool,
 ) -> Result<ListOutput, CandleError> {
     if show_all {
-        let entries = filter_alive_processes(conn, find_all_processes(conn).map_err(db_err)?)
-            .map_err(db_err)?;
+        let entries = filter_alive_processes(conn, find_all_processes(conn)?)?;
         let processes = entries
             .into_iter()
             .map(|entry| {
@@ -265,9 +256,8 @@ pub fn handle_list(
 
     let running = filter_alive_processes(
         conn,
-        find_running_processes_by_project_dir(conn, &project_dir).map_err(db_err)?,
-    )
-    .map_err(db_err)?;
+        find_running_processes_by_project_dir(conn, &project_dir)?,
+    )?;
 
     let mut processes: Vec<ListProcess> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
@@ -394,18 +384,17 @@ pub fn format_list_detail(output: &ListOutput) -> String {
     entries.join("\n\n")
 }
 
-/// Serialize the processes array as pretty JSON (2-space indent), matching the
-/// Node CLI's `JSON.stringify(output.processes, null, 2)`. This is the shape the
-/// `--json` flag and MCP consume.
+/// Serialize the processes array as pretty JSON (2-space indent). This is the
+/// shape the `--json` flag and MCP consume.
 pub fn list_output_to_json(output: &ListOutput) -> String {
     serde_json::to_string_pretty(&output.processes).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Render a [`ListOutput`] as the pretty table.
 ///
-/// Mirrors `printListOutput`: an empty result prints `No services configured.`;
-/// otherwise a `NAME STATUS PID UPTIME COMMAND DIRECTORY` table with two-space
-/// column separators and a dashed separator row. ` [config changed]` is appended
+/// An empty result prints `No services configured.`; otherwise a
+/// `NAME STATUS PID UPTIME COMMAND DIRECTORY` table with two-space column
+/// separators and a dashed separator row. ` [config changed]` is appended
 /// to STATUS where the process drifted from config; PID 0 renders as `-`.
 pub fn format_list_output(output: &ListOutput) -> String {
     format_table(output, true)
@@ -775,6 +764,15 @@ mod tests {
         log(ProcessLogType::ProcessExited, Some("Process was stopped"));
         assert_eq!(latest(), LatestRun::Unremarkable);
 
+        // A crash by a signal Candle didn't send is FAILED.
+        log(ProcessLogType::ProcessStartInitiated, None);
+        log(ProcessLogType::ProcessStarted, None);
+        log(
+            ProcessLogType::ProcessExited,
+            Some(&crate::logs::log_type::killed_by_signal_message(11)),
+        );
+        assert_eq!(latest(), LatestRun::Failed);
+
         // A start that exited non-zero keeps its code.
         log(ProcessLogType::ProcessStartInitiated, None);
         log(
@@ -788,6 +786,7 @@ mod tests {
             "Process failed to start: root directory does not exist: /proj/sub",
             "Process failed to start: could not run 'sh': boom",
             "Process failed to start: stopped by a signal",
+            "Process failed to start: killed by signal 11",
         ] {
             log(ProcessLogType::ProcessStartInitiated, None);
             log(ProcessLogType::ProcessStartFailed, Some(reason));

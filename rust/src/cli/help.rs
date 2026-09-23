@@ -1,9 +1,8 @@
 // Help text rendering for the candle CLI.
 //
-// Ported verbatim from `printGroupedHelp()` in src/main-cli.ts. The Vitest help suite asserts on
-// section headers and command names via substring checks, so the grouped layout is reproduced
-// exactly. The `watch` line is hidden when running under an agent (see src/main-cli.ts), matching
-// `isRunByAgent`.
+// The Vitest help suite (test/cli/help.test.ts) asserts on section headers and command names via
+// substring checks, so keep the grouped layout stable. The `watch` line is hidden when running
+// under an agent (see `is_run_by_agent`).
 
 use crate::run_context::is_run_by_agent;
 

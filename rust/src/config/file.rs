@@ -1,9 +1,4 @@
 //! Config file IO, discovery, and service lookup.
-//!
-//! Ported from the file-reading and lookup helpers in `src/configFile.ts`:
-//! `readConfigFile`, `findConfigFile`, `findProjectDir`, `getLogEvictionConfig`,
-//! `findServiceByName`, `getAllServiceNames`, `resolveCommandNamesOrAll`,
-//! `findLooseCommandName`, and `getServiceConfigByName`.
 
 use std::path::{Path, PathBuf};
 
@@ -32,7 +27,7 @@ pub struct FoundServiceConfig {
     pub project_dir: PathBuf,
 }
 
-/// Read and parse a config file. Mirrors `readConfigFile`.
+/// Read and parse a config file.
 ///
 /// Trims the contents; an empty file (after trim) is valid and yields
 /// `{ services: [] }`. Otherwise the JSON is parsed, `services` is normalized,
@@ -79,19 +74,18 @@ fn warn_once(message: &str) {
     }
 }
 
-/// Make a path absolute lexically (mirrors `path.resolve(currentDir)`), without
-/// touching the filesystem.
+/// Make a path absolute lexically, without touching the filesystem.
 fn to_absolute(p: &Path) -> PathBuf {
     std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// Find the nearest config file in `start_dir` or any ancestor.
 ///
-/// Mirrors `findConfigFile`: tries each filename in [`CONFIG_FILENAMES`] order
-/// per directory, walking up to the filesystem root. A read/parse error of an
-/// existing file is wrapped as `Invalid <filename> at <path>: <msg>` (losing the
-/// `MissingSetupFile` type). If nothing is found, returns `MissingSetupFile`
-/// reporting the original starting directory.
+/// Tries each filename in [`CONFIG_FILENAMES`] order per directory, walking up
+/// to the filesystem root. A read/parse error of an existing file is wrapped as
+/// `Invalid <filename> at <path>: <msg>` (losing the `MissingSetupFile` type).
+/// If nothing is found, returns `MissingSetupFile` reporting the original
+/// starting directory.
 pub fn find_config_file(start_dir: &Path) -> Result<FoundConfig, CandleError> {
     let starting_dir = start_dir.to_path_buf();
     let mut current = to_absolute(start_dir);
@@ -126,13 +120,12 @@ pub fn find_config_file(start_dir: &Path) -> Result<FoundConfig, CandleError> {
     })
 }
 
-/// Find the project directory (the directory containing the nearest config
-/// file). Mirrors `findProjectDir`.
+/// Find the project directory (the directory containing the nearest config file).
 pub fn find_project_dir(cwd: &Path) -> Result<PathBuf, CandleError> {
     Ok(find_config_file(cwd)?.project_dir)
 }
 
-/// Resolve log-eviction settings, applying defaults. Mirrors `getLogEvictionConfig`.
+/// Resolve log-eviction settings, applying defaults.
 pub fn get_log_eviction_config(config: Option<&CandleSetupConfig>) -> ResolvedLogEvictionConfig {
     let le = config.and_then(|c| c.log_eviction.as_ref());
     ResolvedLogEvictionConfig {
@@ -145,7 +138,7 @@ pub fn get_log_eviction_config(config: Option<&CandleSetupConfig>) -> ResolvedLo
     }
 }
 
-/// Exact-name service lookup. Mirrors `findServiceByName`.
+/// Exact-name service lookup.
 pub fn find_service_by_name<'a>(
     config: &'a CandleSetupConfig,
     name: &str,
@@ -153,13 +146,13 @@ pub fn find_service_by_name<'a>(
     config.services.iter().find(|s| s.name == name)
 }
 
-/// All configured service names. Mirrors `getAllServiceNames`.
+/// All configured service names.
 pub fn get_all_service_names(config: &CandleSetupConfig) -> Vec<String> {
     config.services.iter().map(|s| s.name.clone()).collect()
 }
 
 /// If `command_names` is non-empty, return it unchanged; otherwise return all
-/// service names from the project config. Mirrors `resolveCommandNamesOrAll`.
+/// service names from the project config.
 pub fn resolve_command_names_or_all(
     project_dir: &Path,
     command_names: &[String],
@@ -177,7 +170,7 @@ pub fn resolve_command_names_or_all(
     Ok(names)
 }
 
-/// Directory-aware loose matching. Mirrors `findLooseCommandName`.
+/// Directory-aware loose matching.
 ///
 /// Finds services whose name *contains* `command_name`; among those, prefers
 /// ones whose resolved root equals the search directory, walking up parent
@@ -245,7 +238,6 @@ pub fn find_loose_command_name(
 }
 
 /// Resolve a service by name (exact match first, then loose matching).
-/// Mirrors `getServiceConfigByName`.
 pub fn get_service_config_by_name(
     command_name: &str,
     current_dir: Option<&Path>,
@@ -377,7 +369,7 @@ mod tests {
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
         let err = resolve_command_names_or_all(dir.path(), &[]).unwrap_err();
         assert_eq!(err.to_string(), "No services configured in .candle.json");
-        assert!(err.is_usage_error());
+        assert!(matches!(err, CandleError::UsageError(_)));
     }
 
     #[test]

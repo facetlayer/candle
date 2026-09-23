@@ -1,16 +1,17 @@
 //! Process liveness probing.
 //!
-//! Ported from `src/process-alive.ts`. Uses a signal-0 `kill` to test whether a
-//! PID is alive without actually signalling it.
+//! Uses a signal-0 `kill` to test whether a PID is alive without actually signalling it.
 
 use rusqlite::Connection;
 
-use crate::db::process_table::{delete_process_entry, ProcessEntry};
+use crate::db::process_table::{
+    delete_process_entry, find_processes_by_command_name_and_project_dir, ProcessEntry,
+};
 
 /// Check whether a process with the given PID is currently alive.
 ///
 /// Uses `kill(pid, 0)`, which sends no signal but performs the permission and
-/// existence checks. Matching `isProcessAlive`:
+/// existence checks:
 /// - success (errno 0) -> alive
 /// - `EPERM` -> the process exists but is owned by another user -> treated as alive
 /// - `ESRCH` / anything else -> dead
@@ -30,9 +31,9 @@ pub fn is_process_alive(pid: i64) -> bool {
 /// Filter out process entries whose PIDs are no longer alive, deleting the stale
 /// rows from the database.
 ///
-/// Mirrors `filterAliveProcesses`: an entry is kept if its `log_collector_pid`
-/// is alive OR its `pid` is alive (checked in that order). Otherwise the row is
-/// deleted (keyed on command_name/project_dir/pid) and dropped from the result.
+/// An entry is kept if its `log_collector_pid` is alive OR its `pid` is alive
+/// (checked in that order). Otherwise the row is deleted (keyed on
+/// command_name/project_dir/pid) and dropped from the result.
 pub fn filter_alive_processes(
     conn: &Connection,
     entries: Vec<ProcessEntry>,
@@ -54,6 +55,22 @@ pub fn filter_alive_processes(
     }
 
     Ok(alive)
+}
+
+/// Whether `command_name` has a running instance in `project_dir`: a process
+/// row not marked killed whose PID is alive. Dead rows found along the way are
+/// deleted (see [`filter_alive_processes`]).
+pub fn is_service_running(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+) -> rusqlite::Result<bool> {
+    let not_killed =
+        find_processes_by_command_name_and_project_dir(conn, command_name, project_dir)?
+            .into_iter()
+            .filter(|p| p.killed_at.is_none())
+            .collect();
+    Ok(!filter_alive_processes(conn, not_killed)?.is_empty())
 }
 
 #[cfg(test)]

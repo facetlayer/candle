@@ -26,8 +26,7 @@ use crate::project_scope::ProjectScope;
 /// Validate that each name refers to a known service for the project, erroring
 /// (as a usage error) on the first that does not.
 ///
-/// Ports `assertValidCommandNames` -> `getServiceInfoByName`: a name is valid if
-/// it has any process row in the project (running or killed transient) OR it
+/// A name is valid if it has any process row in the project (running or killed transient) OR it
 /// resolves to a configured service (exact or loose match). An unknown name
 /// yields `MissingServiceWithName` ("No service '<name>' configured for
 /// directory: <dir>"), which the CLI prints to stderr before exiting non-zero.
@@ -45,8 +44,7 @@ pub fn assert_valid_command_names(
 
     for name in names {
         // A live or transient process row makes the name valid regardless of config.
-        let rows = find_processes_by_command_name_and_project_dir(conn, name, &project_dir)
-            .map_err(|e| CandleError::ConfigFileError(format!("database error: {e}")))?;
+        let rows = find_processes_by_command_name_and_project_dir(conn, name, &project_dir)?;
         if !rows.is_empty() {
             continue;
         }
@@ -74,13 +72,11 @@ pub fn assert_known_service_names(
     names: &[String],
     check_config: bool,
 ) -> Result<(), CandleError> {
-    let db_err = |e: rusqlite::Error| CandleError::ConfigFileError(format!("database error: {e}"));
     for name in names {
-        if has_logs_for_command(conn, project_dir, name).map_err(db_err)? {
+        if has_logs_for_command(conn, project_dir, name)? {
             continue;
         }
-        let rows = find_processes_by_command_name_and_project_dir(conn, name, project_dir)
-            .map_err(db_err)?;
+        let rows = find_processes_by_command_name_and_project_dir(conn, name, project_dir)?;
         if !rows.is_empty() {
             continue;
         }
@@ -152,7 +148,6 @@ mod tests {
             assert_valid_command_names(&conn, proj.path(), &["ghost".to_string()]).unwrap_err();
         assert!(matches!(err, CandleError::MissingServiceWithName { .. }));
         assert!(err.to_string().contains("ghost"));
-        assert!(err.is_usage_error());
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&db);

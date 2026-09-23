@@ -1,8 +1,7 @@
 //! `stdin_messages` table: a FIFO queue per service.
 //!
-//! Ported from `src/database/stdinMessagesTable.ts`. Unlike the Node version,
 //! `pop_stdin_message` wraps the select+delete in a transaction so it is atomic
-//! under concurrent access (an intentional improvement noted in the porting spec).
+//! under concurrent access.
 
 use rusqlite::{params, Connection};
 

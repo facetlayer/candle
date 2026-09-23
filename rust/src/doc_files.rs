@@ -1,8 +1,8 @@
 //! Documentation files for the `list-docs` and `get-doc` commands.
 //!
-//! Ported from `src/docFiles/DocFilesHelper.ts`. Unlike the Node version — which reads markdown
-//! files from the installed package directory at runtime — the Rust binary is relocatable, so the
-//! docs (the repo `docs/` directory plus the top-level `README.md`) are embedded at compile time.
+//! The binary is relocatable, so rather than reading markdown files from an install directory at
+//! runtime, the docs (the repo `docs/` directory plus the top-level `README.md`) are embedded at
+//! compile time.
 //!
 //! Only markdown files directly inside `docs/` are user-facing. Subdirectories such as `docs/dev/`
 //! hold developer docs for people working on Candle itself, and are left out of both commands.
@@ -40,7 +40,7 @@ pub enum DocLookupError {
 }
 
 /// All user-facing doc files as `(filename, raw_content)`, sorted by filename for stable output,
-/// with `README.md` included last (matching the Node config which appends it as an extra file).
+/// with `README.md` appended last.
 /// `Dir::files()` only yields the top level of `docs/`, so `docs/dev/` is never included.
 fn all_docs() -> Vec<(String, &'static str)> {
     let mut docs: Vec<(String, &'static str)> = DOCS_DIR

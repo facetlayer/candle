@@ -1,8 +1,7 @@
 //! `clear-logs` command handler.
 //!
-//! Ported from `src/clear-logs-command.ts`. Deletes stored process output for
-//! the named command(s) within the project, then cleans up orphaned rows and
-//! vacuums the database.
+//! Deletes stored process output for the named command(s) within the project,
+//! then cleans up orphaned rows and vacuums the database.
 
 use rusqlite::Connection;
 
@@ -11,8 +10,8 @@ use crate::output;
 /// Clear logs for the given command(s) in the project, or for every service in
 /// the project when `command_names` is empty.
 ///
-/// Returns the `rusqlite::Result` so the CLI layer can map a database error to
-/// the `console.error` + exit 1 path (matching the TS `catch`).
+/// Returns the `rusqlite::Result` so the CLI layer can report a database error
+/// on stderr and exit 1.
 pub fn handle_clear_logs_command(
     conn: &Connection,
     project_dir: &str,

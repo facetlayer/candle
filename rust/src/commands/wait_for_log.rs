@@ -1,8 +1,8 @@
 //! `wait-for-log` command handler.
 //!
-//! Ported from `src/wait-for-log-command.ts`. Polls the `process_output` table
-//! for a given substring, scoped to the most recent launch of the named
-//! service(s), until the message appears, the process exits, or a timeout is hit.
+//! Polls the `process_output` table for a given substring, scoped to the most
+//! recent launch of the named service(s), until the message appears, the
+//! process exits, or a timeout is hit.
 //!
 //! A service that isn't running fails at once rather than waiting out the
 //! timeout: nothing will ever write the message.
@@ -29,8 +29,8 @@ const RECENT_LOG_LINES: i64 = 20;
 /// How often (in polls) to re-check that the service is still running.
 const LIVENESS_CHECK_EVERY: u32 = 5;
 
-/// Result of [`handle_wait_for_log`]. The TS `message` field on failure is never
-/// read by the caller, so a bare success flag is sufficient.
+/// Result of [`handle_wait_for_log`]. Callers only need to know whether the
+/// message appeared, so a bare success flag is sufficient.
 pub struct WaitForLogResult {
     pub success: bool,
 }
@@ -82,11 +82,15 @@ fn print_recent_logs(conn: &Connection, project_dir: &str, command_names: &[Stri
     )
     .unwrap_or_default();
 
-    let label = command_names.join(", ");
-    let header = if tail.truncated {
-        format!("Last {RECENT_LOG_LINES} lines of the latest run of '{label}':")
+    let subject = if command_names.is_empty() {
+        "each service".to_string()
     } else {
-        format!("Logs from the latest run of '{label}':")
+        format!("'{}'", command_names.join(", "))
+    };
+    let header = if tail.truncated {
+        format!("Last {RECENT_LOG_LINES} lines of the latest run of {subject}:")
+    } else {
+        format!("Logs from the latest run of {subject}:")
     };
     output::out(&header);
     let options = ConsoleLogOptions {

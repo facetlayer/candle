@@ -1,9 +1,8 @@
 //! `open-browser` command.
 //!
-//! Ported from `src/open-browser-command.ts`. Resolves a service name (explicit
-//! or the sole running one), finds its lowest listening port via
-//! [`handle_list_ports`], opens `http://localhost:<port>` in the platform
-//! browser, and returns the chosen port/url.
+//! Resolves a service name (explicit or the sole running one), finds its lowest
+//! listening port via [`handle_list_ports`], opens `http://localhost:<port>` in
+//! the platform browser, and returns the chosen port/url.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -26,12 +25,8 @@ pub struct OpenBrowserOutput {
     pub url: String,
 }
 
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::ConfigFileError(format!("database error: {e}"))
-}
-
 /// Resolve which service to open. An explicit name wins; otherwise there must be
-/// exactly one process row (running or killed — `findProcessesByProjectDir`
+/// exactly one process row (running or killed — `find_processes_by_project_dir`
 /// includes killed) for the project.
 fn resolve_service_name(
     conn: &Connection,
@@ -44,7 +39,7 @@ fn resolve_service_name(
         }
     }
 
-    let processes = find_processes_by_project_dir(conn, project_dir).map_err(db_err)?;
+    let processes = find_processes_by_project_dir(conn, project_dir)?;
 
     if processes.is_empty() {
         return Err(CandleError::UsageError(
@@ -69,9 +64,7 @@ fn resolve_service_name(
 /// Open a browser to the lowest listening port of a project service.
 ///
 /// `cwd` is needed because port detection re-resolves the project config; the
-/// caller passes the already-resolved `project_dir` for service-name resolution
-/// (matching the Node split between `findProjectDir()` and the cwd-based
-/// `handleListPorts`).
+/// caller passes the already-resolved `project_dir` for service-name resolution.
 pub fn handle_open_browser(
     conn: &Connection,
     cwd: &Path,
@@ -84,8 +77,7 @@ pub fn handle_open_browser(
 
     if ports_output.ports.is_empty() {
         let processes =
-            find_processes_by_command_name_and_project_dir(conn, &service_name, project_dir)
-                .map_err(db_err)?;
+            find_processes_by_command_name_and_project_dir(conn, &service_name, project_dir)?;
         let is_running = processes.iter().any(|p| p.killed_at.is_none());
         if is_running {
             return Err(CandleError::UsageError(format!(
@@ -116,7 +108,7 @@ pub fn handle_open_browser(
 }
 
 /// Launch the platform browser, fully detached so candle can exit without
-/// killing it. Mirrors `openUrl`'s per-platform command table.
+/// killing it.
 fn open_url(url: &str) -> Result<(), CandleError> {
     #[cfg(target_os = "macos")]
     let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
@@ -179,7 +171,7 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
         let err = resolve_service_name(&conn, "/proj", None).unwrap_err();
         assert!(err.to_string().contains("no running processes"));
-        assert!(err.is_usage_error());
+        assert!(matches!(err, CandleError::UsageError(_)));
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }

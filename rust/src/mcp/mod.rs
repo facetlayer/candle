@@ -1,8 +1,7 @@
 //! MCP (Model Context Protocol) stdio server.
 //!
-//! Ported from `src/mcp/mcp-main.ts` + `src/mcp/ConsoleLogInterceptor.ts`. Lets an
-//! LLM client manage local dev processes over a newline-delimited JSON-RPC stream
-//! on stdin/stdout. See `rust/docs/architecture/mcp.md` for the full spec.
+//! Lets an LLM client manage local dev processes over a newline-delimited
+//! JSON-RPC stream on stdin/stdout. See `rust/docs/architecture/mcp.md` for the full spec.
 //!
 //! Architecture notes:
 //! - **Transport is hand-rolled**, not `rmcp`: the command handlers are
@@ -46,7 +45,7 @@ struct ToolDef {
     handler: Handler,
 }
 
-/// The tool registry, in the exact order the Node `toolDefinitions` array uses.
+/// The tool registry, in the order tools are advertised to clients.
 fn tool_definitions() -> Vec<ToolDef> {
     vec![
         ToolDef {
@@ -166,10 +165,6 @@ fn arg_str<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
 
 fn resolve_project_dir(cwd: &Path) -> Result<String, CandleError> {
     Ok(find_project_dir(cwd)?.display().to_string())
-}
-
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::Generic(format!("database error: {e}"))
 }
 
 // ---- tool handlers ---------------------------------------------------------
@@ -307,7 +302,7 @@ fn tool_kill_service(
     let names = [name];
     // Same check as `candle kill <name>`.
     assert_valid_command_names(conn, cwd, &names)?;
-    crate::kill::handle_kill_command(conn, &project_dir, &names, false, false).map_err(db_err)?;
+    crate::kill::handle_kill_command(conn, &project_dir, &names, false, false)?;
     Ok(None)
 }
 
@@ -377,8 +372,8 @@ struct CallOutcome {
     logs: Vec<String>,
 }
 
-/// Run a handler with output capture, mirroring `callWrapped`: the captured
-/// stdout/stderr lines become `logs`; a thrown error becomes `error`.
+/// Run a handler with output capture: the captured stdout/stderr lines become
+/// `logs`; an `Err` result becomes `error`.
 fn call_wrapped(handler: Handler, conn: &Connection, cwd: &Path, args: &Value) -> CallOutcome {
     let (res, captured) = crate::output::capture(|| handler(conn, cwd, args));
     let logs = captured.mcp_log_lines();

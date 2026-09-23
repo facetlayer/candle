@@ -1,9 +1,8 @@
 //! A forward cursor over `process_output` rows for a fixed query scope.
 //!
-//! Ported from `src/logs/LogIterator.ts`. The Node version exposes an async
-//! generator `it()` that polls the DB every 100ms; here the polling loop lives in
-//! the caller ([`crate::start::start_one_service`]), and this type just tracks the
-//! cursor position (`current_log_id`) and fetches the next batch on demand.
+//! The polling loop lives in the caller ([`crate::start::start_one_service`]);
+//! this type just tracks the cursor position (`current_log_id`) and fetches the
+//! next batch on demand.
 
 use rusqlite::Connection;
 
@@ -51,7 +50,7 @@ impl LogIterator {
 
     /// Seed `current_log_id` to the id of the newest existing matching row (or
     /// `None` if there are none), so subsequent fetches only see rows produced
-    /// after this point. Mirrors `resetToLatestLogMessage`.
+    /// after this point.
     pub fn reset_to_latest_log_message(&mut self, conn: &Connection) -> rusqlite::Result<()> {
         self.current_log_id = None;
         let options = LogSearchOptions {
@@ -69,14 +68,14 @@ impl LogIterator {
         Ok(())
     }
 
-    /// A snapshot copy at the current cursor position. Mirrors `copy()`.
+    /// A snapshot copy at the current cursor position.
     pub fn copy(&self) -> LogIterator {
         self.clone()
     }
 
     /// Fetch rows with id greater than `current_log_id` WITHOUT advancing the
-    /// cursor. Mirrors the private `peekNextLogs`. The effective limit is
-    /// `limit_override` if set, otherwise the constructor limit.
+    /// cursor. The effective limit is `limit_override` if set, otherwise the
+    /// constructor limit.
     pub fn peek_next_logs(
         &self,
         conn: &Connection,
@@ -87,8 +86,8 @@ impl LogIterator {
     }
 
     /// Fetch rows with id greater than `current_log_id`, advancing the cursor to
-    /// the last returned row. Mirrors `getNextLogs`. The effective limit is
-    /// `limit_override` if set, otherwise the constructor limit.
+    /// the last returned row. The effective limit is `limit_override` if set,
+    /// otherwise the constructor limit.
     pub fn get_next_logs(
         &mut self,
         conn: &Connection,

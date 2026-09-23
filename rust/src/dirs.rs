@@ -1,7 +1,6 @@
 //! State / database directory resolution, plus service launch-directory resolution.
 //!
-//! Ported from `src/dirs.ts`. Resolves the state directory where the SQLite
-//! database lives, using the same precedence as the Node implementation.
+//! Resolves the state directory where the SQLite database lives.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -63,7 +62,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 /// Resolve the state directory, given the relevant environment values.
 ///
 /// This is a pure helper so it can be unit-tested without racing on process
-/// environment. Precedence (matching `src/dirs.ts`):
+/// environment. Precedence:
 ///
 /// 1. `CANDLE_DATABASE_DIR` -> used verbatim.
 /// 2. `XDG_STATE_HOME` -> `<XDG_STATE_HOME>/candle`.
@@ -91,8 +90,6 @@ pub fn resolve_state_dir(
 }
 
 /// Read the relevant environment variables and resolve the state directory.
-///
-/// Mirrors `getStateDirectory()` in `src/dirs.ts`.
 pub fn get_state_directory() -> PathBuf {
     let candle_database_dir = non_empty_env("CANDLE_DATABASE_DIR");
     let xdg_state_home = non_empty_env("XDG_STATE_HOME");
@@ -112,8 +109,7 @@ pub fn candle_db_path() -> PathBuf {
     path
 }
 
-/// Read an environment variable, treating empty strings the same as unset
-/// (matching JS truthiness of `process.env.X`).
+/// Read an environment variable, treating empty strings the same as unset.
 fn non_empty_env(key: &str) -> Option<String> {
     match std::env::var(key) {
         Ok(value) if !value.is_empty() => Some(value),

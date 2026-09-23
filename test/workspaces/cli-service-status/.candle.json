@@ -33,6 +33,14 @@
     {
       "name": "killed-early",
       "shell": "node ../../sampleServers/testProcess.js"
+    },
+    {
+      "name": "signal-crash",
+      "shell": "sleep 1; kill -SEGV $$"
+    },
+    {
+      "name": "binary-output",
+      "shell": "printf 'bad \\377 byte\\n'; while true; do echo tick; sleep 0.2; done"
     }
   ]
 }

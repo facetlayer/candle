@@ -9,7 +9,8 @@
 //! 5. poll the stdin queue (when enabled) and run periodic cleanup;
 //! 6. on exit, log `process_exited` and delete the `processes` row.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,7 +28,9 @@ use crate::db::process_table::{
 };
 use crate::db::stdin_messages::{clear_stdin_messages, pop_stdin_message};
 use crate::debug::debug_log;
-use crate::logs::log_type::STOPPED_WHILE_STARTING_MESSAGE;
+use crate::logs::log_type::{
+    killed_by_signal_message, KILLED_BY_SIGNAL, STOPPED_WHILE_STARTING_MESSAGE,
+};
 use crate::logs::process_logs::save_run_log;
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
@@ -47,23 +50,61 @@ const POST_EXIT_DRAIN_MS: u64 = 500;
 enum LineEvent {
     Stdout(String),
     Stderr(String),
-    /// Child exited with the given code (`None` if terminated by a signal).
-    Exit(Option<i32>),
+    Exit(ChildExit),
 }
 
-/// Human-readable message for a process exit. A `None` exit code means the
-/// process was terminated by a signal (e.g. killed by `candle stop`/`restart`),
-/// so don't render it as a bogus "code null".
-fn exit_message(code: Option<i32>) -> String {
-    match code {
-        Some(c) => format!("Process exited with code {c}"),
-        None => "Process was stopped".to_string(),
+/// How the child ended: its exit code, or the signal that terminated it.
+/// Both are `None` only if waiting on the child failed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ChildExit {
+    code: Option<i32>,
+    signal: Option<i32>,
+}
+
+/// Human-readable message for a process exit after a successful start. A
+/// signal Candle sent (`kill` / `restart`) is a deliberate stop; any other
+/// signal (a segfault, the OOM killer) is a crash that `ps` shows as `FAILED`.
+fn exit_message(exit: ChildExit, stopped_by_candle: bool) -> String {
+    match (exit.code, exit.signal) {
+        (Some(c), _) => format!("Process exited with code {c}"),
+        (None, Some(sig)) if !stopped_by_candle => killed_by_signal_message(sig),
+        _ => "Process was stopped".to_string(),
+    }
+}
+
+/// Forward each line of a child's output pipe as an event until EOF.
+///
+/// Reads bytes rather than `String`s so output that isn't valid UTF-8 is
+/// decoded lossily instead of ending the read: closing the pipe early would
+/// kill the child with SIGPIPE on its next write.
+fn forward_lines(pipe: impl Read, tx: mpsc::Sender<LineEvent>, event: fn(String) -> LineEvent) {
+    let mut reader = BufReader::new(pipe);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(0) => return,
+            Ok(_) => {
+                if buf.ends_with(b"\n") {
+                    buf.pop();
+                    if buf.ends_with(b"\r") {
+                        buf.pop();
+                    }
+                }
+                let line = String::from_utf8_lossy(&buf).into_owned();
+                // The supervisor is gone; keep draining so the child never
+                // blocks or gets SIGPIPE.
+                let _ = tx.send(event(line));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return,
+        }
     }
 }
 
 /// Persist one grace-period event.
 ///
-/// Returns `Some(code)` when the event was the child exiting, `None` for output
+/// Returns `Some(exit)` when the event was the child exiting, `None` for output
 /// lines (which are written to `process_output` as they arrive).
 fn record_grace_event(
     conn: &Connection,
@@ -71,9 +112,9 @@ fn record_grace_event(
     command_name: &str,
     project_dir: &str,
     event: LineEvent,
-) -> Option<Option<i32>> {
+) -> Option<ChildExit> {
     let (log_type, line) = match event {
-        LineEvent::Exit(code) => return Some(code),
+        LineEvent::Exit(exit) => return Some(exit),
         LineEvent::Stdout(line) => (ProcessLogType::Stdout, line),
         LineEvent::Stderr(line) => (ProcessLogType::Stderr, line),
     };
@@ -124,11 +165,12 @@ fn drain_after_exit(
 /// Human-readable message for a process that died during the startup grace
 /// period. `stopped_by_candle` is set when Candle itself signalled it (see
 /// [`stopped_by_candle`]); that is a deliberate stop, not a failed start.
-fn start_failed_message(code: Option<i32>, stopped_by_candle: bool) -> String {
-    match code {
-        Some(c) => format!("Process failed to start: exited with code {c}"),
-        None if stopped_by_candle => STOPPED_WHILE_STARTING_MESSAGE.to_string(),
-        None => "Process failed to start: stopped by a signal".to_string(),
+fn start_failed_message(exit: ChildExit, stopped_by_candle: bool) -> String {
+    match (exit.code, exit.signal) {
+        (Some(c), _) => format!("Process failed to start: exited with code {c}"),
+        _ if stopped_by_candle => STOPPED_WHILE_STARTING_MESSAGE.to_string(),
+        (None, Some(sig)) => format!("Process failed to start: {KILLED_BY_SIGNAL} {sig}"),
+        (None, None) => "Process failed to start: stopped by a signal".to_string(),
     }
 }
 
@@ -180,9 +222,8 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         None => Path::new(&project_dir).to_path_buf(),
     };
 
-    // Spawn the monitored service. A spawn failure maps to the Node
-    // `waitForStart` reject path: log process_start_failed, exit, do NOT create
-    // (or delete) a process row.
+    // Spawn the monitored service. On spawn failure: log process_start_failed,
+    // exit, do NOT create (or delete) a process row.
     let mut child = match Command::new("sh")
         .arg("-c")
         .arg(&shell)
@@ -240,38 +281,14 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 
     let stdout = child.stdout.take().expect("stdout piped");
     let tx_out = tx.clone();
-    thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            match line {
-                Ok(l) => {
-                    if tx_out.send(LineEvent::Stdout(l)).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    thread::spawn(move || forward_lines(stdout, tx_out, LineEvent::Stdout));
 
     let stderr = child.stderr.take().expect("stderr piped");
     let tx_err = tx.clone();
-    thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            match line {
-                Ok(l) => {
-                    if tx_err.send(LineEvent::Stderr(l)).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    thread::spawn(move || forward_lines(stderr, tx_err, LineEvent::Stderr));
 
     // Stdin polling thread (own DB connection; pop needs &mut). The `done` flag
-    // lets us stop it once the child exits (mirrors Node's clearInterval).
+    // lets us stop it once the child exits.
     let done = Arc::new(AtomicBool::new(false));
     let stdin_handle = if enable_stdin {
         let mut child_stdin = child.stdin.take();
@@ -315,14 +332,20 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     // Wait thread: forwards the exit code once the child terminates.
     let tx_exit = tx;
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|s| s.code());
-        let _ = tx_exit.send(LineEvent::Exit(code));
+        let exit = match child.wait() {
+            Ok(status) => ChildExit {
+                code: status.code(),
+                signal: status.signal(),
+            },
+            Err(_) => ChildExit::default(),
+        };
+        let _ = tx_exit.send(LineEvent::Exit(exit));
     });
 
     // Grace period: collect output until the deadline or an early exit.
     let grace_deadline = Instant::now() + Duration::from_millis(GRACE_PERIOD_MS);
     let mut exited_during_grace = false;
-    let mut exit_code: Option<i32> = None;
+    let mut exit = ChildExit::default();
 
     loop {
         let remaining = grace_deadline.saturating_duration_since(Instant::now());
@@ -331,11 +354,11 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
         match rx.recv_timeout(remaining) {
             Ok(event) => {
-                if let Some(code) =
+                if let Some(e) =
                     record_grace_event(&conn, run_id, &command_name, &project_dir, event)
                 {
                     exited_during_grace = true;
-                    exit_code = code;
+                    exit = e;
                     break;
                 }
             }
@@ -349,9 +372,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     // before deciding, or a fast failure gets misreported as a successful start.
     while !exited_during_grace {
         let Ok(event) = rx.try_recv() else { break };
-        if let Some(code) = record_grace_event(&conn, run_id, &command_name, &project_dir, event) {
+        if let Some(e) = record_grace_event(&conn, run_id, &command_name, &project_dir, event) {
             exited_during_grace = true;
-            exit_code = code;
+            exit = e;
         }
     }
 
@@ -364,9 +387,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     // A nonzero exit within the grace period is a start failure: log it, delete
     // the row, and stop. (Asymmetry vs the spawn-failure branch above, which
     // never created a row.)
-    if exited_during_grace && exit_code != Some(0) {
+    if exited_during_grace && exit.code != Some(0) {
         debug_log(&format!(
-            "[monitor] process failed during grace period, pid={child_pid}, code={exit_code:?}"
+            "[monitor] process failed during grace period, pid={child_pid}, {exit:?}"
         ));
         let _ = save_run_log(
             &conn,
@@ -375,8 +398,8 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             &project_dir,
             ProcessLogType::ProcessStartFailed,
             Some(&start_failed_message(
-                exit_code,
-                exit_code.is_none()
+                exit,
+                exit.code.is_none()
                     && stopped_by_candle(&conn, &command_name, &project_dir, child_pid),
             )),
         );
@@ -385,7 +408,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         if let Some(handle) = stdin_handle {
             let _ = handle.join();
         }
-        return exit_code;
+        return exit.code;
     }
 
     debug_log(&format!("[monitor] process started, pid={child_pid}"));
@@ -406,14 +429,14 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             &command_name,
             &project_dir,
             ProcessLogType::ProcessExited,
-            Some(&exit_message(exit_code)),
+            Some(&exit_message(exit, false)),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
         done.store(true, Ordering::Relaxed);
         if let Some(handle) = stdin_handle {
             let _ = handle.join();
         }
-        return exit_code;
+        return exit.code;
     }
 
     // Main loop: stream output until the process exits, running cleanup ~60s.
@@ -440,8 +463,8 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
                     Some(&line),
                 );
             }
-            Ok(LineEvent::Exit(code)) => {
-                exit_code = code;
+            Ok(LineEvent::Exit(e)) => {
+                exit = e;
                 break;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -459,7 +482,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     });
 
     debug_log(&format!(
-        "[monitor] process exited, pid={child_pid}, code={exit_code:?}"
+        "[monitor] process exited, pid={child_pid}, {exit:?}"
     ));
     let _ = save_run_log(
         &conn,
@@ -467,7 +490,10 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         &command_name,
         &project_dir,
         ProcessLogType::ProcessExited,
-        Some(&exit_message(exit_code)),
+        Some(&exit_message(
+            exit,
+            exit.code.is_none() && stopped_by_candle(&conn, &command_name, &project_dir, child_pid),
+        )),
     );
     let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
 
@@ -476,7 +502,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         let _ = handle.join();
     }
 
-    exit_code
+    exit.code
 }
 
 #[cfg(test)]
@@ -487,7 +513,7 @@ mod tests {
     fn drain_collects_lines_sent_after_exit_until_disconnect() {
         let (tx, rx) = mpsc::channel::<LineEvent>();
         let reader = tx.clone();
-        tx.send(LineEvent::Exit(Some(1))).unwrap();
+        tx.send(LineEvent::Exit(ChildExit::default())).unwrap();
         drop(tx);
         // A reader thread that forwards its last lines after the wait thread
         // has already reported the exit.
@@ -500,7 +526,7 @@ mod tests {
         });
 
         // The supervisor has already consumed the Exit event.
-        assert!(matches!(rx.recv().unwrap(), LineEvent::Exit(Some(1))));
+        assert!(matches!(rx.recv().unwrap(), LineEvent::Exit(_)));
 
         let mut lines = Vec::new();
         let saved = drain_after_exit(&rx, Duration::from_secs(5), |e| match e {
@@ -538,18 +564,59 @@ mod tests {
 
     #[test]
     fn start_failed_message_distinguishes_a_deliberate_stop() {
+        let code = |c| ChildExit {
+            code: Some(c),
+            signal: None,
+        };
+        let signal = |s| ChildExit {
+            code: None,
+            signal: Some(s),
+        };
         assert_eq!(
-            start_failed_message(Some(2), false),
+            start_failed_message(code(2), false),
             "Process failed to start: exited with code 2"
         );
         assert_eq!(
-            start_failed_message(None, false),
-            "Process failed to start: stopped by a signal"
+            start_failed_message(signal(11), false),
+            "Process failed to start: killed by signal 11"
         );
         assert_eq!(
-            start_failed_message(None, true),
+            start_failed_message(signal(15), true),
             STOPPED_WHILE_STARTING_MESSAGE
         );
+    }
+
+    #[test]
+    fn exit_message_tells_a_crash_from_a_deliberate_stop() {
+        let signal = ChildExit {
+            code: None,
+            signal: Some(9),
+        };
+        assert_eq!(
+            exit_message(signal, false),
+            "Process was killed by signal 9"
+        );
+        assert_eq!(exit_message(signal, true), "Process was stopped");
+        let code = ChildExit {
+            code: Some(0),
+            signal: None,
+        };
+        assert_eq!(exit_message(code, false), "Process exited with code 0");
+    }
+
+    #[test]
+    fn forward_lines_survives_invalid_utf8() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        let input: &[u8] = b"a\xffb\r\nnext\nlast";
+        forward_lines(input, tx, LineEvent::Stdout);
+        let lines: Vec<String> = rx
+            .iter()
+            .map(|e| match e {
+                LineEvent::Stdout(l) => l,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(lines, vec!["a\u{fffd}b", "next", "last"]);
     }
 
     #[test]

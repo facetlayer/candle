@@ -1,8 +1,5 @@
 //! Mutating config commands: setup-project, add-service, remove-service, set-config.
 //!
-//! Ported from `src/setup-project-command.ts`, `src/addServerConfig.ts`,
-//! `src/removeServerConfig.ts`, and `src/set-config-command.ts`.
-//!
 //! Each function returns the success message string(s) the CLI layer should
 //! print (rather than printing directly), or a [`CandleError`].
 
@@ -26,14 +23,13 @@ pub struct AddServerConfigArgs {
 }
 
 /// Re-run validation over a (possibly mutated) config by round-tripping it
-/// through the same `validateConfig` path the Node code uses. Catches invalid
+/// through [`validate_config`]. Catches invalid
 /// roots, duplicate names, etc. introduced by mutations.
 fn revalidate(config: &CandleSetupConfig) -> Result<(), CandleError> {
     validate_config(config.to_value()).map(|_| ())
 }
 
 /// `setup-project`: create `.candle.json` if none exists at/above `cwd`.
-/// Mirrors `handleSetupProject`.
 pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
     match find_config_file(cwd) {
         Ok(found) => {
@@ -56,7 +52,7 @@ pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
 }
 
 /// Find an existing config file (using its discovered filename) or create a new
-/// `.candle.json` in `start_dir`. Mirrors `findOrCreateSetupFile`.
+/// `.candle.json` in `start_dir`.
 fn find_or_create_setup_file(start_dir: &Path) -> Result<PathBuf, CandleError> {
     match find_config_file(start_dir) {
         Ok(found) => Ok(found.project_dir.join(&found.config_filename)),
@@ -69,7 +65,7 @@ fn find_or_create_setup_file(start_dir: &Path) -> Result<PathBuf, CandleError> {
     }
 }
 
-/// `add-service`: add a new service to the config. Mirrors `addServerConfig`.
+/// `add-service`: add a new service to the config.
 pub fn add_server_config(
     args: &AddServerConfigArgs,
     start_dir: &Path,
@@ -139,7 +135,7 @@ fn validate_service_name(name: &str) -> Result<(), CandleError> {
     }
 }
 
-/// `remove-service`: remove a service by name. Mirrors `removeServerConfig`.
+/// `remove-service`: remove a service by name.
 pub fn remove_server_config(name: &str, start_dir: &Path) -> Result<String, CandleError> {
     let found = find_config_file(start_dir)?;
     let config_path = found.project_dir.join(&found.config_filename);
@@ -160,9 +156,9 @@ pub fn remove_server_config(name: &str, start_dir: &Path) -> Result<String, Cand
     Ok(format!("Service '{name}' removed from .candle.json"))
 }
 
-/// `set-config`: set a single config key. Mirrors `handleSetConfig`.
+/// `set-config`: set a single config key.
 pub fn handle_set_config(key: &str, value: &str, cwd: &Path) -> Result<String, CandleError> {
-    // Validate the key/value first (matching the Node order, before reading the file).
+    // Validate the key/value first, before reading the file.
     let parsed = parse_config_value(key, value)?;
 
     let found = find_config_file(cwd)?;
@@ -234,9 +230,10 @@ fn apply_config_value(config: &mut CandleSetupConfig, parsed: &ParsedConfigValue
     }
 }
 
-/// Mimic JS `Number(value)` and require an integer `>= 1`.
+/// Parse `value` with JavaScript `Number()`-style coercion and require an
+/// integer `>= 1`.
 ///
-/// Matches the JS coercion quirks: leading/trailing whitespace is trimmed,
+/// Coercion rules: leading/trailing whitespace is trimmed,
 /// empty string -> 0 (rejected), `1e3` and `0x10` are accepted, `3.5` / `3abc`
 /// are rejected.
 fn js_positive_int(value: &str) -> Option<u64> {
@@ -248,14 +245,14 @@ fn js_positive_int(value: &str) -> Option<u64> {
     }
 }
 
-/// Mimic JS `Number(value)` coercion, returning `None` for `NaN`.
+/// JavaScript `Number()`-style numeric coercion, returning `None` for `NaN`.
 fn js_number(input: &str) -> Option<f64> {
     let s = input.trim();
     if s.is_empty() {
         return Some(0.0);
     }
 
-    // Radix prefixes (no sign allowed, matching JS).
+    // Radix prefixes (no sign allowed).
     let radix = |prefix_lower: &str, prefix_upper: &str, base: u32| -> Option<Option<f64>> {
         let body = s
             .strip_prefix(prefix_lower)
@@ -278,7 +275,7 @@ fn js_number(input: &str) -> Option<f64> {
         _ => {}
     }
 
-    // Reject Rust-accepted-but-JS-rejected spellings of inf/nan. Any remaining
+    // Reject spellings of inf/nan that Rust's float parser accepts. Any remaining
     // valid decimal (including `1e3`) parses here.
     let lower = s.to_ascii_lowercase();
     if lower.contains("inf") || lower.contains("nan") {
@@ -526,12 +523,12 @@ mod tests {
             err.to_string(),
             "Unknown config key 'bogus'. Valid keys: logEviction.maxLogsPerService, logEviction.maxRetentionSeconds"
         );
-        assert!(err.is_usage_error());
+        assert!(matches!(err, CandleError::UsageError(_)));
     }
 
     #[test]
     fn set_config_retired_log_collector_key() {
-        // `logCollector` picked between the old Node and Rust collector sidecars.
+        // `logCollector` picked between two former log-collector sidecars.
         // Both are gone (supervision is `candle --monitor`), so the key is retired.
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
@@ -539,7 +536,7 @@ mod tests {
         assert!(err
             .to_string()
             .starts_with("Unknown config key 'logCollector'"));
-        assert!(err.is_usage_error());
+        assert!(matches!(err, CandleError::UsageError(_)));
     }
 
     #[test]

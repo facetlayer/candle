@@ -1,7 +1,5 @@
 //! `erase-database` command — delete the candle SQLite database and its WAL/SHM
 //! sidecar files from the resolved state directory.
-//!
-//! Ported from `src/clear-database-command.ts`.
 
 use std::io::ErrorKind;
 use std::path::Path;

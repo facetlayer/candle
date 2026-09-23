@@ -1,8 +1,7 @@
 //! Config validation and normalization.
 //!
-//! Ported from `validateConfig` in `src/configFile.ts`. Takes a parsed JSON
-//! value and returns a normalized, validated [`CandleSetupConfig`], with the
-//! exact `ConfigFileError` messages from the Node implementation.
+//! Takes a parsed JSON value and returns a normalized, validated
+//! [`CandleSetupConfig`], or a `ConfigFileError` describing the problem.
 
 use std::collections::HashSet;
 
@@ -14,28 +13,26 @@ use crate::errors::CandleError;
 
 const KNOWN_TOP_LEVEL_KEYS: [&str; 2] = ["services", "logEviction"];
 
-/// JS truthiness for a JSON value (used to mirror `config.services || []`).
+/// Truthiness for a JSON value (used to default a falsy `services` to `[]`).
 fn is_truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
         Value::Bool(b) => *b,
         Value::Number(n) => n.as_f64().map(|f| f != 0.0 && !f.is_nan()).unwrap_or(false),
         Value::String(s) => !s.is_empty(),
-        // Arrays and objects are always truthy in JS.
+        // Arrays and objects are always truthy.
         Value::Array(_) | Value::Object(_) => true,
     }
 }
 
 /// Validate and normalize a parsed config object.
 ///
-/// Mirrors `validateConfig` plus the `config.services ||= []` normalization that
-/// `readConfigFile` applies just before calling it.
+/// A missing or falsy `services` is normalized to `[]` before validation.
 pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
     let obj: Map<String, Value> = match value {
         Value::Object(m) => m,
         other => {
-            // The Node code operates directly on the parsed value; a non-object
-            // top level is not exercised in practice. Treat it as invalid
+            // A non-object top level is not expected in practice. Treat it as invalid
             // `services` for a clear, deterministic error.
             return Err(CandleError::ConfigFileError(format!(
                 "Config file error: Invalid value for 'services': {}",
@@ -44,7 +41,7 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
         }
     };
 
-    // Normalize `services`: missing or falsy -> []. (JS: `config.services || []`.)
+    // Normalize `services`: missing or falsy -> [].
     let services_value = match obj.get("services") {
         Some(v) if is_truthy(v) => v.clone(),
         _ => Value::Array(Vec::new()),
@@ -53,8 +50,8 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
     let (services, service_raw) = parse_services(services_value)?;
     let log_eviction = parse_log_eviction(obj.get("logEviction"))?;
 
-    // Capture top-level key order. JS's `config.services ||= []` adds a
-    // `services` key when absent, so reproduce that here.
+    // Capture top-level key order. Normalization adds a `services` key when
+    // absent, so append it to the order.
     let mut key_order: Vec<String> = obj.keys().cloned().collect();
     if !key_order.iter().any(|k| k == "services") {
         key_order.push("services".to_string());
@@ -413,7 +410,7 @@ mod tests {
 
     #[test]
     fn obsolete_log_collector_key_is_preserved_not_rejected() {
-        // `logCollector` chose between the old Node and Rust collector sidecars.
+        // `logCollector` chose between two former log-collector sidecars.
         // Neither exists now (supervision runs as `candle --monitor`), so the key
         // is no longer known — but an existing config that sets it must still load,
         // with the value round-tripped like any other unknown key.

@@ -4,8 +4,8 @@
 //! listening TCP sockets of those PIDs (see [`crate::listening_ports`]), and
 //! maps each socket back to the service that owns the PID.
 //!
-//! Note: unlike `list`, this uses the non-running query (`findProcessesByProjectDir`
-//! includes killed rows) and does NOT prune dead PIDs — correctness comes from
+//! Note: unlike `list`, this uses the non-running query
+//! (`find_processes_by_project_dir` includes killed rows) and does NOT prune dead PIDs — correctness comes from
 //! dead PIDs simply owning no sockets.
 
 use std::collections::{HashMap, HashSet};
@@ -34,20 +34,16 @@ pub struct PortInfo {
     pub is_child_process: bool,
 }
 
-/// Result of [`handle_list_ports`]. Mirrors `ListPortsOutput`.
+/// Result of [`handle_list_ports`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListPortsOutput {
     pub ports: Vec<PortInfo>,
 }
 
-fn db_err(e: rusqlite::Error) -> CandleError {
-    CandleError::ConfigFileError(format!("database error: {e}"))
-}
-
 /// Build a `list-ports` / `list-ports-all` result.
 ///
 /// - `show_all`: consider every process row system-wide, with no project needed;
-///   otherwise scope to the project resolved from `cwd` (throws
+///   otherwise scope to the project resolved from `cwd` (returns
 ///   `MissingSetupFile` if no config).
 /// - `command_names`: when non-empty, restrict to processes with those names.
 ///   In project scope each name must be a configured service or have a process
@@ -59,11 +55,11 @@ pub fn handle_list_ports(
     command_names: &[String],
 ) -> Result<ListPortsOutput, CandleError> {
     let mut process_entries = if show_all {
-        find_all_processes(conn).map_err(db_err)?
+        find_all_processes(conn)?
     } else {
         let found = find_config_file(cwd)?;
         let project_dir = found.project_dir.display().to_string();
-        let entries = find_processes_by_project_dir(conn, &project_dir).map_err(db_err)?;
+        let entries = find_processes_by_project_dir(conn, &project_dir)?;
         for name in command_names {
             let configured = find_service_by_name(&found.config, name).is_some();
             let has_row = entries.iter().any(|e| &e.command_name == name);
@@ -79,8 +75,7 @@ pub fn handle_list_ports(
     }
 
     // Compute each process's full tree, collect all PIDs for one socket lookup,
-    // and build a PID → service map (later trees overwrite earlier on collision, as
-    // in the Node `Map.set` loop).
+    // and build a PID → service map (later trees overwrite earlier on collision).
     let trees: Vec<(String, i64, Vec<i64>)> = process_entries
         .iter()
         .map(|entry| {
@@ -135,8 +130,7 @@ pub fn list_ports_output_to_json(output: &ListPortsOutput) -> String {
 
 /// Render a [`ListPortsOutput`] as the pretty table.
 ///
-/// Mirrors `printListPortsOutput`: empty prints
-/// `No open ports found for running services.`; otherwise a
+/// Empty prints `No open ports found for running services.`; otherwise a
 /// `SERVICE PID PORT ADDRESS PROTOCOL` table with ` (child)` appended to the
 /// PROTOCOL cell for child-process ports.
 pub fn format_list_ports_output(output: &ListPortsOutput) -> String {

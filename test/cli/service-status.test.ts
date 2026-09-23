@@ -132,6 +132,31 @@ describe('service status and directories', () => {
         });
     });
 
+    describe('crashes and odd output after startup', () => {
+        it('a service killed by a signal Candle did not send shows FAILED', async () => {
+            await workspace.runCli(['start', 'signal-crash']);
+            await new Promise(resolve => setTimeout(resolve, 1800));
+
+            const row = jsonRowFor(await listJson(['ps']), 'signal-crash');
+            expect(row.status).toBe('FAILED');
+            const logs = await workspace.runCli(['logs', 'signal-crash']);
+            expect(logs.stdoutAsString()).toContain('Process was killed by signal 11');
+        });
+
+        it('output that is not valid UTF-8 does not stop the service', async () => {
+            await workspace.runCli(['start', 'binary-output']);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const row = jsonRowFor(await listJson(['ps']), 'binary-output');
+            expect(row.status).toBe('RUNNING');
+            const logs = (await workspace.runCli(['logs', 'binary-output'])).stdoutAsString();
+            expect(logs).toContain('bad � byte');
+            expect(logs).toContain('tick');
+
+            await workspace.runCli(['kill', 'binary-output']);
+        });
+    });
+
     describe('list --json schema', () => {
         it('a stopped service has pid null and every key present', async () => {
             const idle = jsonRowFor(await listJson(['list']), 'idle');

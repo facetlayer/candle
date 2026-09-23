@@ -1,18 +1,13 @@
 //! Periodic database cleanup and log eviction.
 //!
-//! Ports `src/database/cleanup.ts` and `src/database/staleProcessCleanup.ts`.
-//!
 //! Cleanup runs at most once per [`CLEANUP_INTERVAL_SECONDS`] and performs, in
 //! order: time-based log eviction, stale-process removal, per-service log
 //! eviction, `VACUUM`, and a single-row update of `process_last_cleanup`.
 //!
 //! Eviction limits come from each project's `.candle.json` `logEviction` block,
 //! resolved per `project_dir` (falling back to [`crate::config::LOG_EVICTION_DEFAULTS`]
-//! of 1000 logs / 86400s when no config is found). The Node implementation
-//! resolves a single config from `process.cwd()` and applies it globally; this
-//! port keys the limits on each row's `project_dir`, which is identical for the
-//! single-project workspaces the tests exercise but stays correct when the
-//! database holds logs from multiple projects.
+//! of 1000 logs / 86400s when no config is found), so limits stay correct when
+//! the database holds logs from multiple projects.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -39,7 +34,7 @@ fn now_unix() -> i64 {
 }
 
 /// Run cleanup only if more than [`CLEANUP_INTERVAL_SECONDS`] have elapsed since
-/// the last run. Mirrors `maybeRunCleanup`.
+/// the last run.
 pub fn maybe_run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     let now = now_unix();
     let last_cleanup: Option<i64> = conn
@@ -66,7 +61,7 @@ fn resolve_eviction_config(project_dir: &str) -> ResolvedLogEvictionConfig {
     }
 }
 
-/// Perform a full cleanup pass. Mirrors `runCleanup`, in the same order.
+/// Perform a full cleanup pass.
 pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     let now = now_unix();
     let mut config_cache: HashMap<String, ResolvedLogEvictionConfig> = HashMap::new();
@@ -163,7 +158,6 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
 
 /// Remove `processes` rows whose underlying OS processes are gone.
 ///
-/// Mirrors `cleanupStaleProcesses`:
 /// - For each running row (`killed_at is null`): keep it if the log collector OR
 ///   the service pid is alive; otherwise write a `process_exited` log line and
 ///   delete the row.

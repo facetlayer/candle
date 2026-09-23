@@ -1,14 +1,13 @@
 //! SQLite database bootstrap.
 //!
-//! Ported from `src/database/database.ts`. Opens `candle.db` in the resolved
-//! state directory, sets WAL + busy_timeout pragmas, and runs an additive,
-//! idempotent schema migration.
+//! Opens `candle.db` in the resolved state directory, sets WAL + busy_timeout
+//! pragmas, and runs an additive, idempotent schema migration.
 //!
-//! Unlike the Node implementation, this does NOT keep a process-wide singleton
-//! connection; a fresh connection is opened on each call. This is simpler and
-//! correct for the multi-process usage candle relies on (each connection sets
-//! WAL + busy_timeout). The schema DDL is byte-parity with the Node version so
-//! the Vitest suite can open the same DB with raw SQL.
+//! There is no process-wide singleton connection; a fresh connection is opened
+//! on each call. Candle is used by many processes at once (CLI, monitors, the
+//! MCP server), and each connection sets WAL + busy_timeout. The Vitest suite
+//! opens the same database with raw SQL, so the schema below is part of its
+//! contract.
 
 pub mod cleanup;
 pub mod process_table;
@@ -19,9 +18,8 @@ use std::path::Path;
 
 use crate::dirs::get_state_directory;
 
-/// Table DDL, matching `src/database/database.ts` exactly (column order, types,
-/// nullability, defaults, autoincrement). Run additively/idempotently with
-/// `if not exists` so it is safe on every startup.
+/// Table DDL. Run additively/idempotently with `if not exists` so it is safe
+/// on every startup.
 const TABLE_STATEMENTS: &[(&str, &str)] = &[
     (
         "processes",
@@ -109,7 +107,8 @@ fn create_assign_run_trigger(conn: &Connection) -> rusqlite::Result<()> {
     ))
 }
 
-/// One-time backfill for rows stored before `run_id` existed.
+/// Assign [`run_of_row`] to rows stored without a `run_id` (before the column
+/// or its trigger existed).
 fn backfill_run_ids(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(&format!(
         "update process_output set run_id = {} where run_id is null",
@@ -170,21 +169,15 @@ fn run_migration(conn: &Connection) -> rusqlite::Result<()> {
     for (_, statement) in TABLE_STATEMENTS {
         conn.execute_batch(statement)?;
     }
-    let mut rebuilt_output = false;
     for (table, statement) in TABLE_STATEMENTS {
         if !missing_columns(conn, table)?.is_empty() {
             rebuild_table(conn, table, statement)?;
-            rebuilt_output |= *table == "process_output";
         }
     }
     for statement in INDEX_STATEMENTS {
         conn.execute_batch(statement)?;
     }
-    // Dropping a rebuilt table drops its trigger too, so create it after.
     create_assign_run_trigger(conn)?;
-    if rebuilt_output {
-        backfill_run_ids(conn)?;
-    }
     Ok(())
 }
 
@@ -288,6 +281,13 @@ fn rebuild_table(conn: &Connection, table: &str, create_statement: &str) -> rusq
         ))?;
         // Dropping the old table drops its indexes; the caller recreates them.
         conn.execute_batch(&format!("DROP TABLE {old}"))?;
+        if table == "process_output" {
+            // It drops the run trigger too. Restore it and assign runs to the
+            // copied rows in this same transaction, so no row can be written
+            // or left without its run in between.
+            create_assign_run_trigger(conn)?;
+            backfill_run_ids(conn)?;
+        }
         Ok(())
     })();
     match result {

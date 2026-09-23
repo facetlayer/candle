@@ -47,12 +47,13 @@ db    FAILED       -      -
 
 A service that isn't running shows `-` for its pid and uptime. Its status is
 `EXITED (<code>)` when its latest run exited with a non-zero code (it crashed,
-or its start exited non-zero), `FAILED` when its latest start failed without an
-exit code (its `root` directory doesn't exist, the shell couldn't be launched,
-or it was killed by a signal during startup), and `not running` when it was
+or its start exited non-zero), `FAILED` when its latest run ended without an
+exit code other than by a deliberate stop (its `root` directory doesn't exist,
+the shell couldn't be launched, or it was killed by a signal Candle didn't send,
+such as a segfault), and `not running` when it was
 stopped, exited cleanly, or was never started. Stopping a service with
 `candle kill` or `candle restart` never makes it `FAILED`, even during startup.
-Run `candle logs <name>` to see why a start failed. If a running
+Run `candle logs <name>` to see why it failed. If a running
 process drifted from its current `.candle.json` definition, its status reads
 `RUNNING [config changed]`.
 

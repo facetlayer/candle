@@ -23,8 +23,8 @@ use std::sync::OnceLock;
 /// TTY check in [`is_interactive`].
 const AGENT_ENV_VARS: [&str; 3] = ["CLAUDECODE", "GEMINI_CLI", "CURSOR_AGENT"];
 
-/// Pure helper: truthiness of an optional env value, matching JS `!!value`
-/// (present AND non-empty string => true).
+/// Pure helper: truthiness of an optional env value (present AND non-empty
+/// string => true).
 fn truthy(value: Option<String>) -> bool {
     matches!(value, Some(v) if !v.is_empty())
 }

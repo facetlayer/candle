@@ -86,6 +86,32 @@ describe('CLI Error Handling', () => {
         }, 5000);
     });
 
+    describe('invalid numeric flags', () => {
+        const CASES: [string[], string][] = [
+            [['logs', 'web', '--count', 'abc'], "Error: --count must be a number, got 'abc'"],
+            [['logs', 'web', '--count', '0'], 'Error: --count must be at least 1, got 0'],
+            [['logs', 'web', '--count', '-1'], 'Error: --count must be at least 1, got -1'],
+            [['logs', 'web', '--start-at', 'x'], "Error: --start-at must be a number, got 'x'"],
+            [
+                ['wait-for-log', 'web', '--message', 'm', '--timeout', 'soon'],
+                "Error: --timeout must be a number, got 'soon'",
+            ],
+            [
+                ['wait-for-log', 'web', '--message', 'm', '--timeout', '-1'],
+                "Error: --timeout must be a non-negative number of seconds, got '-1'",
+            ],
+            [['watch', '--exit-after-ms', 'later'], "Error: --exit-after-ms must be a number, got 'later'"],
+        ];
+
+        for (const [args, message] of CASES) {
+            it(`${args.join(' ')} is rejected`, async () => {
+                const result = await workspace.runCli(args, { ignoreExitCode: true });
+                expect(result.exitCode).toBe(1);
+                expect(result.stderrAsString().trim()).toBe(message);
+            });
+        }
+    });
+
     describe('directory without config file', () => {
         it('should error when starting service without config', async () => {
             const result = await workspace.runCli(['start', 'something'], { cwd: '/tmp', ignoreExitCode: true });

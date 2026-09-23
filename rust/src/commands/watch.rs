@@ -12,9 +12,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::config::file::find_project_dir;
-use crate::db::process_table::{
-    find_processes_by_command_name_and_project_dir, find_running_processes_by_project_dir,
-};
+use crate::db::process_table::find_running_processes_by_project_dir;
 use crate::errors::CandleError;
 use crate::log_filters::LatestRunFilter;
 use crate::logs::console_log::{
@@ -23,7 +21,7 @@ use crate::logs::console_log::{
 use crate::logs::process_logs::ProcessLog;
 use crate::logs::LogIterator;
 use crate::output;
-use crate::process_alive::filter_alive_processes;
+use crate::process_alive::{filter_alive_processes, is_service_running};
 
 const INITIAL_LOG_COUNT: i64 = 100;
 const POLL_INTERVAL: u64 = 200;
@@ -188,15 +186,7 @@ pub fn handle_watch(
     } else {
         // Each named process must be running.
         for name in command_names {
-            let existing = find_processes_by_command_name_and_project_dir(conn, name, &project_dir)
-                .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
-            let not_killed: Vec<_> = existing
-                .into_iter()
-                .filter(|p| p.killed_at.is_none())
-                .collect();
-            let running = filter_alive_processes(conn, not_killed)
-                .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
-            if running.is_empty() {
+            if !is_service_running(conn, &project_dir, name)? {
                 return Err(CandleError::UsageError(format!(
                     "Process '{name}' is not running. Start it with: candle start {name}"
                 )));
@@ -221,8 +211,7 @@ pub fn handle_watch(
         command_names,
         exit_after_ms,
         Some(RECENT_LOG_WINDOW_MS),
-    )
-    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+    )?;
 
     Ok(())
 }
@@ -240,8 +229,7 @@ pub fn watch_started_services(
     output::out("[Now watching console logs. Press Ctrl+C to stop watching.]");
     output::out("");
 
-    watch_process(conn, project_dir, command_names, exit_after_ms, None)
-        .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+    watch_process(conn, project_dir, command_names, exit_after_ms, None)?;
 
     Ok(())
 }
