@@ -156,12 +156,14 @@ Each entry shows the service's full shell command and directory, untruncated:
 
 ```
 $ candle list
-web  RUNNING  pid 12345  uptime 3m 5s
-  command:   npm run dev
+[web]
+  status: RUNNING - pid 12345 - uptime 3m 5s
+  command: npm run dev
   directory: /Users/andy/proj/web
 
-api  not running
-  command:   npm run api
+[api]
+  status: not running
+  command: npm run api
   directory: /Users/andy/proj
 ```
 

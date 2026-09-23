@@ -18,10 +18,11 @@ describe('List Format', () => {
         const output = (await workspace.runCli(['list'])).stdoutAsString();
         const lines = output.split('\n');
 
-        // Header line, then the two indented detail lines.
-        expect(lines[0]).toMatch(/^test-format {2}RUNNING {2}pid \d+ {2}uptime \S/);
-        expect(lines[1]).toBe(`  command:   ${SHELL}`);
-        expect(lines[2]).toBe(`  directory: ${workspace.dbDir}`);
+        // [name] header line, then the three indented detail lines.
+        expect(lines[0]).toBe('[test-format]');
+        expect(lines[1]).toMatch(/^ {2}status: RUNNING - pid \d+ - uptime \S/);
+        expect(lines[2]).toBe(`  command: ${SHELL}`);
+        expect(lines[3]).toBe(`  directory: ${workspace.dbDir}`);
 
         // The table headers belong to 'candle ps' now.
         expect(output).not.toContain('NAME');

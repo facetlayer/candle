@@ -61,7 +61,7 @@ describe('service status and directories', () => {
 
         it('list shows EXITED (<code>) too', async () => {
             const result = await workspace.runCli(['list', 'crasher']);
-            expect(result.stdoutAsString().split('\n')[0]).toBe('crasher  EXITED (3)');
+            expect(result.stdoutAsString().split('\n')[1]).toBe('  status: EXITED (3)');
         });
 
         it('--json carries the exit code', async () => {
@@ -95,7 +95,7 @@ describe('service status and directories', () => {
 
         it('list shows FAILED too', async () => {
             const result = await workspace.runCli(['list', 'missing-root']);
-            expect(result.stdoutAsString().split('\n')[0]).toBe('missing-root  FAILED');
+            expect(result.stdoutAsString().split('\n')[1]).toBe('  status: FAILED');
         });
 
         it('--json has status FAILED and a null exitCode', async () => {

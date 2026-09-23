@@ -5,6 +5,7 @@
  - Add `--project-dir` option to many commands.
  - Add command `candle find-orphans`
  - Split up commands `candle ps` (table view) and `candle list` (multi-line listing)
+ - New `candle list` format: `[name]` header with indented `status:`, `command:` and `directory:` lines
  - Rewrite the docs seen in `candle list-docs`
  - Bug fixes to not show log messages from old/stale instances
  - Remove the `--mcp` option (use the `candle mcp` command instead)

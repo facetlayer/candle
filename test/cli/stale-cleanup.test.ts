@@ -18,7 +18,7 @@ describe('Stale process cleanup', () => {
         // Kill the process externally (bypassing candle), simulating a reboot.
         // We use SIGKILL to prevent graceful shutdown / cleanup.
         const listBefore = await workspace.runCli(['list']);
-        const pidMatch = listBefore.stdoutAsString().match(/^echo\s+RUNNING\s+pid\s+(\d+)/m);
+        const pidMatch = listBefore.stdoutAsString().match(/^\[echo\]\n  status: RUNNING - pid (\d+)/m);
         expect(pidMatch).toBeTruthy();
         const pid = parseInt(pidMatch![1], 10);
 
@@ -47,9 +47,8 @@ describe('Stale process cleanup', () => {
         // The list should show exactly one RUNNING entry for echo (the new one),
         // not two (which would happen if the stale entry persisted).
         const afterResult = await workspace.runCli(['list']);
-        const runningLines = afterResult.stdoutAsString().split('\n')
-            .filter(line => line.includes('echo') && line.includes('RUNNING'));
-        expect(runningLines.length).toBe(1);
+        const runningEntries = afterResult.stdoutAsString().match(/^\[echo\]\n  status: RUNNING/gm) ?? [];
+        expect(runningEntries.length).toBe(1);
     });
 
     it('should not remove entries for processes that are still alive', async () => {
@@ -77,7 +76,7 @@ describe('Stale process cleanup', () => {
         expect(before.stdoutAsString()).toContain('RUNNING');
 
         // Get the PID and kill it externally
-        const pidMatch = before.stdoutAsString().match(/^stale-test\s+RUNNING\s+pid\s+(\d+)/m);
+        const pidMatch = before.stdoutAsString().match(/^\[stale-test\]\n  status: RUNNING - pid (\d+)/m);
         expect(pidMatch).toBeTruthy();
         const pid = parseInt(pidMatch![1], 10);
 
@@ -89,6 +88,6 @@ describe('Stale process cleanup', () => {
 
         // Now list should not show stale-test as RUNNING
         const after = await workspace.runCli(['list']);
-        expect(after.stdoutAsString()).not.toMatch(/stale-test\s+RUNNING/);
+        expect(after.stdoutAsString()).not.toMatch(/\[stale-test\]\n  status: RUNNING/);
     });
 });

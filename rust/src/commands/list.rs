@@ -351,11 +351,12 @@ pub fn filter_by_service_names(
 
 /// Render a [`ListOutput`] as the multiline detail view used by `candle list`.
 ///
-/// Each entry is a header line (`name  STATUS  pid N  uptime T`) followed by
-/// two-space-indented `command:` and `directory:` lines carrying the full,
-/// untruncated values. Entries are separated by a blank line. `pid` and
-/// `uptime` are omitted for services that are not running, and
-/// ` [config changed]` is appended to the status on config drift.
+/// Each entry is a `[name]` header line followed by two-space-indented
+/// `status:`, `command:` and `directory:` lines carrying the full,
+/// untruncated values. Entries are separated by a blank line. The status line
+/// reads `STATUS - pid N - uptime T`; `pid` and `uptime` are omitted for
+/// services that are not running, and ` [config changed]` is appended to the
+/// status on config drift.
 pub fn format_list_detail(output: &ListOutput) -> String {
     if output.processes.is_empty() {
         return "No services configured.".to_string();
@@ -363,21 +364,21 @@ pub fn format_list_detail(output: &ListOutput) -> String {
 
     let mut entries: Vec<String> = Vec::new();
     for p in &output.processes {
-        let mut header = format!("{}  {}", p.service_name, p.status);
+        let mut status = p.status.clone();
         if p.config_changed {
-            header.push_str(" [config changed]");
+            status.push_str(" [config changed]");
         }
         if p.status == STATUS_RUNNING {
             if let Some(pid) = p.pid {
-                header.push_str(&format!("  pid {pid}"));
+                status.push_str(&format!(" - pid {pid}"));
             }
             if !p.uptime.is_empty() && p.uptime != "-" {
-                header.push_str(&format!("  uptime {}", p.uptime));
+                status.push_str(&format!(" - uptime {}", p.uptime));
             }
         }
         entries.push(format!(
-            "{header}\n  command:   {}\n  directory: {}",
-            p.command, p.working_dir
+            "[{}]\n  status: {status}\n  command: {}\n  directory: {}",
+            p.service_name, p.command, p.working_dir
         ));
     }
 
@@ -570,7 +571,7 @@ mod tests {
     fn detail_view_is_multiline_and_untruncated() {
         assert_eq!(
             format_list_detail(&sample()),
-            "web  RUNNING  pid 12345  uptime 3m 5s\n  command:   npm run dev\n  directory: /proj/web\n\napi  not running\n  command:   npm run api\n  directory: /proj"
+            "[web]\n  status: RUNNING - pid 12345 - uptime 3m 5s\n  command: npm run dev\n  directory: /proj/web\n\n[api]\n  status: not running\n  command: npm run api\n  directory: /proj"
         );
     }
 
@@ -579,7 +580,7 @@ mod tests {
         let mut out = sample();
         out.processes[0].config_changed = true;
         let text = format_list_detail(&out);
-        assert!(text.starts_with("web  RUNNING [config changed]  pid 12345"));
+        assert!(text.starts_with("[web]\n  status: RUNNING [config changed] - pid 12345"));
         assert_eq!(
             format_list_detail(&ListOutput { processes: vec![] }),
             "No services configured."
@@ -659,8 +660,8 @@ mod tests {
 
         // The rendered row shows the shell string, not the service name.
         let text = format_list_detail(&sample());
-        assert!(text.contains("command:   npm run dev"));
-        assert!(!text.contains("command:   web"));
+        assert!(text.contains("command: npm run dev"));
+        assert!(!text.contains("command: web"));
     }
 
     fn blank_entry() -> ProcessEntry {

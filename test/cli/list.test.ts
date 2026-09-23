@@ -9,12 +9,12 @@ const workspace = new TestWorkspace('cli-list');
 const ECHO_SHELL = 'node ../../sampleServers/echoServer.js';
 const WEB_SHELL = 'node ../../sampleServers/testProcess.js';
 
-/** The multiline detail entry for a service, i.e. its header line plus the two indented lines. */
+/** The multiline detail entry for a service: the status, command and directory lines under its `[name]` header. */
 function entryFor(output: string, serviceName: string): string[] {
     const lines = output.split('\n');
-    const start = lines.findIndex(line => line.startsWith(`${serviceName}  `));
+    const start = lines.indexOf(`[${serviceName}]`);
     expect(start, `no entry for '${serviceName}' in:\n${output}`).toBeGreaterThanOrEqual(0);
-    return lines.slice(start, start + 3);
+    return lines.slice(start + 1, start + 4);
 }
 
 describe('CLI List Command', () => {
@@ -36,13 +36,13 @@ describe('CLI List Command', () => {
             await workspace.runCli(['start', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            const [header, command, directory] = entryFor(
+            const [status, command, directory] = entryFor(
                 (await workspace.runCli(['list'])).stdoutAsString(),
                 'echo'
             );
 
-            expect(header).toMatch(/^echo {2}RUNNING {2}pid \d+ {2}uptime \S/);
-            expect(command).toBe(`  command:   ${ECHO_SHELL}`);
+            expect(status).toMatch(/^ {2}status: RUNNING - pid \d+ - uptime \S/);
+            expect(command).toBe(`  command: ${ECHO_SHELL}`);
             expect(directory).toBe(`  directory: ${workspace.dbDir}`);
         });
 
@@ -70,15 +70,15 @@ describe('CLI List Command', () => {
         it('should omit pid and uptime for services that are not running', async () => {
             await workspace.runCli(['kill'], { ignoreExitCode: true });
 
-            const [header, command] = entryFor(
+            const [status, command] = entryFor(
                 (await workspace.runCli(['list'])).stdoutAsString(),
                 'web'
             );
 
-            expect(header).toBe('web  not running');
-            expect(header).not.toContain('pid');
-            expect(header).not.toContain('uptime');
-            expect(command).toBe(`  command:   ${WEB_SHELL}`);
+            expect(status).toBe('  status: not running');
+            expect(status).not.toContain('pid');
+            expect(status).not.toContain('uptime');
+            expect(command).toBe(`  command: ${WEB_SHELL}`);
         });
     });
 
@@ -88,8 +88,8 @@ describe('CLI List Command', () => {
 
             const output = (await workspace.runCli(['list'])).stdoutAsString();
 
-            expect(output).toContain(`command:   ${ECHO_SHELL}`);
-            expect(output).not.toContain('command:   echo');
+            expect(output).toContain(`command: ${ECHO_SHELL}`);
+            expect(output).not.toContain('command: echo');
         });
 
         it('should show the launched shell for a running process', async () => {
@@ -101,7 +101,7 @@ describe('CLI List Command', () => {
                 'echo'
             );
 
-            expect(command).toBe(`  command:   ${ECHO_SHELL}`);
+            expect(command).toBe(`  command: ${ECHO_SHELL}`);
         });
 
         it('should show the transient shell for a process started with --shell', async () => {
@@ -113,7 +113,7 @@ describe('CLI List Command', () => {
                 'echo'
             );
 
-            expect(command).toBe(`  command:   ${WEB_SHELL}`);
+            expect(command).toBe(`  command: ${WEB_SHELL}`);
         });
 
         it('should expose the shell string as the command in --json', async () => {
@@ -134,7 +134,7 @@ describe('CLI List Command', () => {
             expect(output).toContain('echo-test');
             expect(output).not.toContain('web');
             // 'echo' only appears as part of 'echo-test'
-            expect(output.split('\n').filter(line => line.startsWith('echo  ')).length).toBe(0);
+            expect(output.split('\n').filter(line => line === '[echo]').length).toBe(0);
         });
 
         it('should accept multiple names', async () => {
@@ -191,13 +191,14 @@ describe('CLI List Command', () => {
             expect(output).not.toContain('STATUS');
             expect(output).not.toContain('UPTIME');
 
-            // Each entry is a header line plus two indented detail lines.
+            // Each entry is a [name] header line plus three indented detail lines.
             const lines = output.split('\n').filter(line => line.length > 0);
-            expect(lines.length % 3).toBe(0);
-            for (let i = 0; i < lines.length; i += 3) {
-                expect(lines[i]).not.toMatch(/^ /);
-                expect(lines[i + 1]).toMatch(/^ {2}command: {3}/);
-                expect(lines[i + 2]).toMatch(/^ {2}directory: /);
+            expect(lines.length % 4).toBe(0);
+            for (let i = 0; i < lines.length; i += 4) {
+                expect(lines[i]).toMatch(/^\[\S+\]$/);
+                expect(lines[i + 1]).toMatch(/^ {2}status: /);
+                expect(lines[i + 2]).toMatch(/^ {2}command: /);
+                expect(lines[i + 3]).toMatch(/^ {2}directory: /);
             }
         });
 
@@ -210,7 +211,7 @@ describe('CLI List Command', () => {
                 'long-command'
             );
 
-            expect(command).toBe(`  command:   ${longShell}`);
+            expect(command).toBe(`  command: ${longShell}`);
             expect(command).not.toContain('...');
         });
 
@@ -219,13 +220,13 @@ describe('CLI List Command', () => {
             await workspace.runCli(['start', 'echo', '--shell', WEB_SHELL]);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Test server started']);
 
-            const [header] = entryFor(
+            const [status] = entryFor(
                 (await workspace.runCli(['list'])).stdoutAsString(),
                 'echo'
             );
 
-            expect(header).toContain('[config changed]');
-            expect(header).toMatch(/^echo {2}RUNNING \[config changed\] {2}pid \d+/);
+            expect(status).toContain('[config changed]');
+            expect(status).toMatch(/^ {2}status: RUNNING \[config changed\] - pid \d+/);
         });
     });
 

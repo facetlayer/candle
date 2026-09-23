@@ -37,17 +37,19 @@ For a compact one-line-per-service table, use [ps](ps) instead.
 
 ## Output
 
-Each entry's header line is the service name, its status, and (when running) its
-pid and uptime:
+Each entry starts with the service name in brackets, followed by its status (with
+its pid and uptime when running), command, and directory:
 
 ```
 $ candle list
-web  RUNNING  pid 12345  uptime 3m 5s
-  command:   npm run dev
+[web]
+  status: RUNNING - pid 12345 - uptime 3m 5s
+  command: npm run dev
   directory: /Users/andy/proj/web
 
-api  not running
-  command:   npm run api
+[api]
+  status: not running
+  command: npm run api
   directory: /Users/andy/proj
 ```
 
@@ -60,8 +62,9 @@ OOM killer) shows `FAILED`. A service stopped with `candle kill` or `candle rest
 `FAILED`:
 
 ```
-jobs  EXITED (1)
-  command:   node jobs.js
+[jobs]
+  status: EXITED (1)
+  command: node jobs.js
   directory: /Users/andy/proj
 ```
 
@@ -73,8 +76,9 @@ If a running process was started from a service definition that has since been
 edited in `.candle.json`, ` [config changed]` is appended to its status:
 
 ```
-web  RUNNING [config changed]  pid 12345  uptime 3m 5s
-  command:   npm run dev
+[web]
+  status: RUNNING [config changed] - pid 12345 - uptime 3m 5s
+  command: npm run dev
   directory: /Users/andy/proj/web
 ```
 
