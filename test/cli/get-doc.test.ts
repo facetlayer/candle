@@ -6,16 +6,16 @@ const workspace = new TestWorkspace('cli-get-doc');
 describe('CLI Get-Doc Command', () => {
 
     describe('basic get-doc functionality', () => {
-        it('should display getting-started documentation', async () => {
-            const result = await workspace.runCli(['get-doc', 'getting-started']);
+        it('should display project-setup documentation', async () => {
+            const result = await workspace.runCli(['get-doc', 'project-setup']);
 
-            expect(result.stdoutAsString()).toContain('Getting Started');
+            expect(result.stdoutAsString()).toContain('Project Setup');
             expect(result.stdoutAsString().length).toBeGreaterThan(100);
         });
 
         it('should exit quickly', async () => {
             const startTime = Date.now();
-            await workspace.runCli(['get-doc', 'getting-started']);
+            await workspace.runCli(['get-doc', 'project-setup']);
             const elapsed = Date.now() - startTime;
 
             expect(elapsed).toBeLessThan(2000);
@@ -35,12 +35,14 @@ describe('CLI Get-Doc Command', () => {
             const result = await workspace.runCli(['get-doc'], { ignoreExitCode: true });
 
             expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('get-doc requires a <name>');
+            expect(result.stderrAsString()).not.toContain('Doc file not found');
         });
     });
 
     describe('get-doc output format', () => {
         it('should output document content to stdout', async () => {
-            const result = await workspace.runCli(['get-doc', 'getting-started']);
+            const result = await workspace.runCli(['get-doc', 'project-setup']);
 
             expect(result.stdoutAsString().length).toBeGreaterThan(0);
             expect(result.stderrAsString()).toBe('');
@@ -49,10 +51,10 @@ describe('CLI Get-Doc Command', () => {
 
     describe('get-doc name matching', () => {
         it('should not prefix-match a doc name', async () => {
-            const result = await workspace.runCli(['get-doc', 'start'], { ignoreExitCode: true });
+            const result = await workspace.runCli(['get-doc', 'project'], { ignoreExitCode: true });
 
             expect(result.failed()).toBe(true);
-            expect(result.stderrAsString()).toContain('Doc file not found: start');
+            expect(result.stderrAsString()).toContain('Doc file not found: project');
         });
 
         it('should accept the name with or without .md', async () => {
@@ -63,11 +65,11 @@ describe('CLI Get-Doc Command', () => {
         });
 
         it('should strip YAML frontmatter', async () => {
-            const result = await workspace.runCli(['get-doc', 'getting-started']);
+            const result = await workspace.runCli(['get-doc', 'project-setup']);
             const output = result.stdoutAsString();
 
             expect(output.startsWith('---')).toBe(false);
-            expect(output).not.toContain('description: Quick start guide');
+            expect(output).not.toContain('description: Set up a project');
         });
 
         it('should report the README at the repo root', async () => {
@@ -78,9 +80,9 @@ describe('CLI Get-Doc Command', () => {
         });
 
         it('should report docs/ as the source for other docs', async () => {
-            const result = await workspace.runCli(['get-doc', 'getting-started']);
+            const result = await workspace.runCli(['get-doc', 'project-setup']);
 
-            expect(result.stdoutAsString()).toContain('(File source: docs/getting-started.md)');
+            expect(result.stdoutAsString()).toContain('(File source: docs/project-setup.md)');
         });
     });
 
@@ -89,6 +91,12 @@ describe('CLI Get-Doc Command', () => {
             const result = await workspace.runCli(['get-doc', 'transient-processes']);
 
             expect(result.stdoutAsString()).toContain('Transient');
+        });
+
+        it('should get mcp-usage doc', async () => {
+            const result = await workspace.runCli(['get-doc', 'mcp-usage']);
+
+            expect(result.stdoutAsString()).toContain('candle mcp');
         });
     });
 });

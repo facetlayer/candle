@@ -1,16 +1,15 @@
 //! `list-ports` / `list-ports-all` command.
 //!
-//! Ported from `src/list-ports-command.ts`. Walks the process tree of each
-//! managed process, runs a single system-wide `lsof` for listening TCP sockets,
-//! and maps each socket back to the service that owns the PID.
+//! Walks the process tree of each managed process, asks the platform for the
+//! listening TCP sockets of those PIDs (see [`crate::listening_ports`]), and
+//! maps each socket back to the service that owns the PID.
 //!
 //! Note: unlike `list`, this uses the non-running query (`findProcessesByProjectDir`
 //! includes killed rows) and does NOT prune dead PIDs — correctness comes from
-//! `lsof` simply not matching dead PIDs.
+//! dead PIDs simply owning no sockets.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use rusqlite::Connection;
 use serde::Serialize;
@@ -18,6 +17,7 @@ use serde::Serialize;
 use crate::config::{find_config_file, find_service_by_name};
 use crate::db::process_table::{find_all_processes, find_processes_by_project_dir};
 use crate::errors::CandleError;
+use crate::listening_ports::listening_sockets_for_pids;
 use crate::process_tree::get_process_tree;
 
 /// One listening socket attributed to a service. Field names match the JSON the
@@ -38,15 +38,6 @@ pub struct PortInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListPortsOutput {
     pub ports: Vec<PortInfo>,
-}
-
-/// A raw listening socket parsed from `lsof`, before service attribution.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RawPortInfo {
-    pid: i64,
-    port: i64,
-    address: String,
-    protocol: String,
 }
 
 fn db_err(e: rusqlite::Error) -> CandleError {
@@ -87,8 +78,8 @@ pub fn handle_list_ports(
         process_entries.retain(|entry| command_names.contains(&entry.command_name));
     }
 
-    // Compute each process's full tree, collect all PIDs for one lsof call, and
-    // build a PID → service map (later trees overwrite earlier on collision, as
+    // Compute each process's full tree, collect all PIDs for one socket lookup,
+    // and build a PID → service map (later trees overwrite earlier on collision, as
     // in the Node `Map.set` loop).
     let trees: Vec<(String, i64, Vec<i64>)> = process_entries
         .iter()
@@ -101,16 +92,17 @@ pub fn handle_list_ports(
         })
         .collect();
 
-    let mut all_pids: Vec<i64> = Vec::new();
-    for (_, _, pids) in &trees {
-        all_pids.extend(pids.iter().copied());
-    }
+    let all_pids: HashSet<i64> = trees
+        .iter()
+        .flat_map(|(_, _, pids)| pids.iter().copied())
+        .collect();
 
     if all_pids.is_empty() {
         return Ok(ListPortsOutput { ports: vec![] });
     }
 
-    let raw_ports = get_listening_ports(&all_pids);
+    let raw_ports =
+        listening_sockets_for_pids(&all_pids).map_err(|e| CandleError::Generic(e.to_string()))?;
 
     let mut pid_to_service: HashMap<i64, (String, i64)> = HashMap::new();
     for (service_name, root_pid, pids) in &trees {
@@ -134,97 +126,6 @@ pub fn handle_list_ports(
     }
 
     Ok(ListPortsOutput { ports })
-}
-
-/// Run a single `lsof -iTCP -sTCP:LISTEN -n -P`, parse all listening sockets, and
-/// filter to the requested PID set. On any spawn failure (e.g. lsof missing),
-/// returns an empty list — matching the Node `error` handler.
-fn get_listening_ports(pids: &[i64]) -> Vec<RawPortInfo> {
-    if pids.is_empty() {
-        return Vec::new();
-    }
-    let pid_set: HashSet<i64> = pids.iter().copied().collect();
-
-    let output = Command::new("lsof")
-        .args(["-iTCP", "-sTCP:LISTEN", "-n", "-P"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output();
-
-    let output = match output {
-        Ok(output) => output,
-        Err(_) => return Vec::new(),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_lsof_output(&stdout)
-        .into_iter()
-        .filter(|p| pid_set.contains(&p.pid))
-        .collect()
-}
-
-/// Parse `lsof` output into raw listening sockets.
-///
-/// Brittle positional parsing matching `parseLsofOutput`: only `LISTEN` lines,
-/// ≥9 whitespace fields, PID from field 1, protocol from the first `TCP`/`UDP`
-/// token (default `TCP`), name from the second-to-last token split at its last
-/// `:`, `*` → `0.0.0.0`, deduped by `pid:port`.
-fn parse_lsof_output(output: &str) -> Vec<RawPortInfo> {
-    let mut port_infos: Vec<RawPortInfo> = Vec::new();
-
-    for line in output.split('\n') {
-        if !line.contains("LISTEN") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 {
-            continue;
-        }
-
-        let pid: i64 = match parts[1].parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let protocol = parts
-            .iter()
-            .find(|p| **p == "TCP" || **p == "UDP")
-            .copied()
-            .unwrap_or("TCP")
-            .to_string();
-
-        // Second-to-last token (the last is "(LISTEN)").
-        let name_column = parts[parts.len() - 2];
-        if !name_column.contains(':') {
-            continue;
-        }
-
-        let last_colon = name_column.rfind(':').unwrap();
-        let address = &name_column[..last_colon];
-        let port_str = &name_column[last_colon + 1..];
-        let port: i64 = match port_str.parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let normalized_address = if address == "*" { "0.0.0.0" } else { address };
-
-        port_infos.push(RawPortInfo {
-            pid,
-            port,
-            address: normalized_address.to_string(),
-            protocol,
-        });
-    }
-
-    // Deduplicate by pid+port (lsof prints separate IPv4/IPv6 lines per listener).
-    let mut seen: HashSet<String> = HashSet::new();
-    port_infos
-        .into_iter()
-        .filter(|info| seen.insert(format!("{}:{}", info.pid, info.port)))
-        .collect()
 }
 
 /// Serialize the output as the MCP-facing JSON (`{ports:[...]}`).
@@ -304,52 +205,6 @@ pub fn format_list_ports_output(output: &ListPortsOutput) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_ipv4_and_star() {
-        let out = "\
-COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-node    12345   user   45u  IPv4 0x1234    0t0  TCP 127.0.0.1:3000 (LISTEN)
-node    12345   user   46u  IPv4 0x1235    0t0  TCP *:8080 (LISTEN)
-";
-        let parsed = parse_lsof_output(out);
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].pid, 12345);
-        assert_eq!(parsed[0].port, 3000);
-        assert_eq!(parsed[0].address, "127.0.0.1");
-        assert_eq!(parsed[0].protocol, "TCP");
-        assert_eq!(parsed[1].address, "0.0.0.0");
-        assert_eq!(parsed[1].port, 8080);
-    }
-
-    #[test]
-    fn parse_ipv6_splits_on_last_colon() {
-        let out = "node    222   user   7u  IPv6 0xabc    0t0  TCP [::1]:5173 (LISTEN)\n";
-        let parsed = parse_lsof_output(out);
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].address, "[::1]");
-        assert_eq!(parsed[0].port, 5173);
-    }
-
-    #[test]
-    fn dedup_by_pid_port() {
-        let out = "\
-node    1   u   7u  IPv4 0x1 0t0 TCP 127.0.0.1:3000 (LISTEN)
-node    1   u   8u  IPv6 0x2 0t0 TCP [::1]:3000 (LISTEN)
-";
-        let parsed = parse_lsof_output(out);
-        // Same pid:port → second dropped.
-        assert_eq!(parsed.len(), 1);
-    }
-
-    #[test]
-    fn non_listen_and_short_lines_skipped() {
-        let out = "\
-node    1   u   7u  IPv4 0x1 0t0 TCP 127.0.0.1:3000 (ESTABLISHED)
-short line LISTEN
-";
-        assert!(parse_lsof_output(out).is_empty());
-    }
 
     #[test]
     fn empty_output_message() {

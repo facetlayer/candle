@@ -16,6 +16,7 @@ pub mod dirs;
 pub mod doc_files;
 pub mod errors;
 pub mod kill;
+pub mod listening_ports;
 pub mod log_filters;
 pub mod logs;
 pub mod mcp;

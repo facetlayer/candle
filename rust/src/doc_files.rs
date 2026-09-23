@@ -12,6 +12,9 @@ use include_dir::{include_dir, Dir};
 static DOCS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../docs");
 const README: &str = include_str!("../../README.md");
 
+/// The README has no frontmatter, so `list-docs` uses this description for it.
+const README_DESCRIPTION: &str = "Full reference for every command (the project README)";
+
 /// Metadata about a doc file, pulled from its frontmatter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocInfo {
@@ -25,7 +28,7 @@ pub struct DocInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocContent {
     pub filename: String,
-    /// Repo-relative path of the source file, e.g. `docs/getting-started.md`.
+    /// Repo-relative path of the source file, e.g. `docs/project-setup.md`.
     pub source_path: String,
     pub content: String,
 }
@@ -103,9 +106,16 @@ pub fn list_docs() -> Vec<DocInfo> {
         .into_iter()
         .map(|(filename, raw)| {
             let (name, description, _) = parse_frontmatter(raw);
+            let description = description.unwrap_or_else(|| {
+                if filename == "README.md" {
+                    README_DESCRIPTION.to_string()
+                } else {
+                    String::new()
+                }
+            });
             DocInfo {
                 name: name.unwrap_or_else(|| stem(&filename).to_string()),
-                description: description.unwrap_or_default(),
+                description,
                 filename,
             }
         })
@@ -115,7 +125,7 @@ pub fn list_docs() -> Vec<DocInfo> {
 /// Resolve a doc by name: the key `list-docs` shows (its frontmatter `name`,
 /// or the filename without `.md`), or the filename itself. Matching is exact
 /// apart from letter case; there is no prefix or substring matching, so
-/// `get-doc start` does not pick up `getting-started`.
+/// `get-doc project` does not pick up `project-setup`.
 pub fn get_doc(name: &str) -> Result<DocContent, DocLookupError> {
     let wanted = name.trim().to_lowercase();
     let wanted_stem = stem(&wanted).to_string();
@@ -148,7 +158,7 @@ mod tests {
     #[test]
     fn lists_embedded_docs() {
         let docs = list_docs();
-        assert!(docs.iter().any(|d| d.filename == "getting-started.md"));
+        assert!(docs.iter().any(|d| d.filename == "project-setup.md"));
         assert!(docs.iter().any(|d| d.filename == "transient-processes.md"));
         // README is appended as an extra file.
         assert!(docs.iter().any(|d| d.filename == "README.md"));
@@ -163,15 +173,15 @@ mod tests {
 
     #[test]
     fn get_doc_exact_names() {
-        let d = get_doc("getting-started").unwrap();
-        assert_eq!(d.filename, "getting-started.md");
-        assert_eq!(d.source_path, "docs/getting-started.md");
-        assert!(d.content.contains("Getting Started"));
+        let d = get_doc("project-setup").unwrap();
+        assert_eq!(d.filename, "project-setup.md");
+        assert_eq!(d.source_path, "docs/project-setup.md");
+        assert!(d.content.contains("Project Setup"));
 
         // The filename form works too.
         assert_eq!(
-            get_doc("getting-started.md").unwrap().filename,
-            "getting-started.md"
+            get_doc("project-setup.md").unwrap().filename,
+            "project-setup.md"
         );
 
         let t = get_doc("transient-processes").unwrap();
@@ -181,7 +191,7 @@ mod tests {
     #[test]
     fn get_doc_does_not_prefix_match() {
         assert_eq!(get_doc("start"), Err(DocLookupError::NotFound));
-        assert_eq!(get_doc("getting"), Err(DocLookupError::NotFound));
+        assert_eq!(get_doc("project"), Err(DocLookupError::NotFound));
         assert_eq!(get_doc(""), Err(DocLookupError::NotFound));
     }
 

@@ -303,8 +303,9 @@ previous recent run has the same message.
 
 Uses the operating system to detect and list the active open ports for running services.
 
-This command searches Candle managed processes and also child processes. It uses `lsof`
-to find to find TCP ports that are in a LISTEN state
+This command searches Candle managed processes and also child processes, and finds TCP ports
+that are in a LISTEN state. It reads `/proc/net/tcp` on Linux, and uses `lsof` on macOS and
+`netstat` on Windows; if the needed tool is missing it prints an error saying what to install.
 
 If no `[names]` are provided: Show ports for all running services in the current project.
 A name that isn't a service in this project is an error. Pass `--json` for machine-readable output.
@@ -355,9 +356,10 @@ Set a configuration option in `.candle.json`. The valid keys are `logEviction.ma
 
 Other CLI commands that are not typically used:
 
-### `candle mcp` or `candle --mcp`
+### `candle mcp`
 
-Run Candle in MCP mode, using stdin as the transport.
+Run Candle as an MCP server, using stdin/stdout as the transport. See `candle get-doc mcp-usage`
+for client setup and the list of tools.
 
 Note that it's now recommended for coding agents to use the `candle` CLI over Bash,
 instead of using the MCP server. But this is provided as an option.
@@ -398,7 +400,7 @@ If no `service names` are provided: Delete the logs for every service in this pr
 
 List and print the documentation files built into the binary (the files directly in `./docs` plus this README;
 developer docs in `./docs/dev` are not included).
-`get-doc` takes the name `list-docs` shows (for example `candle get-doc getting-started`) and matches it
+`get-doc` takes the name `list-docs` shows (for example `candle get-doc project-setup`) and matches it
 exactly.
 
 ### `candle erase-database`

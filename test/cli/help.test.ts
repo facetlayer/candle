@@ -62,7 +62,9 @@ describe('CLI Help Command', () => {
             expect(normalized).toContain('Configuration:');
             expect(normalized).toContain('Documentation:');
             expect(normalized).toContain('Troubleshooting & Maintenance:');
+            expect(normalized).toContain('Other:');
             expect(normalized).toContain('Options:');
+            expect(normalized).toContain('--json');
         });
     });
 
@@ -212,6 +214,30 @@ describe('CLI Help Command', () => {
             const result = await workspace.runCli(['get-doc', '--help']);
 
             expect(result.stdoutAsString()).toContain('get-doc');
+        });
+    });
+
+    describe('main help content', () => {
+        it('should list the stop alias next to kill', async () => {
+            const result = await workspace.runCli(['--help']);
+
+            expect(result.stdoutAsString()).toContain('kill, stop [names...]');
+        });
+
+        it('should list help and mcp as commands, not options', async () => {
+            const result = await workspace.runCli(['--help']);
+            const out = result.stdoutAsString();
+            const other = out.slice(out.indexOf('Other:'), out.indexOf('Options:'));
+
+            expect(other).toContain('help');
+            expect(other).toContain('mcp');
+        });
+
+        it('should show the valid keys in set-config help', async () => {
+            const result = await workspace.runCli(['set-config', '--help']);
+
+            expect(result.stdoutAsString()).toContain('logEviction.maxLogsPerService');
+            expect(result.stdoutAsString()).toContain('logEviction.maxRetentionSeconds');
         });
     });
 

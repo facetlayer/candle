@@ -5,7 +5,10 @@
 //! platform-specific command:
 //! - macOS: `pgrep -P <pid>`
 //! - Linux: `ps -o pid --no-headers --ppid <pid>`
+//! - Windows: PowerShell `Get-CimInstance Win32_Process -Filter "ParentProcessId=<pid>"`
 //! - other platforms: no descendants (returns just the root).
+//!
+//! If the platform tool is missing or fails, the tree is just the root PID.
 
 use std::process::{Command, Stdio};
 
@@ -46,7 +49,20 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
             ],
         )
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        // `wmic` is deprecated and absent on recent Windows 11 builds, so use the
+        // CIM cmdlet. `-NoProfile` keeps startup fast and output predictable.
+        let script = format!(
+            "Get-CimInstance Win32_Process -Filter \"ParentProcessId={parent_pid}\" | \
+             Select-Object -ExpandProperty ProcessId"
+        );
+        run_command_for_pids(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", &script],
+        )
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = parent_pid;
         Vec::new()
@@ -58,7 +74,10 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
 /// stdin and stderr are silenced; stdout is captured. Non-numeric and blank
 /// lines are dropped. On any spawn failure the result is an empty list (matching
 /// the Node `error` event handler).
-#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(dead_code)
+)]
 fn run_command_for_pids(command: &str, args: &[&str]) -> Vec<i64> {
     let output = Command::new(command)
         .args(args)
@@ -73,10 +92,9 @@ fn run_command_for_pids(command: &str, args: &[&str]) -> Vec<i64> {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    // `lines()` handles the `\r\n` endings PowerShell emits on Windows.
     stdout
-        .trim()
-        .split('\n')
-        .filter(|line| !line.is_empty())
+        .lines()
         .filter_map(|line| line.trim().parse::<i64>().ok())
         .collect()
 }

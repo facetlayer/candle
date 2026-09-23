@@ -3,7 +3,7 @@
 // Three modes, decided here:
 //   - `--monitor`: supervise one service subprocess (see cli/monitor_mode.rs). The CLI
 //     re-invokes itself this way for every service it launches.
-//   - `--mcp` / `mcp`: stdio MCP server.
+//   - `mcp`: stdio MCP server.
 //   - anything else: the normal CLI. Hand-rolled command dispatch; see cli/help.rs and
 //     cli/parser.rs for the help text and argument parsing.
 
@@ -71,7 +71,6 @@ fn main() {
     }
 
     let help_flag = argv.iter().any(|a| a == "--help" || a == "-h");
-    let mcp_flag = argv.iter().any(|a| a == "--mcp");
     let command_token = argv.iter().find(|a| !a.starts_with('-')).cloned();
 
     // --help / -h → grouped help, or command-specific help when a command is named.
@@ -81,11 +80,6 @@ fn main() {
             None => println!("{}", help::grouped_help()),
         }
         return;
-    }
-
-    // `mcp` command or `--mcp` flag → MCP server mode (never returns).
-    if mcp_flag {
-        run_mcp();
     }
 
     let command_token = match command_token {
@@ -126,6 +120,7 @@ fn main() {
         return;
     }
 
+    // `mcp` → MCP server mode (never returns).
     if canonical == "mcp" {
         run_mcp();
     }
@@ -252,20 +247,23 @@ fn cmd_set_config(args: &CommandArgs) {
 }
 
 fn cmd_list_docs() {
-    println!("Available doc files:\n");
-    for doc in doc_files::list_docs() {
-        let hint = format!("candle get-doc {}", doc.name);
+    let docs = doc_files::list_docs();
+    let width = docs.iter().map(|d| d.name.len()).max().unwrap_or(0);
+    println!("Available docs (show one with 'candle get-doc <name>'):\n");
+    for doc in docs {
         if doc.description.is_empty() {
-            println!("  {} ({hint})\n", doc.name);
+            println!("  {}", doc.name);
         } else {
-            println!("  {} ({hint}):", doc.name);
-            println!("    {}\n", doc.description);
+            println!("  {:width$}  {}", doc.name, doc.description);
         }
     }
 }
 
 fn cmd_get_doc(args: &CommandArgs) {
-    let name = args.positionals.first().map(String::as_str).unwrap_or("");
+    let name = match args.positionals.first() {
+        Some(n) if !n.trim().is_empty() => n.as_str(),
+        _ => fatal("get-doc requires a <name>\nRun \"candle list-docs\" to see available docs."),
+    };
     match doc_files::get_doc(name) {
         Ok(doc) => {
             println!("{}", doc.content);

@@ -137,7 +137,7 @@ With `--json` the CLI prints `list_ports_output_to_json` (the `{ ports: [...] }`
 
 ### Algorithm
 1. `showAll`: `processEntries = find_all_processes()`, no config needed (so `list-ports-all` works outside a project).
-2. Otherwise `find_config_file(cwd)` → `project_dir` (errors if none), `processEntries = find_processes_by_project_dir(project_dir)`, and each requested name must be configured (exact match) or have a row in `processEntries`, else `MissingServiceWithName`. `open-browser <name>` inherits this check. **Note:** this uses the *non-running* query — includes `killed_at` rows. No `filterAliveProcesses` here; dead pids simply yield no lsof matches.
+2. Otherwise `find_config_file(cwd)` → `project_dir` (errors if none), `processEntries = find_processes_by_project_dir(project_dir)`, and each requested name must be configured (exact match) or have a row in `processEntries`, else `MissingServiceWithName`. `open-browser <name>` inherits this check. **Note:** this uses the *non-running* query — includes `killed_at` rows. No `filterAliveProcesses` here; dead pids simply own no listening sockets.
 3. If `commandNames` non-empty, filter `processEntries` to those whose `command_name ∈ commandNames`.
 4. For each entry, compute its full process tree `getProcessTree(entry.pid)`.
 5. Collect **all** pids across all trees into `allPids`. If empty → return `{ ports: [] }`.
@@ -149,26 +149,20 @@ With `--json` the CLI prints `list_ports_output_to_json` (the `{ ports: [...] }`
 `get_process_tree(root_pid)`: worklist traversal starting from `root_pid` (included), repeatedly calling `get_child_pids(pid)`:
 - **macOS (`darwin`)**: `pgrep -P <pid>` → child pids.
 - **Linux**: `ps -o pid --no-headers --ppid <pid>`.
+- **Windows**: `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"ParentProcessId=<pid>\" | Select-Object -ExpandProperty ProcessId"` (`wmic` is deprecated/absent on recent Windows).
 - **other platforms**: returns `[]` (no descendants).
-Output parsing: trim, split on `\n`, drop empties, parse base-10 integers, drop non-numeric. On spawn error → `[]`. Result includes the root pid plus all transitive descendants.
+Output parsing: iterate `lines()` (handles `\r\n`), trim, parse base-10 integers, drop non-numeric. On spawn error → `[]`. Result includes the root pid plus all transitive descendants.
 
-### 3.2 Port detection — `getListeningPorts` (`list-ports-command.ts:87-118`)
-Runs **one** command: `lsof -iTCP -sTCP:LISTEN -n -P` (stdin ignored, stderr ignored, stdout captured). Parses **all** listening sockets system-wide, then filters to pids in the requested set. On spawn error (e.g. lsof missing) → returns `[]`.
+### 3.2 Port detection — `listening_sockets_for_pids` (`rust/src/listening_ports.rs`)
+Given the full pid set, returns `Result<Vec<ListeningSocket>, PortLookupError>`. Empty pid set → `Ok([])` without touching the system. Results are filtered to the requested pids and **deduped** by `(pid, port)`, keeping the first address seen (a dual-stack listener shows once). Per platform:
 
-**`parseLsofOutput` (`list-ports-command.ts:128-192`)** — exact rules:
-- Split stdout on `\n`. Skip any line not containing the substring `LISTEN`.
-- Split line on `/\s+/`. Skip if `< 9` fields.
-- pid = base-10 parse of `parts[1]`; skip if non-numeric.
-- protocol = value of first field equal to `"TCP"` or `"UDP"`; if none found default `"TCP"`.
-- name column = `parts[parts.length - 2]` (second-to-last, since last is `(LISTEN)`). Skip if missing or has no `:`.
-- Split address/port at the **last** `:` (`lastIndexOf`). address = before, portStr = after, `port = parseInt(portStr,10)`; skip if non-numeric. This handles IPv6 like `[::1]:3000` (address `[::1]`) and `*:8080`.
-- Normalize: address `"*"` → `"0.0.0.0"`.
-- **Dedup**: keep first occurrence per `"${pid}:${port}"` key (lsof prints IPv4+IPv6 separate lines for the same listener).
+- **Linux**: read `/proc/net/tcp` then `/proc/net/tcp6` (optional), keep rows with state `0A` (LISTEN), decode the hex `local_address` (IPv4: one little-endian u32; IPv6: four little-endian u32 words, rendered bracketed like `[::1]`), and take the `inode` column. Then map inode → pid by `read_link` on `/proc/<pid>/fd/*` for the requested pids only (`socket:[N]`). Needs no external tools and no root for the user's own processes. If `/proc/net/tcp` is unreadable, fall back to lsof; if that also fails → `PortLookupError::ProcUnavailable` naming both causes.
+- **macOS / other Unix**: `lsof -iTCP -sTCP:LISTEN -n -P` (stdin/stderr ignored). Parse: skip lines without `LISTEN`; split on whitespace, need ≥9 fields; pid = field 1; protocol = first `TCP`/`UDP` token else `TCP`; name = second-to-last field split at its **last** `:` (handles `[::1]:3000`); `*` → `0.0.0.0`.
+- **Windows**: `netstat -ano -p TCP`. Rows with exactly 5 fields, `TCP`, state starting `LISTEN` (or `ABH`, German) → pid = field 5, address:port = field 2 (same last-colon split).
 
-Example lsof line that parses (from the doc comment, lines 123-126):
-```
-node    12345   user   45u  IPv4 0x1234    0t0  TCP 127.0.0.1:3000 (LISTEN)
-```
+**Errors** (`PortLookupError`, `Display` prefixed `Could not detect listening ports: `): `ToolNotFound {tool, hint}` when the spawn fails with `NotFound` (hint says how to install), `ToolFailed {tool, detail}` for any other spawn error, `ProcUnavailable {detail, fallback}` on Linux. A non-zero exit from the tool is *not* an error (lsof exits 1 when nothing matches). `handle_list_ports` maps the error to `CandleError::Generic`, so the CLI prints `Error: Could not detect listening ports: ...` and exits 1, and `open-browser` / MCP `ListPorts` surface the same message. This replaces the Node behaviour of silently returning `[]` (which showed a misleading "No open ports found").
+
+All three parsers are pure functions unit-tested on every host; only the tool/`/proc` access is `cfg`-gated. `finds_own_listening_socket` binds a port in-process and checks the platform path end to end.
 
 ### 3.3 `printListPortsOutput` (`list-ports-command.ts:194-225`)
 - Empty → print exactly `No open ports found for running services.` and return.
@@ -236,9 +230,8 @@ Errors: `UsageError`/`MissingSetupFile`/`MissingServiceWithName` are usage error
 - **`pid=None`** (JSON `null`) for not-running rows; printed as `"-"`.
 - **liveness EPERM → alive**; only ESRCH (no-such-process) is dead. And `filterAliveProcesses` **deletes** dead rows as a side effect (mutating the DB during a read command).
 - **`log_collector_pid` checked before `pid`** in liveness, and only if truthy/nonzero.
-- **list-ports uses `findProcessesByProjectDir` (includes killed)** and does NOT prune via `filterAliveProcesses`; correctness comes from lsof simply not matching dead pids. open-browser's `resolveServiceName` likewise counts killed rows as "processes."
-- **lsof parsing** is positional and brittle: relies on the `LISTEN` substring, `>=9` whitespace fields, name = second-to-last token, split at last `:`. The dedup-by-`pid:port` and `*`→`0.0.0.0` normalization are reproduced. Default protocol `"TCP"` if no TCP/UDP token found.
-- **Single global lsof call** then in-memory filter — not per-pid; preserved for performance and to match output.
+- **list-ports uses `findProcessesByProjectDir` (includes killed)** and does NOT prune via `filterAliveProcesses`; correctness comes from dead pids owning no listening sockets. open-browser's `resolveServiceName` likewise counts killed rows as "processes."
+- **Port detection is per-platform** (`listening_ports.rs`): `/proc` on Linux, `lsof` on macOS, `netstat` on Windows — one system-wide read then in-memory filter to the pid set, never per-pid. A missing tool is a hard error with an install hint, not an empty result.
 - **Process tree is platform-specific** (`pgrep -P` on macOS, `ps --ppid` on Linux, empty elsewhere). `isChildProcess` depends on it.
 - **open-browser always builds `http://localhost:<port>`**, ignoring bind address; picks the numerically lowest port.
 - **Table formatting:** two-space column separator, padded cells, dashed separator line; exact empty-state strings (`No services configured.`, `No open ports found for running services.`, `Opened <url> in browser`) are user-facing.
@@ -249,7 +242,7 @@ Errors: `UsageError`/`MissingSetupFile`/`MissingServiceWithName` are usage error
 | Node API | Used for | Rust equivalent |
 |---|---|---|
 | `@facetlayer/sqlite-wrapper` (`DatabaseLoader`, `SqliteDatabase`) | SQLite access, WAL, migrations | `rusqlite` |
-| `node:child_process` `spawn` | run `lsof`, `pgrep`/`ps`, browser opener | `std::process::Command` |
+| `node:child_process` `spawn` | run `lsof`/`netstat`, `pgrep`/`ps`/PowerShell, browser opener | `std::process::Command` |
 | `process.kill(pid,0)` | liveness | `libc::kill(pid, 0)` |
 | `os.platform()` / `process.platform` | platform branch | `#[cfg(target_os = ...)]` |
 | `path`, `fs` | config walk-up, state dir | `std::path`, `std::fs`, `$HOME` for `~` |

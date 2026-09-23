@@ -32,7 +32,7 @@ export interface CandleSpawn {
 export function getCandleSpawn(): CandleSpawn {
     const repoRoot = path.join(__dirname, '..');
     const bin = path.join(repoRoot, 'rust', 'target', 'release', 'candle');
-    return { cmd: bin, baseArgs: [], mcpCommand: `${bin} --mcp` };
+    return { cmd: bin, baseArgs: [], mcpCommand: `${bin} mcp` };
 }
 
 /**

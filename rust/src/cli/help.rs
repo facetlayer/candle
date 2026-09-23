@@ -33,11 +33,11 @@ Process Management:
   start, run [names...]     Start process(es); watches logs when run interactively
   check-start [names...]    Start process(es) only if not already running
   restart [names...]        Restart running process(es)
-  kill [names...]           Kill running process(es)
+  kill, stop [names...]     Kill running process(es)
 
 Port Detection:
-  list-ports [names...]     Uses the OS to detect and list the active open ports
-  open-browser [name]       Open browser to service (auto-detects if one running)
+  list-ports [names...]     List the ports a service is listening on
+  open-browser [name]       Open a browser to the service's detected port
 
 Logs:
   logs [name...]            Show recent logs for process(es){watch_line}
@@ -45,7 +45,7 @@ Logs:
 
 Configuration:
   setup-project             Create a new .candle.json in the current directory
-  add-service [name] ...    Add a new service to .candle.json
+  add-service <name>        Add a service to .candle.json (requires --shell <cmd>)
   remove-service [name]     Remove a service from .candle.json
   set-config <key> <value>  Set a configuration option in .candle.json
 
@@ -61,12 +61,16 @@ Troubleshooting & Maintenance:
   clear-logs [name]         Clear logs for process(es)
   erase-database            Erase the Candle database
 
+Other:
+  help [command]            Show help, or help for one command
+  mcp                       Run as an MCP server over stdin/stdout
+
 Options:
-  help                      Show help
-  mcp                       Enter MCP server mode
   --version                 Show version number
   --project-dir <dir>       Act on the given project instead of the current
                             directory (most project commands)
+  --json                    Machine-readable output (list, ps, logs, list-ports,
+                            list-all, list-ports-all, find-orphans)
 
 Run 'candle <command> --help' for more information on a command."
     )
@@ -108,12 +112,12 @@ pub fn command_help(command: &str) -> String {
             "candle add-service <name>   Add a new service to .candle.json\n\nOptions:\n  --shell <cmd>      Shell command to run the service (required)\n  --root <dir>       Root directory for the service".to_string()
         }
         "remove-service" => "candle remove-service <name>   Remove a service from .candle.json".to_string(),
-        "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json".to_string(),
+        "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json\n\nKeys:\n  logEviction.maxLogsPerService     Log lines kept per service (default: 1000)\n  logEviction.maxRetentionSeconds   Seconds to keep log lines (default: 86400)\n\nBoth take a positive integer. Example:\n\n  candle set-config logEviction.maxLogsPerService 5000".to_string(),
         "clear-logs" => "candle clear-logs [name]   Clear logs for process(es)\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "erase-database" => "candle erase-database   Erase the Candle database\n\nRefuses while Candle-managed processes are still running, since erasing\nwould leave them running with no way for Candle to stop them.\nRun 'candle kill-all' first.\n\nOptions:\n  --force            Erase even if processes are still running".to_string(),
-        "list-docs" => "candle list-docs   List available documentation".to_string(),
-        "get-doc" => "candle get-doc <name>   Display a documentation file".to_string(),
-        "mcp" => "candle mcp   Enter MCP server mode".to_string(),
+        "list-docs" => "candle list-docs   List available documentation\n\nPrints the name and a one-line description of each doc built into the\nbinary. Show one with 'candle get-doc <name>'.".to_string(),
+        "get-doc" => "candle get-doc <name>   Display a documentation file\n\n<name> is a name from 'candle list-docs', for example:\n\n  candle get-doc project-setup".to_string(),
+        "mcp" => "candle mcp   Run as an MCP server\n\nSpeaks the Model Context Protocol over stdin/stdout. Meant to be launched by\nan MCP client, not run by hand. See 'candle get-doc mcp-usage'.".to_string(),
         _ => grouped_help(),
     }
 }

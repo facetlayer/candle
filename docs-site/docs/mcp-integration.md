@@ -5,10 +5,10 @@ Candle includes a built-in Model Context Protocol (MCP) server, allowing AI agen
 ## Starting the MCP Server
 
 ```bash
-candle --mcp
+candle mcp
 ```
 
-This starts Candle in MCP server mode, communicating via stdin/stdout using the MCP protocol.
+This starts Candle in MCP server mode, communicating via stdin/stdout using the MCP protocol. See [mcp](commands/mcp) for client configuration examples.
 
 ## Available Tools
 

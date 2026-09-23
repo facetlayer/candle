@@ -37,22 +37,41 @@ describe('CLI List-Docs Command', () => {
         });
     });
 
-    describe('list-docs hints', () => {
-        it('should suggest get-doc with the listed key, not the filename', async () => {
-            const result = await workspace.runCli(['list-docs']);
-            const output = result.stdoutAsString();
+    // Each doc is one line: "  <name>  <description>". Names never carry the .md extension.
+    function listedDocs(output: string): { name: string; description: string }[] {
+        return output
+            .split('\n')
+            .filter((line) => line.startsWith('  '))
+            .map((line) => {
+                const m = line.trim().match(/^(\S+)\s*(.*)$/)!;
+                return { name: m[1], description: m[2] };
+            });
+    }
 
-            expect(output).toContain('candle get-doc agents-intro)');
-            expect(output).not.toMatch(/candle get-doc [^)\s]+\.md/);
+    describe('list-docs format', () => {
+        it('should say how to show a doc', async () => {
+            const result = await workspace.runCli(['list-docs']);
+
+            expect(result.stdoutAsString()).toContain("candle get-doc <name>");
         });
 
-        it('should list keys that get-doc accepts', async () => {
+        it('should list one doc per line with a description, without .md', async () => {
             const result = await workspace.runCli(['list-docs']);
-            const keys = [...result.stdoutAsString().matchAll(/\(candle get-doc ([^)]+)\)/g)].map((m) => m[1]);
+            const docs = listedDocs(result.stdoutAsString());
 
-            expect(keys.length).toBeGreaterThan(0);
-            for (const key of keys) {
-                const doc = await workspace.runCli(['get-doc', key]);
+            expect(docs.length).toBeGreaterThan(0);
+            for (const doc of docs) {
+                expect(doc.name).not.toMatch(/\.md$/);
+                expect(doc.description.length).toBeGreaterThan(0);
+            }
+        });
+
+        it('should list names that get-doc accepts', async () => {
+            const result = await workspace.runCli(['list-docs']);
+            const docs = listedDocs(result.stdoutAsString());
+
+            for (const { name } of docs) {
+                const doc = await workspace.runCli(['get-doc', name]);
                 expect(doc.stdoutAsString().length).toBeGreaterThan(0);
             }
         });
@@ -61,8 +80,16 @@ describe('CLI List-Docs Command', () => {
     describe('list-docs content', () => {
         it('should include known documentation files', async () => {
             const result = await workspace.runCli(['list-docs']);
+            const names = listedDocs(result.stdoutAsString()).map((d) => d.name);
 
-            expect(result.stdoutAsString()).toContain('candle get-doc getting-started)');
+            expect(names).toEqual(expect.arrayContaining(['agents-intro', 'project-setup', 'mcp-usage', 'transient-processes', 'README']));
+        });
+
+        it('should give the README a description', async () => {
+            const result = await workspace.runCli(['list-docs']);
+            const readme = listedDocs(result.stdoutAsString()).find((d) => d.name === 'README');
+
+            expect(readme?.description).toContain('README');
         });
 
         it('should not include developer docs from docs/dev', async () => {

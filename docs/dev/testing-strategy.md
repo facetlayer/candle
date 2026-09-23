@@ -101,7 +101,7 @@ To run a command in a different directory:
 const result = await workspace.runCli(['list'], { cwd: '/other/path' });
 ```
 
-For MCP tests, `workspace.createMcpApp()` starts `candle --mcp` in the workspace.
+For MCP tests, `workspace.createMcpApp()` starts `candle mcp` in the workspace.
 
 ### cleanup()
 
