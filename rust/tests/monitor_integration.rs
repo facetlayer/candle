@@ -44,6 +44,7 @@ fn collector_records_full_lifecycle() {
         root: None,
         enable_stdin: false,
         database_path: db_path,
+        run_id: None,
     };
 
     let code = monitor::run(launch_info);

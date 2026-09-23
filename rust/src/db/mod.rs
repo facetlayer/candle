@@ -35,7 +35,8 @@ const TABLE_STATEMENTS: &[(&str, &str)] = &[
             created_at integer not null default (strftime('%s', 'now')),
             killed_at integer,
             shell text,
-            root text
+            root text,
+            run_id integer
         )",
     ),
     (
@@ -46,7 +47,8 @@ const TABLE_STATEMENTS: &[(&str, &str)] = &[
             project_dir text not null,
             content text,
             log_type integer not null,
-            timestamp integer not null default (strftime('%s', 'now'))
+            timestamp integer not null default (strftime('%s', 'now')),
+            run_id integer
         )",
     ),
     (
@@ -75,7 +77,45 @@ const INDEX_STATEMENTS: &[&str] = &[
     "create index if not exists idx_process_output_project_dir on process_output(project_dir)",
     "create index if not exists idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)",
     "create index if not exists idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id)",
+    "create index if not exists idx_process_output_run on process_output(project_dir, command_name, run_id)",
+    "create index if not exists idx_process_output_launches on process_output(project_dir, command_name, log_type, id)",
 ];
+
+/// The run a log row belongs to when its writer didn't say: the latest
+/// `process_start_initiated` row at or before it, by id. `row` names the row.
+///
+/// Every row's `run_id` is the id of its run's `process_start_initiated` row.
+/// The monitor stamps its rows explicitly, so rows a previous instance writes
+/// after a restart stay in the previous run whatever order they land in. This
+/// position-based rule covers only the writers that don't know a run id: the
+/// `process_start_initiated` row itself (which gets its own id), a monitor
+/// launched by an older candle that is still running, and rows saved before
+/// the column existed.
+fn run_of_row(row: &str) -> String {
+    format!(
+        "(select max(p2.id) from process_output p2 \
+         where p2.project_dir = {row}.project_dir and p2.command_name = {row}.command_name \
+         and p2.log_type = 3 and p2.id <= {row}.id)"
+    )
+}
+
+/// Assign [`run_of_row`] to every row inserted without a `run_id`.
+fn create_assign_run_trigger(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(&format!(
+        "create trigger if not exists process_output_assign_run \
+         after insert on process_output when new.run_id is null begin \
+         update process_output set run_id = {} where id = new.id; end",
+        run_of_row("new")
+    ))
+}
+
+/// One-time backfill for rows stored before `run_id` existed.
+fn backfill_run_ids(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(&format!(
+        "update process_output set run_id = {} where run_id is null",
+        run_of_row("process_output")
+    ))
+}
 
 /// Open a connection to the candle database.
 ///
@@ -130,13 +170,20 @@ fn run_migration(conn: &Connection) -> rusqlite::Result<()> {
     for (_, statement) in TABLE_STATEMENTS {
         conn.execute_batch(statement)?;
     }
+    let mut rebuilt_output = false;
     for (table, statement) in TABLE_STATEMENTS {
         if !missing_columns(conn, table)?.is_empty() {
             rebuild_table(conn, table, statement)?;
+            rebuilt_output |= *table == "process_output";
         }
     }
     for statement in INDEX_STATEMENTS {
         conn.execute_batch(statement)?;
+    }
+    // Dropping a rebuilt table drops its trigger too, so create it after.
+    create_assign_run_trigger(conn)?;
+    if rebuilt_output {
+        backfill_run_ids(conn)?;
     }
     Ok(())
 }
@@ -347,6 +394,7 @@ mod tests {
             ("killed_at", "INTEGER", 0),
             ("shell", "TEXT", 0),
             ("root", "TEXT", 0),
+            ("run_id", "INTEGER", 0),
         ];
         assert_eq!(cols.len(), expected.len());
         for (actual, exp) in cols.iter().zip(expected.iter()) {
@@ -368,6 +416,61 @@ mod tests {
             .query_row("PRAGMA journal_mode", [], |row| row.get(0))
             .unwrap();
         assert_eq!(mode.to_lowercase(), "wal");
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_ids_are_backfilled_and_assigned_by_position() {
+        let dir = temp_db_dir("run-id-backfill");
+        {
+            // The schema just before run_id, with two launches of 'api'.
+            let old = Connection::open(dir.join("candle.db")).unwrap();
+            old.execute_batch(
+                "create table process_output(
+                    id integer primary key autoincrement,
+                    command_name text not null,
+                    project_dir text not null,
+                    content text,
+                    log_type integer not null,
+                    timestamp integer not null default (strftime('%s', 'now'))
+                );
+                insert into process_output(command_name, project_dir, content, log_type) values
+                    ('api', '/proj', 'before any launch', 1),
+                    ('api', '/proj', null, 3),
+                    ('api', '/proj', 'first run', 1),
+                    ('other', '/proj', null, 3),
+                    ('api', '/proj', null, 3),
+                    ('api', '/proj', 'second run', 1);",
+            )
+            .unwrap();
+        }
+
+        let conn = get_database(Some(&dir)).unwrap();
+        let run_of = |content: &str| -> Option<i64> {
+            conn.query_row(
+                "select run_id from process_output where content = ?1",
+                [content],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(run_of("before any launch"), None);
+        assert_eq!(run_of("first run"), Some(2));
+        assert_eq!(run_of("second run"), Some(5));
+
+        // A writer that doesn't know its run (an older monitor) gets the latest
+        // launch by position; one that does keeps its own.
+        conn.execute_batch(
+            "insert into process_output(command_name, project_dir, content, log_type)
+                 values('api', '/proj', 'legacy writer', 1);
+             insert into process_output(command_name, project_dir, content, log_type, run_id)
+                 values('api', '/proj', 'late row from run 2', 1, 2);",
+        )
+        .unwrap();
+        assert_eq!(run_of("legacy writer"), Some(5));
+        assert_eq!(run_of("late row from run 2"), Some(2));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

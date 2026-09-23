@@ -20,4 +20,10 @@ pub struct MonitorLaunchInfo {
     #[serde(default)]
     pub enable_stdin: bool,
     pub database_path: PathBuf,
+    /// The launch this monitor belongs to: the id of the
+    /// `process_start_initiated` row `start` wrote. Every row the monitor saves
+    /// carries it. `None` from an older candle, whose rows the database then
+    /// assigns by position.
+    #[serde(default)]
+    pub run_id: Option<i64>,
 }

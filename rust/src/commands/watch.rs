@@ -12,9 +12,11 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::config::file::find_project_dir;
-use crate::db::process_table::find_processes_by_command_name_and_project_dir;
+use crate::db::process_table::{
+    find_processes_by_command_name_and_project_dir, find_running_processes_by_project_dir,
+};
 use crate::errors::CandleError;
-use crate::log_filters::{ExecutionStatusTracker, LatestExecutionLogFilter, ShowPastLogsBehavior};
+use crate::log_filters::LatestRunFilter;
 use crate::logs::console_log::{
     console_log_row, console_log_system_message, ConsoleLogOptions, OutputFormat,
 };
@@ -35,18 +37,8 @@ extern "C" fn handle_signal(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
 }
 
-/// Apply a batch of logs to the status tracker, then filter and render it.
-///
-/// Factored out because both the initial batch and each poll batch need the same
-/// `tracker.apply` -> `filter` -> render sequence, and borrowing `tracker` +
-/// `filter` mutably as closures alongside `conn` would be awkward.
-fn print_batch(
-    logs: &[ProcessLog],
-    is_blended: bool,
-    tracker: &mut ExecutionStatusTracker,
-    filter: &mut LatestExecutionLogFilter,
-) {
-    tracker.apply(logs);
+/// Filter a batch of logs to the latest runs and render it.
+fn print_batch(logs: &[ProcessLog], is_blended: bool, filter: &mut LatestRunFilter) {
     let filtered = filter.filter(logs);
     for log in &filtered {
         let opts = ConsoleLogOptions {
@@ -62,19 +54,39 @@ fn print_batch(
     }
 }
 
+/// How many of the watched services (every service when `command_names` is
+/// empty) have a live process.
+fn count_running_services(
+    conn: &Connection,
+    project_dir: &str,
+    command_names: &[String],
+) -> rusqlite::Result<usize> {
+    let mut names: Vec<String> = filter_alive_processes(
+        conn,
+        find_running_processes_by_project_dir(conn, project_dir)?,
+    )?
+    .into_iter()
+    .map(|p| p.command_name)
+    .filter(|name| command_names.is_empty() || command_names.contains(name))
+    .collect();
+    names.sort();
+    names.dedup();
+    Ok(names.len())
+}
+
 /// Stream logs for the given command(s) to the console until interrupted or the
 /// optional deadline is reached. An empty `command_names` watches every process
 /// in the project.
 ///
-/// `show_past_logs` / `recent_window_ms` control how much history is replayed
-/// before live streaming begins: the `watch` command replays recent logs, while
-/// `start` in interactive mode only shows logs from the launch it just made.
+/// Only each command's latest run is shown. `recent_window_ms` limits how much
+/// of it is replayed before live streaming begins: the `watch` command replays
+/// only recent logs, while `start` in interactive mode shows the whole launch it
+/// just made.
 pub fn watch_process(
     conn: &Connection,
     project_dir: &str,
     command_names: &[String],
     exit_after_ms: Option<u64>,
-    show_past_logs: ShowPastLogsBehavior,
     recent_window_ms: Option<u64>,
 ) -> rusqlite::Result<()> {
     // With one explicit name there's no ambiguity; anything else (multiple
@@ -83,15 +95,10 @@ pub fn watch_process(
 
     let mut iterator = LogIterator::new(project_dir.to_string(), command_names.to_vec());
 
-    // Filter to only show logs from the most recent process launch for each
-    // command, optionally pruning to a recent time window so we don't spam
-    // history from long-running services when `watch` is invoked.
-    let mut filter = LatestExecutionLogFilter::new(show_past_logs, recent_window_ms);
+    let mut filter = LatestRunFilter::new(recent_window_ms);
+    filter.seed_latest_runs(conn, project_dir, command_names)?;
 
     let initial_logs = iterator.get_next_logs(conn, Some(INITIAL_LOG_COUNT))?;
-    filter.check_latest_launch_status(&initial_logs);
-
-    let mut tracker = ExecutionStatusTracker::new();
 
     // Install signal handlers and reset the stop flag.
     STOP.store(false, Ordering::SeqCst);
@@ -111,7 +118,7 @@ pub fn watch_process(
         .map(|ms| Instant::now() + Duration::from_millis(ms));
 
     // Print the initial batch (already fetched for the status check).
-    print_batch(&initial_logs, is_blended, &mut tracker, &mut filter);
+    print_batch(&initial_logs, is_blended, &mut filter);
 
     loop {
         if STOP.load(Ordering::SeqCst) {
@@ -132,12 +139,12 @@ pub fn watch_process(
         }
 
         let batch = iterator.get_next_logs(conn, None)?;
-        print_batch(&batch, is_blended, &mut tracker, &mut filter);
+        print_batch(&batch, is_blended, &mut filter);
 
         sleep(Duration::from_millis(POLL_INTERVAL));
     }
 
-    let running = tracker.count_running_processes();
+    let running = count_running_services(conn, project_dir, command_names)?;
     if running == 1 {
         console_log_system_message(
             OutputFormat::Pretty,
@@ -213,7 +220,6 @@ pub fn handle_watch(
         &project_dir,
         command_names,
         exit_after_ms,
-        ShowPastLogsBehavior::ShowLogsFromPreviousLaunch,
         Some(RECENT_LOG_WINDOW_MS),
     )
     .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
@@ -234,15 +240,8 @@ pub fn watch_started_services(
     output::out("[Now watching console logs. Press Ctrl+C to stop watching.]");
     output::out("");
 
-    watch_process(
-        conn,
-        project_dir,
-        command_names,
-        exit_after_ms,
-        ShowPastLogsBehavior::OnlyShowAfterRecentLaunch,
-        None,
-    )
-    .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
+    watch_process(conn, project_dir, command_names, exit_after_ms, None)
+        .map_err(|e| CandleError::Generic(format!("database error: {e}")))?;
 
     Ok(())
 }

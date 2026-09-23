@@ -93,6 +93,7 @@ mod tests {
                 log_collector_pid: None,
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();
@@ -107,6 +108,7 @@ mod tests {
                 log_collector_pid: Some(2_000_000_001),
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();
@@ -138,6 +140,7 @@ mod tests {
                 log_collector_pid: Some(me), // alive
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();

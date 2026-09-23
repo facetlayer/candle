@@ -24,7 +24,7 @@ use crate::config::{find_config_file, get_log_eviction_config, ResolvedLogEvicti
 use crate::db::process_table::{
     delete_process_entry, find_all_killed_processes, find_all_running_processes,
 };
-use crate::logs::process_logs::save_process_log;
+use crate::logs::process_logs::save_run_log;
 use crate::logs::ProcessLogType;
 use crate::process_alive::is_process_alive;
 
@@ -183,9 +183,10 @@ pub fn cleanup_stale_processes(conn: &Connection) -> rusqlite::Result<()> {
             continue;
         }
 
-        // Both are dead -> stale entry.
-        save_process_log(
+        // Both are dead -> stale entry. The exit belongs to that process's run.
+        save_run_log(
             conn,
+            proc.run_id,
             &proc.command_name,
             &proc.project_dir,
             ProcessLogType::ProcessExited,
@@ -209,7 +210,7 @@ mod tests {
         create_process_entry, find_all_processes, update_process_killed_at, CreateProcessEntry,
     };
     use crate::db::{get_database, temp_db_dir};
-    use crate::logs::process_logs::{get_process_logs, LogSearchOptions};
+    use crate::logs::process_logs::{get_process_logs, save_process_log, LogSearchOptions};
 
     fn count_logs(conn: &Connection, project_dir: &str, command_name: &str) -> usize {
         get_process_logs(
@@ -376,6 +377,7 @@ mod tests {
                 log_collector_pid: None,
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();
@@ -390,6 +392,7 @@ mod tests {
                 log_collector_pid: Some(2_000_000_001),
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();
@@ -404,6 +407,7 @@ mod tests {
                 log_collector_pid: None,
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();

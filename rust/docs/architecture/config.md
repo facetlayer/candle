@@ -117,12 +117,13 @@ create table processes(
   pid integer not null, log_collector_pid integer,
   start_time integer not null,
   created_at integer not null default (strftime('%s','now')),
-  killed_at integer, shell text, root text);
+  killed_at integer, shell text, root text, run_id integer);
 create table process_output(
   id integer primary key autoincrement,
   command_name text not null, project_dir text not null,
   content text, log_type integer not null,
-  timestamp integer not null default (strftime('%s','now')));
+  timestamp integer not null default (strftime('%s','now')),
+  run_id integer);
 create table process_last_cleanup(timestamp integer not null);
 create table stdin_messages(
   id integer primary key autoincrement,
@@ -133,6 +134,9 @@ create index idx_process_output_command_name on process_output(command_name);
 create index idx_process_output_project_dir on process_output(project_dir);
 create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
 create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id);
+create index idx_process_output_run on process_output(project_dir, command_name, run_id);
+create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
+-- plus trigger process_output_assign_run; see database.md
 ```
 The Node original also defined a `RunningStatus` enum (`running=1, stopped=0`, database.ts:6-9); it has no Rust counterpart and no column uses it.
 

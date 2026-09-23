@@ -9,10 +9,9 @@
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::log_filters::{LatestExecutionLogFilter, ShowPastLogsBehavior};
 use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
 use crate::logs::process_logs::{
-    command_names_with_logs, get_log_tail, LogSearchOptions, ProcessLog,
+    command_names_with_logs, get_log_tail, LogSearchOptions, LogTail, ProcessLog,
 };
 use crate::logs::ProcessLogType;
 use crate::output;
@@ -46,21 +45,14 @@ impl LogsCommandOptions {
     }
 }
 
-/// The logs for one service (or one query), after the latest-launch filter.
-struct FilteredLogs {
-    logs: Vec<ProcessLog>,
-    truncated: bool,
-}
-
-fn fetch_filtered_logs(
+/// The newest `limit` printable rows of each named command's latest run.
+fn fetch_latest_run_tail(
     conn: &Connection,
     project_dir: &str,
     command_names: Vec<String>,
     options: &LogsCommandOptions,
-) -> FilteredLogs {
-    // The newest `limit` printable rows, plus the launch markers the filter
-    // needs to drop rows from a previous run.
-    let result = get_log_tail(
+) -> LogTail {
+    get_log_tail(
         conn,
         &LogSearchOptions {
             project_dir: Some(project_dir.to_string()),
@@ -70,15 +62,7 @@ fn fetch_filtered_logs(
         },
         options.limit,
     )
-    .unwrap_or_default();
-
-    let mut log_filter =
-        LatestExecutionLogFilter::new(ShowPastLogsBehavior::ShowLogsFromPreviousLaunch, None);
-    log_filter.check_latest_launch_status(&result.logs);
-    FilteredLogs {
-        logs: log_filter.filter(&result.logs),
-        truncated: result.truncated,
-    }
+    .unwrap_or_default()
 }
 
 /// The name used for a row's `type` in `--json` output, or None for rows that
@@ -142,7 +126,7 @@ pub fn handle_logs_command(
             command_names.to_vec()
         };
         for name in names {
-            let service = fetch_filtered_logs(conn, project_dir, vec![name.clone()], options);
+            let service = fetch_latest_run_tail(conn, project_dir, vec![name.clone()], options);
             if service.truncated && !service.logs.is_empty() {
                 truncated_services.push(name);
             }
@@ -150,7 +134,7 @@ pub fn handle_logs_command(
         }
         logs.sort_by_key(|l| l.id);
     } else {
-        let service = fetch_filtered_logs(conn, project_dir, command_names.to_vec(), options);
+        let service = fetch_latest_run_tail(conn, project_dir, command_names.to_vec(), options);
         if service.truncated {
             truncated_services.push(command_names[0].clone());
         }

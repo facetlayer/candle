@@ -265,7 +265,7 @@ For history, the Node original was exported as `@facetlayer/candle` for programm
 **Process logs** (from `./logs/processLogs.ts` and filters):
 - `getProcessLogs`
 - type `ProcessLog`
-- `LatestExecutionLogFilter` **re-exported under the alias** `AfterProcessStartLogFilter` (⚠️ name change at the API boundary — the internal class is `LatestExecutionLogFilter`).
+- `LatestExecutionLogFilter` **re-exported under the alias** `AfterProcessStartLogFilter` (⚠️ name change at the API boundary — the internal class is `LatestExecutionLogFilter`). The Rust code has no such filter; its replacement is `LatestRunFilter` (see [logs.md](logs.md) §7).
 
 **Configuration** (from `./configFile.ts`):
 - `findConfigFile`, `getServiceConfigByName`
@@ -300,7 +300,7 @@ Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`.
 
 Options: `{ projectDir: string, commandNames: string[], message: string, timeoutMs?: number }`, default `timeoutMs = 30000`.
 
-Algorithm:
+Algorithm (the Node original; the Rust flow differs, see below and [watch-wait.md](watch-wait.md) §8.2):
 1. Create `LogIterator({ projectDir, commandNames, limit: 1000 })`; `allInitialLogs = getNextLogs()`.
 2. Create `LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' })`; call `checkLatestLaunchStatus(allInitialLogs)`; `initialLogs = filter.filter(allInitialLogs)`.
 3. If `initialLogs.length === 0` → return `{ success: false, message: 'Process has not started yet' }` (no console output).
@@ -320,10 +320,10 @@ Algorithm:
 - `content?.includes` — content may be null/undefined; substring match is plain `String.includes` (not regex).
 - The exact output strings (with embedded quotes around `message`) are asserted by tests — reproduced verbatim.
 - Polling uses wall-clock `Date.now()`; the Rust code uses `Instant`/`SystemTime` with a 200ms sleep.
-- The `LogIterator` is stateful — `getNextLogs()` returns only logs newer than the last call (cursor). The filter (`logFilter`) is also stateful across calls in the loop (same instance reused), distinct from `printRecentLogs` which creates a fresh filter.
+- The `LogIterator` is stateful — `getNextLogs()` returns only logs newer than the last call (cursor). The filter (`logFilter`) is also stateful across calls in the loop (same instance reused).
 
 ### Rust implementation
-`fn handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms) -> WaitForLogResult { success: bool }` (synchronous; the TS failure `message` was never read, so it is dropped). It uses the logs subsystem (`LogIterator::with_limit(.., Some(1000))`, `LatestExecutionLogFilter`, `get_process_logs`, `console_log_row`, `ProcessLogType`) and `std::thread::sleep` for the 200ms poll. `print_recent_logs` does not call `check_latest_launch_status` on its fresh filter; the filter picks up the launch boundary as it streams.
+`fn handle_wait_for_log(conn, project_dir, command_names, message, timeout_ms) -> WaitForLogResult { success: bool }` (synchronous; the TS failure `message` was never read, so it is dropped). It uses the logs subsystem (`LogIterator::with_limit(.., Some(1000))`, a seeded `LatestRunFilter`, `latest_run_ids`, `get_process_logs`, `get_log_tail`, `console_log_row`, `ProcessLogType`) and `std::thread::sleep` for the 200ms poll. Unlike the Node original it has no "Process has not started yet" failure: it decides from whether the service has ever launched, whether the latest run has started or ended, and liveness, and fails fast when nothing is running. `print_recent_logs` prints `get_log_tail`'s newest 20 printable rows of the latest run with no filter pass. Full flow in [watch-wait.md](watch-wait.md) §8.
 
 `cmd_wait_for_log` in `main.rs`: `--message` is required (else stderr `Missing required argument: message`, exit 1); `--timeout` is in **seconds** (default 30, fractional allowed) and converted to ms; names are validated with `assert_known_service_names_in_scope` (unknown → `No service '<name>' configured for directory: <dir>`, exit 1); a `success: false` result exits 1.
 

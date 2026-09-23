@@ -28,7 +28,7 @@ use crate::db::process_table::{
 use crate::db::stdin_messages::{clear_stdin_messages, pop_stdin_message};
 use crate::debug::debug_log;
 use crate::logs::log_type::STOPPED_WHILE_STARTING_MESSAGE;
-use crate::logs::process_logs::save_process_log;
+use crate::logs::process_logs::save_run_log;
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 
@@ -67,6 +67,7 @@ fn exit_message(code: Option<i32>) -> String {
 /// lines (which are written to `process_output` as they arrive).
 fn record_grace_event(
     conn: &Connection,
+    run_id: Option<i64>,
     command_name: &str,
     project_dir: &str,
     event: LineEvent,
@@ -78,7 +79,14 @@ fn record_grace_event(
     };
 
     debug_log(&format!("[monitor] {log_type:?}: {line}"));
-    let _ = save_process_log(conn, command_name, project_dir, log_type, Some(&line));
+    let _ = save_run_log(
+        conn,
+        run_id,
+        command_name,
+        project_dir,
+        log_type,
+        Some(&line),
+    );
     None
 }
 
@@ -146,6 +154,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         root,
         enable_stdin,
         database_path,
+        run_id,
     } = launch_info;
 
     debug_log(&format!(
@@ -196,8 +205,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             } else {
                 format!("root directory does not exist: {}", launch_dir.display())
             };
-            let _ = save_process_log(
+            let _ = save_run_log(
                 &conn,
+                run_id,
                 &command_name,
                 &project_dir,
                 ProcessLogType::ProcessStartFailed,
@@ -221,6 +231,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             log_collector_pid: Some(my_pid),
             shell: Some(shell.clone()),
             root: root.clone(),
+            run_id,
         },
     );
 
@@ -320,7 +331,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
         match rx.recv_timeout(remaining) {
             Ok(event) => {
-                if let Some(code) = record_grace_event(&conn, &command_name, &project_dir, event) {
+                if let Some(code) =
+                    record_grace_event(&conn, run_id, &command_name, &project_dir, event)
+                {
                     exited_during_grace = true;
                     exit_code = code;
                     break;
@@ -336,7 +349,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     // before deciding, or a fast failure gets misreported as a successful start.
     while !exited_during_grace {
         let Ok(event) = rx.try_recv() else { break };
-        if let Some(code) = record_grace_event(&conn, &command_name, &project_dir, event) {
+        if let Some(code) = record_grace_event(&conn, run_id, &command_name, &project_dir, event) {
             exited_during_grace = true;
             exit_code = code;
         }
@@ -344,7 +357,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 
     if exited_during_grace {
         drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
-            record_grace_event(&conn, &command_name, &project_dir, event);
+            record_grace_event(&conn, run_id, &command_name, &project_dir, event);
         });
     }
 
@@ -355,8 +368,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         debug_log(&format!(
             "[monitor] process failed during grace period, pid={child_pid}, code={exit_code:?}"
         ));
-        let _ = save_process_log(
+        let _ = save_run_log(
             &conn,
+            run_id,
             &command_name,
             &project_dir,
             ProcessLogType::ProcessStartFailed,
@@ -375,8 +389,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     }
 
     debug_log(&format!("[monitor] process started, pid={child_pid}"));
-    let _ = save_process_log(
+    let _ = save_run_log(
         &conn,
+        run_id,
         &command_name,
         &project_dir,
         ProcessLogType::ProcessStarted,
@@ -385,8 +400,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 
     // Exited cleanly (code 0) within the grace period.
     if exited_during_grace {
-        let _ = save_process_log(
+        let _ = save_run_log(
             &conn,
+            run_id,
             &command_name,
             &project_dir,
             ProcessLogType::ProcessExited,
@@ -405,8 +421,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     loop {
         match rx.recv_timeout(Duration::from_secs(60)) {
             Ok(LineEvent::Stdout(line)) => {
-                let _ = save_process_log(
+                let _ = save_run_log(
                     &conn,
+                    run_id,
                     &command_name,
                     &project_dir,
                     ProcessLogType::Stdout,
@@ -414,8 +431,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
                 );
             }
             Ok(LineEvent::Stderr(line)) => {
-                let _ = save_process_log(
+                let _ = save_run_log(
                     &conn,
+                    run_id,
                     &command_name,
                     &project_dir,
                     ProcessLogType::Stderr,
@@ -437,14 +455,15 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     }
 
     drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
-        record_grace_event(&conn, &command_name, &project_dir, event);
+        record_grace_event(&conn, run_id, &command_name, &project_dir, event);
     });
 
     debug_log(&format!(
         "[monitor] process exited, pid={child_pid}, code={exit_code:?}"
     ));
-    let _ = save_process_log(
+    let _ = save_run_log(
         &conn,
+        run_id,
         &command_name,
         &project_dir,
         ProcessLogType::ProcessExited,
@@ -549,6 +568,7 @@ mod tests {
                 log_collector_pid: None,
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();

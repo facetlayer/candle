@@ -16,6 +16,10 @@ where `previous_pids` comes from rows with `killed_at IS NULL`.
 This file models each CLI entry point as a straight-line program over the
 shared state and explores **every interleaving** with the old monitor.
 
+`startProg` / `restartProg` model the code as it was when the bug was found;
+`startNow` / `restartNow` at the end model the current code, which tags rows
+with their run instead of relying on their order.
+
 Modelling choices (all conservative for the property checked):
 * The old service's shell dies as soon as it is signalled; `kill` then returns
   (`kill_process_tree_and_wait` waits only for the shell's process tree, which
@@ -48,9 +52,6 @@ inductive Instr where
   | killEntry
   /-- `previous_instance_pids` in `start_one_service`: rows with no `killed_at`. -/
   | readPrevPids
-  /-- Proposed fix: also wait on rows already marked killed, whose monitor may
-  still be writing its last rows. -/
-  | readPrevPidsIncludingKilled
   /-- `wait_for_pids_to_exit(&previous_pids, ..)`. -/
   | waitPrevPids
   /-- `save_process_log(.., ProcessStartInitiated, ..)`. -/
@@ -101,8 +102,6 @@ def cliStep (prog : List Instr) (st : St) : Option St :=
       some { st with waitForMonitor := match st.row with
                                        | some r => !r.killed
                                        | none => false }
-    | .readPrevPidsIncludingKilled =>
-      some { st with waitForMonitor := st.row.isSome }
     | .waitPrevPids =>
       if st.waitForMonitor && st.mon ≠ .done then none else some st
     | .writeStart => some { st with log := st.log ++ [.newStart] }
@@ -173,15 +172,36 @@ example :
     let st2 := st1.bind (cliStep restartProg)                          -- readPrevPids
     st2.map (·.waitForMonitor) = some false := by decide
 
-/-! ## The proposed fix -/
+/-! ## Current code: every row tagged with its run, no wait
 
-def fixStart (prog : List Instr) : List Instr :=
-  prog.map (fun i => if i = .readPrevPids then .readPrevPidsIncludingKilled else i)
+`start` no longer waits for the previous instance: `previous_instance_pids` and
+`wait_for_pids_to_exit` are gone. Each row carries its run id, the old
+monitor's rows the old run's and the new launch marker the new run's, and
+readers select a command's highest run (`RunFilter.lean`). -/
 
-theorem fixed_start_boundary_clean :
-    (runs (fixStart startProg) fuel init).all boundaryClean = true := by decide
+def startNow : List Instr := [.killReadRows, .killEntry, .writeStart]
+def restartNow : List Instr := [.killReadRows, .killEntry] ++ startNow
 
-theorem fixed_restart_boundary_clean :
-    (runs (fixStart restartProg) fuel init).all boundaryClean = true := by decide
+/-- The run each event is tagged with: the previous instance's rows keep its run. -/
+def runOf : Ev → Nat
+  | .oldOutput | .oldExited => 1
+  | .newStart => 2
+
+/-- The rows readers attribute to the latest run are exactly the new run's. -/
+def latestRunClean (log : List Ev) : Bool :=
+  let latest := (log.map runOf).foldl max 0
+  log.all (fun e => runOf e != latest || e == .newStart)
+
+/-- Without the wait, the previous instance's rows still land after the new
+launch marker in some interleavings, for `start` as well as `restart`… -/
+theorem now_rows_still_reorder :
+    (runs startNow fuel init).any (fun l => !boundaryClean l) = true ∧
+    (runs restartNow fuel init).any (fun l => !boundaryClean l) = true := by decide
+
+/-- …but it no longer matters: in every interleaving the latest run, selected by
+tag, contains none of them. -/
+theorem now_latest_run_clean :
+    (runs startNow fuel init).all latestRunClean = true ∧
+    (runs restartNow fuel init).all latestRunClean = true := by decide
 
 end Candle.Protocol

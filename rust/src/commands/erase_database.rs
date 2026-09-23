@@ -185,6 +185,7 @@ mod tests {
                 log_collector_pid: None,
                 shell: None,
                 root: None,
+                run_id: None,
             },
         )
         .unwrap();

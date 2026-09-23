@@ -120,6 +120,7 @@ mod tests {
             content: content.map(str::to_string),
             log_type: log_type.as_i64(),
             timestamp: 100,
+            run_id: None,
         }
     }
 

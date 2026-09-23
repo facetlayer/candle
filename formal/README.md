@@ -18,29 +18,32 @@ models use no `sorry`.
 
 | File | Models | Main results |
 |---|---|---|
-| `Candle/LogFilter.lean` | `LatestExecutionLogFilter` (`rust/src/log_filters/latest_execution_log_filter.rs`) | `batch_shows_stale_exit`: in batch mode (`check_latest_launch_status` + `filter` on the same rows, as `logs`, `wait-for-log` and `watch`'s first print do), a previous instance's `process_exited` is shown as part of the new run. `replayed_old_result_marks_new_launch`: an older launch's `process_started` in the same batch has the same effect. |
-| `Candle/LogFilterFix.lean` | A corrected filter that records the *id* of the launch's first start result instead of a `bool` | `batchFix_eq_spec`, `streamFix_eq_spec`: the fix meets the spec for **all** chronological inputs, in batch and streaming mode. `stream_orig_eq_fix`: the current code is already correct in streaming mode, so the defect is confined to batch use. |
-| `Candle/Protocol.lean` | `start` / `restart` / `kill` racing the previous instance's monitor over the `processes` row and log table | `start_boundary_clean`: `start` keeps every stale row before the new launch boundary in every interleaving. `restart_boundary_violated`: `restart` (and `kill` then `start`) does not, because `previous_instance_pids` skips rows `kill` already marked. `fixed_restart_boundary_clean`: waiting on marked rows too fixes it. |
+| `Candle/RunFilter.lean` | `LatestRunFilter` (`rust/src/log_filters/latest_run_filter.rs`): every row carries its run id; a row is shown iff its run is its command's latest | `batch_eq_spec`: seeded from the database, filtering **any** batch in **any** order returns exactly each command's latest run. `stream_never_superseded`: while streaming, a row from a superseded run is never shown. No ordering assumption anywhere. |
+| `Candle/Protocol.lean` | `start` / `restart` / `kill` racing the previous instance's monitor over the `processes` row and the log table | Current code (`startNow`, `restartNow`): `now_rows_still_reorder` shows the old instance's rows can still land after the new launch marker, and `now_latest_run_clean` shows that, tagged with runs, they never appear in the latest run. Historical (`startProg`, `restartProg`): the order-based design kept `start` clean (`start_boundary_clean`) but not `restart` (`restart_boundary_violated`). |
+| `Candle/LogFilter.lean` | The original `LatestExecutionLogFilter`, which told runs apart by row order | Kept as the record of the bug the models found: `batch_shows_stale_exit` and `replayed_old_result_marks_new_launch`. |
 
-### Status
+## History
 
-Both defects are now fixed in `rust/src`. `LogFilter.lean`, and `restartProg` with plain
-`readPrevPids` in `Protocol.lean`, model the code **before** the fix; they are kept as the
-record of what the proofs found. The current Rust code corresponds to `LogFilterFix.lean`
-(`LaunchStatus::start_result_id`) and to `fixStart` in `Protocol.lean` (`previous_instance_pids`
-now includes rows already marked killed). Regression tests: the `latest_execution_log_filter`
-unit tests and "previous instance rows stay out of the new run" in `test/cli/restart.test.ts`.
+The first models found two bugs in the order-based design:
 
-## Spec used for the log filter
+- `restart`, and `kill` followed by `start`, skipped the wait for the previous
+  instance's monitor. That instance's last output and exit could land after the
+  new launch marker.
+- `LatestExecutionLogFilter` showed such a stale exit whenever it pre-scanned and
+  filtered one batch, as `logs` did.
 
-An `exited` row is *stale* if it follows a `process_start_initiated` with no
-start result (`process_started` / `process_start_failed`) in between. A monitor
-writes `process_exited` only after its start result, so such a row belongs to
-the previous instance (see the comment in `filter`). Batch output must be
-exactly the rows at or after the latest launch marker, minus stale exits.
+An interim fix patched both; it was proved correct in `LogFilterFix.lean`, since
+removed (see git history). The current design removes the root cause instead:
+every row records its run, so row order no longer matters. The previous-instance
+wait, the stale-exit special case, and the proofs' ordering assumptions are all
+gone.
+
+Regression tests: `a_previous_runs_late_rows_stay_out_of_the_latest_run` in
+`rust/src/logs/process_logs.rs`, and "previous instance rows stay out of the new
+run" in `test/cli/restart.test.ts`.
 
 ## Adding a model
 
 Keep models small and name each definition after the Rust function it mirrors.
 State modelling assumptions in the module docstring. Prefer `decide` for
-finite-state checks and write general proofs for properties over all inputs.
+finite-state checks, and write general proofs for properties over all inputs.

@@ -66,6 +66,7 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
     let mut root = None;
     let mut database_path = None;
     let mut enable_stdin = false;
+    let mut run_id = None;
     let mut saw_flag = false;
 
     let mut i = 0;
@@ -97,6 +98,14 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
             }
             "--database-path" => {
                 database_path = Some(take_value(args, &mut i, &inline_value, name));
+                saw_flag = true;
+            }
+            "--run-id" => {
+                let value = take_value(args, &mut i, &inline_value, name);
+                run_id = Some(value.parse::<i64>().unwrap_or_else(|_| {
+                    eprintln!("Error: --run-id must be an integer, got: {value}");
+                    exit(1);
+                }));
                 saw_flag = true;
             }
             "--enable-stdin" => {
@@ -138,5 +147,6 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
         database_path: database_path
             .map(PathBuf::from)
             .unwrap_or_else(candle_db_path),
+        run_id,
     })
 }

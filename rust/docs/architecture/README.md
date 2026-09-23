@@ -38,7 +38,7 @@ one file, and the CLI and its monitors can never fall out of version sync.
 |---|---|---|
 | [database.md](database.md) | SQLite schema, connection bootstrap, process/stdin tables, cleanup & eviction, stale-process cleanup, `erase-database` | `db/{mod,process_table,stdin_messages,cleanup}`, `dirs`, `process_alive`, `commands/erase_database` |
 | [config.md](config.md) | `.candle.json` discovery/parse/validate, state-dir resolution, `add-service`/`remove-service`/`set-config`/`setup-project` | `config/{model,paths,validate,file,commands}`, `dirs` |
-| [logs.md](logs.md) | log storage model, query builder, `logs --count` tail query, log iterator, latest-execution filtering, `logs`/`clear-logs` | `logs/{log_type,process_logs,log_iterator,console_log}`, `log_filters/*`, `commands/{logs,clear_logs}` |
+| [logs.md](logs.md) | log storage model, query builder, `logs --count` tail query, log iterator, runs (`run_id`) and latest-run filtering, `logs`/`clear-logs` | `logs/{log_type,process_logs,log_iterator,console_log}`, `log_filters/*`, `commands/{logs,clear_logs}` |
 | [start-flow.md](start-flow.md) | `start`/`check-start`, the per-service start lock, the monitor handshake, transient vs configured services, success/failure detection | `start/{launch,start_one_service,start_command,service_lock}`, `monitor/{launch_info,run}`, `cli/monitor_mode`, `process_alive`, `process_tree` |
 | [kill-restart.md](kill-restart.md) | `kill`/`stop`, `kill-all`, `restart`; process-tree teardown with SIGKILL escalation | `kill/*`, `commands/restart`, `process_tree` |
 | [watch-wait.md](watch-wait.md) | `watch` (live tailing, agent-mode guard) and `wait-for-log` | `commands/{watch,wait_for_log}`, `logs/log_iterator`, `log_filters/*` |
@@ -73,10 +73,12 @@ section headers, MCP content shapes).
 These are the contracts the Rust implementation maintains so the shared acceptance suite passes
 against it. They are byte-level and must not drift.
 
-- **SQLite schema is byte-identical** to the former Node database (same DDL including
-  `default (strftime('%s','now'))`, autoincrement, column order, and all four indexes — notably
-  `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)`). Migration is
-  `create ... if not exists` only (no column diffing). Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
+- **SQLite schema is a superset of** the former Node database (same DDL including
+  `default (strftime('%s','now'))`, autoincrement, column order, and the original four indexes — notably
+  `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)`), plus a trailing nullable
+  `run_id` column on `processes` and `process_output`, two more indexes, and the `process_output_assign_run`
+  trigger. Migration creates missing tables and rebuilds a table that lacks a column (backfilling `run_id`).
+  Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).
 - **Output strings are load-bearing.** Tests substring-match exact bytes, so brackets, backticks,
   quotes, and Unicode are reproduced verbatim — e.g. the start banner

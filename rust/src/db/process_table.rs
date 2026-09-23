@@ -20,6 +20,9 @@ pub struct ProcessEntry {
     pub killed_at: Option<i64>,
     pub shell: Option<String>,
     pub root: Option<String>,
+    /// The run this process belongs to: see `run_id` on
+    /// [`ProcessLog`](crate::logs::process_logs::ProcessLog).
+    pub run_id: Option<i64>,
 }
 
 /// Input for [`create_process_entry`].
@@ -31,6 +34,7 @@ pub struct CreateProcessEntry {
     pub log_collector_pid: Option<i64>,
     pub shell: Option<String>,
     pub root: Option<String>,
+    pub run_id: Option<i64>,
 }
 
 fn now_unix_seconds() -> i64 {
@@ -52,10 +56,11 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessEntry> {
         killed_at: row.get(7)?,
         shell: row.get(8)?,
         root: row.get(9)?,
+        run_id: row.get(10)?,
     })
 }
 
-const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root";
+const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id";
 
 /// Insert a new process row. Sets `start_time` to the current unix seconds and
 /// leaves `created_at`/`killed_at` to default/NULL. Returns the new row id.
@@ -64,8 +69,8 @@ pub fn create_process_entry(
     entry: &CreateProcessEntry,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root) \
-         values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root, run_id) \
+         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             entry.command_name,
             entry.project_dir,
@@ -74,6 +79,7 @@ pub fn create_process_entry(
             entry.log_collector_pid,
             entry.shell,
             entry.root,
+            entry.run_id,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -226,6 +232,7 @@ mod tests {
             log_collector_pid: Some(pid + 1000),
             shell: Some("npm run dev".to_string()),
             root: None,
+            run_id: None,
         }
     }
 

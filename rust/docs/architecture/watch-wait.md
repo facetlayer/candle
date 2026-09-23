@@ -16,16 +16,18 @@ create table process_output(
     project_dir text not null,
     content text,                                  -- nullable
     log_type integer not null,
-    timestamp integer not null default (strftime('%s', 'now'))   -- UNIX SECONDS, not ms
+    timestamp integer not null default (strftime('%s', 'now')),  -- UNIX SECONDS, not ms
+    run_id integer                                 -- Rust-only: the run's process_start_initiated id
 )
 ```
+`run_id` ties each row to one launch; see [logs.md](logs.md) §1 "Runs". A command's latest run is its highest `run_id`.
 Index used for tailing (`database.ts:49`):
 `create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`.
 
-**Critical:** `timestamp` is stored in **whole seconds** (`strftime('%s','now')`), but all wall-clock math uses millisecond clocks. The one place this matters is the recency window — see §3.3.
+**Critical:** `timestamp` is stored in **whole seconds** (`strftime('%s','now')`), but all wall-clock math uses millisecond clocks. The one place this matters is the recency window — see §4.
 
 ### 1.2 `ProcessLog` row shape (`src/logs/processLogs.ts:13-20`)
-`{ id: number, command_name: string, project_dir: string, content?: string, log_type: number, timestamp: number }`
+`{ id: number, command_name: string, project_dir: string, content?: string, log_type: number, timestamp: number }`; the Rust `ProcessLog` adds `run_id: Option<i64>`.
 
 ### 1.3 `ProcessLogType` enum (`src/logs/ProcessLogType.ts`, Rust `logs/log_type.rs`) — exact integer values
 ```
@@ -39,7 +41,7 @@ process_exited          = 6
 
 ## 2. The DB query: `buildLogSearchQuery` (`src/logs/buildLogSearchQuery.ts`)
 
-`LogSearchOptions = { projectDir, commandNames?, limit?, sinceTimestamp?, afterLogId? }` in the original. The Rust struct adds `min_log_id`, `log_types`, and `latest_launch_only`, used only by `logs --count` (`get_log_tail`, see [logs.md](logs.md) §5-6); watch and wait leave them at their defaults.
+`LogSearchOptions = { projectDir, commandNames?, limit?, sinceTimestamp?, afterLogId? }` in the original. The Rust struct adds `min_log_id`, `log_types`, `latest_launch_only` and `run_id` (see [logs.md](logs.md) §3-6). The tailing `LogIterator` leaves them at their defaults; `wait-for-log` uses `log_types` + `latest_launch_only` for its one-off lifecycle check (§8.2) and `get_log_tail` for its recent-logs dump.
 
 Query construction (note the table alias `po`):
 - 1 command name: `select po.* from process_output po where po.project_dir = ? and po.command_name = ?`
@@ -52,7 +54,7 @@ Query construction (note the table alias `po`):
 
 So the DB returns **newest-first**. `getProcessLogs` (`processLogs.ts:74`, Rust `logs/process_logs.rs`) then reverses the rows to hand back **chronological (oldest-first)** order. Every consumer assumes oldest-first.
 
-`getProcessLogsWithEvictionInfo` also computes `logsWereEvicted` by re-running the query wrapped in `select count(*) as total from (<sql without limit>)` and comparing to the returned count. It is **not used** by watch/wait; `getProcessLogs` is the entry point both use.
+`getProcessLogsWithEvictionInfo` also computes `logsWereEvicted` by re-running the query wrapped in `select count(*) as total from (<sql without limit>)` and comparing to the returned count. The tailing loops use `getProcessLogs`; in Rust, eviction info backs `get_log_tail`'s `truncated`.
 
 Subtle ordering detail: ordering by `(timestamp desc, id desc)` then reversing is NOT the same as ordering by `id asc` when multiple rows share a timestamp (likely, since timestamps are 1-second granularity). The implementation orders descending by `(timestamp, id)`, then reverses the vector.
 
@@ -65,33 +67,20 @@ Stateful cursor over `get_process_logs`. Fields: `project_dir`, `command_names`,
 
 Key behavior: because the cursor advances by **max id seen**, and the query filters `id > current_log_id`, each `get_next_logs` returns strictly new rows. The limit caps batch size; `watch_process` passes `Some(INITIAL_LOG_COUNT)` (100) only on the first call and `None` afterward.
 
-## 4. `LatestExecutionLogFilter` (`src/log-filters/LatestExecutionLogFilter.ts`, Rust `log_filters/latest_execution_log_filter.rs`)
+## 4. `LatestRunFilter` (Rust `log_filters/latest_run_filter.rs`)
 
-Trims a log stream to "only the most recent launch, optionally within a recency window." Stateful across calls (the `recentCommandLaunch` map persists).
+Trims a log stream to "only each command's latest run, optionally within a recency window". Full description in [logs.md](logs.md) §7. In short:
+- `LatestRunFilter::new(recent_window_ms)`: with a window, `min_timestamp = (now_unix_millis - window_ms) as f64 / 1000.0` — **converts ms→seconds to match DB timestamps**, no rounding.
+- `seed_latest_runs(conn, project_dir, command_names)`: learn each command's latest `run_id` from the DB (`latest_run_ids`) before filtering existing rows.
+- `filter(logs)`: keep a row iff its `run_id` equals the highest seen for its command (after counting this row) and `timestamp >= min_timestamp`. Order-independent, so a previous instance's rows that land after a restart's launch marker are dropped.
 
-Options: `{ showPastLogsBehavior: 'show_logs_from_previous_launch' | 'only_show_after_recent_launch', recentWindowMs?: number }`.
+It is a mutable struct reused across poll iterations: a row from a newer run moves the filter on to that run.
 
-### 4.1 `checkLatestLaunchStatus(logs)` (called once with the initial batch)
-- Clears `recentCommandLaunch` map.
-- If `recentWindowMs` set: `minTimestamp = (now_unix_millis - recentWindowMs) / 1000` — **converts ms→seconds to match DB timestamps** (`LatestExecutionLogFilter.ts:64`). The Rust code keeps the float division (`(now_unix_millis - window_ms) as f64 / 1000.0`) and does not round.
-- Scans logs; for each `process_start_initiated` (type 3), records `recentCommandLaunch[command_name] = { startLogId: log.id, reportedStartResult: false }` (last one wins). A later `process_started (5)` / `process_start_failed (4)` for that command sets `reportedStartResult = true`.
+This replaces the Node original's `LatestExecutionLogFilter` (which treated every row after the newest `process_start_initiated` as the latest launch, with `show_logs_from_previous_launch` / `only_show_after_recent_launch` modes) and `ExecutionStatusTracker` (which `watch` used to count running services). Neither exists in the Rust code.
 
-### 4.2 `filter(logs)` (called on every batch)
-Per log, first advance the launch boundary: a `process_start_initiated (3)` whose id is **greater** than the recorded `startLogId` (or with no record yet) becomes the new launch. The greater-than check matters because `filter` is normally handed the same batch `checkLatestLaunchStatus` just analyzed — without it, replaying an older launch event would move the boundary backwards and let that launch's stale output through. Then look up `status = recentCommandLaunch[command_name]`:
-- If status exists:
-  - If `log_type == process_exited (6)` and `!status.reportedStartResult`: exclude. A monitor always writes `process_started` before `process_exited`, so an exit arriving before this launch's own start result came from the instance that was just killed — its shutdown can outlive the new launch row.
-  - Else include iff `log.id >= status.startLogId && passesTimestampWindow(log)`.
-- If no status:
-  - If `showPastLogsBehavior == 'show_logs_from_previous_launch'`: include iff `passesTimestampWindow`.
-  - Else (`only_show_after_recent_launch`): exclude.
+## 5. (removed) `ExecutionStatusTracker`
 
-`passesTimestampWindow(log)`: `true` if `minTimestamp` is unset, else `log.timestamp >= minTimestamp` (`LatestExecutionLogFilter.ts:78-83`).
-
-Subtlety: the map mutates inside `filter`, so a `process_start_initiated` in a later batch retroactively sets the launch point for that command for subsequent batches. The filter is a mutable struct reused across poll iterations, not a pure function.
-
-## 5. `ExecutionStatusTracker` (`src/log-filters/ExecutionStatusTracker.ts`, Rust `log_filters/execution_status_tracker.rs`)
-
-Tracks per-command latest lifecycle event (only the 4 lifecycle types 3,4,5,6 update it). `apply(logs)` records `executionStatus[command_name] = { latestLifecycleEvent }` for the last lifecycle log seen. `countRunningProcesses()` counts distinct commands whose latest lifecycle event is `process_started (5)` OR `process_start_initiated (3)`. Used only by `watch` for the closing message.
+`watch` now counts still-running services from the `processes` table at exit (§7.4).
 
 ## 6. Output formatting (`src/logs.ts`, Rust `logs/console_log.rs`)
 
@@ -130,27 +119,25 @@ That exact stderr string and exit code 1 are load-bearing. Agent mode also hides
    - 1 name: `Watching process '<name>'`
    - N names: `Watching <N> processes:` then for each `  - '<name>'`
 4. Print `Press Ctrl+C to stop watching.` and a blank line.
-5. Call `watch_process(conn, project_dir, command_names, exit_after_ms, ShowLogsFromPreviousLaunch, Some(RECENT_LOG_WINDOW_MS))`.
+5. Call `watch_process(conn, project_dir, command_names, exit_after_ms, Some(RECENT_LOG_WINDOW_MS))`.
 
-`watch_started_services(conn, project_dir, names, exit_after_ms)` is the same loop used by interactive `start`/`restart`: it prints `[Now watching console logs. Press Ctrl+C to stop watching.]` and a blank line, then calls `watch_process` with `OnlyShowAfterRecentLaunch` and no recency window, so only the fresh launch's output shows.
+`watch_started_services(conn, project_dir, names, exit_after_ms)` is the same loop used by interactive `start`/`restart`: it prints `[Now watching console logs. Press Ctrl+C to stop watching.]` and a blank line, then calls `watch_process` with no recency window. The seeded filter shows the whole fresh launch (the latest run) and nothing from earlier runs.
 
 ### 7.4 `watchProcess` — the tail loop
 Constants: `INITIAL_LOG_COUNT = 100`, `POLL_INTERVAL = 200` (ms), `RECENT_LOG_WINDOW_MS = 10_000`.
 
-`watch_process(conn, project_dir, command_names, exit_after_ms, show_past_logs, recent_window_ms)`:
+`watch_process(conn, project_dir, command_names, exit_after_ms, recent_window_ms)`:
 - `is_blended = command_names.len() != 1` (so the watch-everything case, with zero names, is blended too).
 - `LogIterator::new(project_dir, command_names)`.
-- `filter = LatestExecutionLogFilter::new(show_past_logs, recent_window_ms)`: `watch` passes `ShowLogsFromPreviousLaunch` + 10_000ms; `watch_started_services` passes `OnlyShowAfterRecentLaunch` + no window.
-- `initial_logs = iterator.get_next_logs(conn, Some(100))`; then `filter.check_latest_launch_status(&initial_logs)`.
-
-Ordering note: `getNextLogs({limit:100})` is called **before** `checkLatestLaunchStatus`, and it already advances `currentLogId` to the newest of those 100. So the window cutoff is computed at that point, and the initial 100 are both the status-seed and the first printed batch — there is no double-fetch.
+- `filter = LatestRunFilter::new(recent_window_ms)` (`watch`: 10_000ms; `watch_started_services`: none), then `filter.seed_latest_runs(conn, project_dir, command_names)`.
+- `initial_logs = iterator.get_next_logs(conn, Some(100))`; this advances the cursor to the newest of those 100, which are the first printed batch — there is no double-fetch.
 
 - Install `SIGINT`/`SIGTERM` handlers (`libc::signal`) that set a static `STOP: AtomicBool` (reset to false at the start of each call).
 - `--exit-after-ms`: if `exit_after_ms > 0`, a deadline is computed. There is no timer thread; the loop checks the deadline each iteration and, once passed, prints `console_log_system_message(Pretty, 'Exiting watch mode after <exit_after_ms>ms timeout')` (→ `[Exiting watch mode after Nms timeout]`) and breaks.
-- `print_batch(logs)`: `tracker.apply(logs)`, then `filter.filter(logs)`, then per filtered log `console_log_row(log, { Pretty, prefix })` where `prefix = is_blended ? "[<command_name>] " : None`.
+- `print_batch(logs)`: `filter.filter(logs)`, then per filtered log `console_log_row(log, { Pretty, prefix })` where `prefix = is_blended ? "[<command_name>] " : None`.
 - Print the initial batch once.
 - Loop until `STOP` or the deadline: `print_batch(iterator.get_next_logs(conn, None))` (no limit), then sleep 200ms.
-- After loop: compute `running = tracker.count_running_processes()`:
+- After loop: `running = count_running_services(conn, project_dir, command_names)`: the number of distinct watched services (all in the project when no names) with a live `processes` row (`find_running_processes_by_project_dir` + `filter_alive_processes`):
   - `== 1`: `consoleLogSystemMessage(format, 'Stopped watching. Process is still running in the background.')`
   - `> 1`: `Stopped watching. <N> processes are still running in the background.`
   - `0`: nothing.
@@ -173,23 +160,24 @@ Constants: `POLL_INTERVAL = 200` (ms), `LOG_COUNT_SEARCH_LIMIT = 1000`, `RECENT_
 Return shape: `WaitForLogResult { success: bool }` (the TS version also carried an unread `message`).
 
 Algorithm:
-1. `LogIterator({ projectDir, commandNames, limit: 1000 })`. `allInitialLogs = logIterator.getNextLogs()` (uses limit 1000; advances cursor to newest).
-2. `logFilter = LatestExecutionLogFilter({ showPastLogsBehavior: 'only_show_after_recent_launch' })` (**no recency window**). `logFilter.checkLatestLaunchStatus(allInitialLogs)`; `initialLogs = logFilter.filter(allInitialLogs)`.
-3. Scan `initialLogs`: if any `log.content?.includes(message)` (substring match; `content` may be null → skipped): print `Found message "<message>" in existing logs.` and return `{ success: true }`. This runs first, so a run that has already finished still satisfies the wait if it printed the message.
-4. If `initialLogs` is empty: if nothing is running, fail at once (`fail_not_running`, below, without recent logs). If something is running, its launch marker is older than the 1000-row window, so every row is from the current run: scan `allInitialLogs` for the message, then switch the filter to `ShowLogsFromPreviousLaunch` and poll.
-5. Otherwise: `hasProcessStarted = initialLogs.some(l => l.log_type === process_start_initiated (3))`; if false, print `Process has not started yet` to **stderr** and return `{ success: false }`. If the latest run already ended (`process_exited` or `process_start_failed` in `initialLogs`) and nothing is running, fail at once with recent logs.
-6. Poll loop (`timeStarted = now`):
-   - Once `process_started` has been seen, every `LIVENESS_CHECK_EVERY` polls: if nothing is running, fail with recent logs. Before the start is reported the launch is still in progress, so the missing row is expected.
+1. `log_filter = LatestRunFilter::new(None)` (**no recency window**), seeded with `seed_latest_runs`. `LogIterator::with_limit(project_dir, command_names, 1000)`; `initial_logs = log_filter.filter(iterator.get_next_logs())` (advances the cursor to newest). Because every row carries its run, this is right even when the launch itself is older than the 1000-row window.
+2. Scan `initial_logs`: if any `log.content?.includes(message)` (substring match; `content` may be null → skipped): print `Found message "<message>" in existing logs.` and return `{ success: true }`. This runs first, so a run that has already finished still satisfies the wait if it printed the message.
+3. Gather state: `has_run` = `latest_run_ids` is non-empty (the service has ever launched); the latest run's lifecycle rows = `get_process_logs { log_types: [process_started, process_start_failed, process_exited], latest_launch_only: true }`; `running = is_any_running(..)`.
+4. `!has_run && !running` → fail at once (`fail_not_running`, below, without recent logs).
+5. The latest run already ended (a `process_exited` or `process_start_failed` among its lifecycle rows) and nothing is running → fail at once with recent logs.
+6. `start_reported = !has_run || the latest run has a process_started row`.
+7. Poll loop (`timeStarted = now`):
+   - Once the start is reported, every `LIVENESS_CHECK_EVERY` polls: if nothing is running, fail with recent logs. Before the start is reported the launch is still in progress, so the missing row is expected.
    - If `now - timeStarted > timeoutMs`: print `wait-for-log failed: Timed out after <timeoutMs>ms and message "<message>" not found.`, call `print_recent_logs(...)`, return `{ success: false }`.
-   - `rawLogs = logIterator.getNextLogs()` (limit 1000); `logs = logFilter.filter(rawLogs)`.
-   - For each log: if `content?.includes(message)` → print `Found message "<message>" in logs.` and return `{ success: true }`. Else if `log_type` is `process_exited (6)` or `process_start_failed (4)` → print `wait-for-log failed: Process exited before finding message "<message>"`, call `printRecentLogs(...)`, return `{ success: false }`.
+   - `raw_logs = iterator.get_next_logs()` (limit 1000); `logs = log_filter.filter(raw_logs)`.
+   - For each log: if `content?.includes(message)` → print `Found message "<message>" in logs.` and return `{ success: true }`. A `process_started` row sets `start_reported`. Else if `log_type` is `process_exited (6)` or `process_start_failed (4)` → print `wait-for-log failed: Process exited before finding message "<message>"`, call `printRecentLogs(...)`, return `{ success: false }`.
    - Sleep 200ms.
 
 The timeout is checked at the **top** of the loop before fetching; the first check happens immediately (0 elapsed, won't trip). The exit-before-found check is per-log within a batch and is evaluated **after** the message check, so a batch where the matching line and the exit line both appear returns success if the match comes first in chronological order.
 
 ### 8.3 `print_recent_logs`
 Prints on failure paths, showing only the tail of the latest run (the Node version printed up to 100 rows, earlier runs included):
-- `get_log_tail({ project_dir, command_names }, RECENT_LOG_LINES)` (§6 of logs.md: the newest 20 printable rows of each command's latest run, plus launch markers), then an `OnlyShowAfterRecentLaunch` filter with `check_latest_launch_status`.
+- `get_log_tail({ project_dir, command_names }, RECENT_LOG_LINES)` (§6 of logs.md: the newest 20 printable rows of each command's latest run), printed as-is.
 - Header: `Last 20 lines of the latest run of '<names>':` when the tail was truncated, else `Logs from the latest run of '<names>':`.
 - Each row via `console_log_row` (pretty; `[name] ` prefix when there isn't exactly one name).
 - Footer: `Run 'candle logs <name>' to see more.` (`candle logs` with zero or several names).
@@ -203,7 +191,6 @@ Prints on failure paths, showing only the tail of the latest run (the Node versi
 - `wait-for-log failed: Process exited before finding message "<m>"` (stdout, failure)
 - `wait-for-log failed: Service '<name>' is not running and message "<m>" was not found.` (stdout, failure)
 - `Run 'candle logs <name>' to see more.` (stdout, after the recent logs)
-- `Process has not started yet` (stderr, when logs exist but none are starts)
 - `<m>` is wrapped in literal double-quotes; `<ms>` is the raw timeout in **milliseconds**.
 
 ## 9. Implementation dependencies
@@ -220,14 +207,14 @@ Prints on failure paths, showing only the tail of the latest run (the Node versi
 2. **Order-then-reverse:** `ORDER BY timestamp DESC, id DESC` then reverse, not a plain `id ASC`, because second-granularity timestamps tie frequently.
 3. **`afterLogId` semantics:** absent → no filter; `0` is valid and applies `id > 0`. Modeled as `Option<i64>` with `Some(0)` distinct from `None`.
 4. **`content` is nullable;** a null `content` skips the substring search. Substring match is plain `str::contains` (case-sensitive, no regex).
-5. **Stateful filter mutation:** `LatestExecutionLogFilter.filter` mutates `recentCommandLaunch`; the same instance is reused across poll iterations in both commands. It is a mutable struct, not a pure function.
+5. **Stateful filter mutation:** `LatestRunFilter.filter` updates the per-command latest `run_id`; the same instance is reused across poll iterations in both commands. It is a mutable struct, not a pure function.
 6. **Exit codes:** `wait-for-log` → exit `1` on `!success`, `0` otherwise. `watch` in agent mode → exit `1` with the exact stderr message; otherwise exits 0 naturally.
-7. **stdout vs stderr:** nearly everything is stdout. Exceptions: the agent-mode watch error, the `watch` "is not running" usage error, and the "Process has not started yet" (step 4) go to **stderr**. Step 3 prints nothing.
-8. **Cursor pre-advance in watch:** `getNextLogs({limit:100})` advances the cursor before `checkLatestLaunchStatus`; the initial 100 are both the status-seed and the first printed batch (`printLogs(initialLogs)`), then the loop continues from the new cursor — no double-fetch.
+7. **stdout vs stderr:** nearly everything is stdout. Exceptions: the agent-mode watch error and the `watch` "is not running" usage error go to **stderr**.
+8. **Cursor pre-advance in watch:** `get_next_logs(Some(100))` advances the cursor; the initial 100 are the first printed batch, then the loop continues from the new cursor — no double-fetch. The filter's latest runs come from `seed_latest_runs`, not from that batch.
 9. **`is_run_by_agent` is evaluated once** from the agent marker vars (`CLAUDECODE` / `GEMINI_CLI` / `CURSOR_AGENT`): any one present and non-empty = agent mode. `"0"`/`"false"` are non-empty and therefore still count; only unset or empty is non-agent.
 
 ## 11. Source files
 
-Rust modules: `rust/src/commands/watch.rs`, `rust/src/commands/wait_for_log.rs`, `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, `rust/src/logs/log_type.rs`, `rust/src/log_filters/latest_execution_log_filter.rs`, `rust/src/log_filters/execution_status_tracker.rs`.
+Rust modules: `rust/src/commands/watch.rs`, `rust/src/commands/wait_for_log.rs`, `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, `rust/src/logs/log_type.rs`, `rust/src/log_filters/latest_run_filter.rs`.
 
 Historical Node sources (removed from the repo): `src/watch-command.ts`, `src/watchProcess.ts`, `src/wait-for-log-command.ts`, `src/logs/LogIterator.ts`, `src/log-filters/LatestExecutionLogFilter.ts`, `src/log-filters/ExecutionStatusTracker.ts`, `src/logs/processLogs.ts`, `src/logs/buildLogSearchQuery.ts`, `src/logs/SqlBuilder.ts`, `src/logs/ProcessLogType.ts`, `src/logs.ts`, `src/runContext.ts`, `src/main-cli.ts`, `src/database/database.ts`, `src/configFile.ts`.

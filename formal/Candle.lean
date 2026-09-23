@@ -1,3 +1,3 @@
 import Candle.LogFilter
-import Candle.LogFilterFix
+import Candle.RunFilter
 import Candle.Protocol

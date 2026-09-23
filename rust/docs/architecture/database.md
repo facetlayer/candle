@@ -49,7 +49,8 @@ create table processes(
     created_at integer not null default (strftime('%s', 'now')),
     killed_at integer,                     -- nullable; NULL = still "running"
     shell text,                            -- nullable
-    root text                              -- nullable
+    root text,                             -- nullable
+    run_id integer                         -- nullable
 )
 ```
 | column | type | nullable | notes |
@@ -64,6 +65,7 @@ create table processes(
 | killed_at | INTEGER | **yes** | NULL ⇒ running; non-NULL ⇒ marked killed |
 | shell | TEXT | yes | |
 | root | TEXT | yes | |
+| run_id | INTEGER | yes | the run this process belongs to (see `process_output.run_id`); set by the monitor |
 
 ### Table `process_output` (logs)
 ```sql
@@ -73,9 +75,12 @@ create table process_output(
     project_dir text not null,
     content text,                          -- nullable
     log_type integer not null,
-    timestamp integer not null default (strftime('%s', 'now'))
+    timestamp integer not null default (strftime('%s', 'now')),
+    run_id integer                         -- nullable
 )
 ```
+`run_id` is the id of the row's run: that launch's `process_start_initiated` row. NULL only for rows written before the command's first launch. A command's latest run is its highest `run_id`. Writers that know the run (the monitor, the stale-process cleanup, `start`'s missing-root failure) set it explicitly; for rows inserted with NULL the trigger below fills it in. See [logs.md](logs.md) §1 "Runs".
+
 `log_type` enum (`rust/src/logs/log_type.rs`, originally `src/logs/ProcessLogType.ts`): `stdout=1, stderr=2, process_start_initiated=3, process_start_failed=4, process_started=5, process_exited=6`.
 
 ### Table `process_last_cleanup`
@@ -104,9 +109,24 @@ create index idx_process_output_command_name on process_output(command_name);
 create index idx_process_output_project_dir  on process_output(project_dir);
 create index idx_process_output_lookup       on process_output(project_dir, command_name, timestamp desc, id desc);
 create index idx_stdin_messages_lookup        on stdin_messages(project_dir, command_name, id);
+create index idx_process_output_run          on process_output(project_dir, command_name, run_id);
+create index idx_process_output_launches     on process_output(project_dir, command_name, log_type, id);
 ```
 
-The `idx_process_output_lookup` ordering `(project_dir, command_name, timestamp desc, id desc)` matches the eviction and log-fetch sort order, and is kept exactly.
+The `idx_process_output_lookup` ordering `(project_dir, command_name, timestamp desc, id desc)` matches the eviction and log-fetch sort order, and is kept exactly. `idx_process_output_run` serves the latest-run lookups (`max(run_id)` per command); `idx_process_output_launches` serves the positional run lookup below.
+
+### Trigger `process_output_assign_run`
+```sql
+create trigger if not exists process_output_assign_run
+after insert on process_output when new.run_id is null begin
+  update process_output set run_id =
+    (select max(p2.id) from process_output p2
+     where p2.project_dir = new.project_dir and p2.command_name = new.command_name
+       and p2.log_type = 3 and p2.id <= new.id)
+  where id = new.id;
+end
+```
+The subquery is `run_of_row` in `rust/src/db/mod.rs`: the latest `process_start_initiated` at or before the row, by id. It gives a launch marker its own id as `run_id`, and covers writers that don't know their run (a monitor launched by an older candle that is still running). It is not safe for writers that a newer launch can overtake, which is why the monitor stamps its rows explicitly.
 
 ## 4. Migration / open behavior
 
@@ -119,21 +139,21 @@ The schema is applied additively and idempotently on every open, replacing the o
 3. `runDatabaseSloppynessCheck` — logs warnings about extra tables/indexes but makes no changes.
 
 The Rust implementation reproduces the safe, non-destructive outcome:
-- A fresh DB simply runs all 4 `create table` + 4 `create index` statements.
-- Migration is **idempotent and non-destructive**: safe to run on every startup. `run_migration` runs each `create table if not exists` in `TABLE_STATEMENTS`, then compares every table's columns (`PRAGMA table_info`) against the same DDL applied to an in-memory database. A table missing any column (for example a very old `candle.db` without `log_collector_pid`, `shell`, `root`, `killed_at`, or `process_output.timestamp`) is rebuilt inside `BEGIN IMMEDIATE`: rename the old table, create the current one, copy the shared columns, drop the old one. A rebuild is used instead of `ALTER TABLE ADD COLUMN` because SQLite can't add a column whose default is an expression such as `strftime('%s', 'now')`. Missing columns take their schema default; a `not null` column with no default gets `0` or `''`. Finally the `INDEX_STATEMENTS` run, which also recreates indexes dropped with a rebuilt table. Extra columns and type drift are not checked.
+- A fresh DB simply runs all 4 `create table` + 6 `create index` statements, then creates the trigger.
+- Migration is **idempotent and non-destructive**: safe to run on every startup. `run_migration` runs each `create table if not exists` in `TABLE_STATEMENTS`, then compares every table's columns (`PRAGMA table_info`) against the same DDL applied to an in-memory database. A table missing any column (for example a very old `candle.db` without `log_collector_pid`, `shell`, `root`, `killed_at`, or `process_output.timestamp`) is rebuilt inside `BEGIN IMMEDIATE`: rename the old table, create the current one, copy the shared columns, drop the old one. A rebuild is used instead of `ALTER TABLE ADD COLUMN` because SQLite can't add a column whose default is an expression such as `strftime('%s', 'now')`. Missing columns take their schema default; a `not null` column with no default gets `0` or `''`. Then the `INDEX_STATEMENTS` run, which also recreates indexes dropped with a rebuilt table, and the `process_output_assign_run` trigger is created (after the rebuild, since dropping a table drops its trigger). If `process_output` was rebuilt (e.g. to add `run_id`), a one-time backfill sets `run_id` for every NULL row by the same `run_of_row` rule. Extra columns and type drift are not checked.
 - In the Node original, logging callbacks routed `info → console.log`, `warn → console.warn`, `error → console.error(err.errorMessage)`.
 
 ## 5. CRUD functions and exact SQL
 
 ### Process table (`rust/src/db/process_table.rs`, originally `src/database/processTable.ts`)
-The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, log_collector_pid: Option, start_time, created_at, killed_at: Option, shell: Option, root: Option`. Inserts take a `CreateProcessEntry { command_name, project_dir, pid, log_collector_pid, shell, root }`. Every function takes `conn: &Connection` first.
+The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, log_collector_pid: Option, start_time, created_at, killed_at: Option, shell: Option, root: Option, run_id: Option`. Inserts take a `CreateProcessEntry { command_name, project_dir, pid, log_collector_pid, shell, root, run_id }`. Every function takes `conn: &Connection` first.
 ⚠️ **Historical gotcha (resolved in Rust):** the original TS `ProcessEntry` interface declared `launch_id`, but the table column is `id`. `select *` returns `id`, not `launch_id`, so `entry.launch_id` was effectively always `undefined` in TS. Code paths that delete/update use `command_name + project_dir + pid` as the key, not the row id. The Rust struct exposes `id` as the actual PK, and process rows are keyed by `(command_name, project_dir, pid)` for update/delete.
 
 - `create_process_entry(conn, &CreateProcessEntry)` inserts into `processes`:
   ```
   command_name, project_dir, pid,
   start_time = now (unix seconds),
-  log_collector_pid, shell, root
+  log_collector_pid, shell, root, run_id
   ```
   `created_at` and `killed_at` are left to default/NULL. Returns the last insert rowid.
 - `update_process_killed_at(conn, command_name, project_dir, pid, killed_at)`:
@@ -168,21 +188,23 @@ The `ProcessEntry` struct carries fields `id, command_name, project_dir, pid, lo
   ```
 
 ### Log write (`rust/src/logs/process_logs.rs`, originally `src/logs/processLogs.ts`)
-- `save_process_log(conn, command_name, project_dir, log_type, content: Option<&str>)`:
+- `save_run_log(conn, run_id: Option<i64>, command_name, project_dir, log_type, content: Option<&str>)`:
   ```sql
-  insert into process_output(command_name, project_dir, content, log_type) values(?, ?, ?, ?)
+  insert into process_output(command_name, project_dir, content, log_type, run_id) values(?, ?, ?, ?, ?)
   ```
-  `timestamp` defaults to `strftime('%s','now')`.
+  `timestamp` defaults to `strftime('%s','now')`; a NULL `run_id` is filled by the trigger.
+- `save_process_log(conn, command_name, project_dir, log_type, content)` = `save_run_log` with `run_id` NULL.
+- `start_run(conn, command_name, project_dir) -> run_id`: `save_process_log` of a `process_start_initiated` row, returning `last_insert_rowid()` (the trigger makes that id the row's own `run_id`).
 
 ### Log read (`rust/src/logs/process_logs.rs`, originally `buildLogSearchQuery.ts` + `getProcessLogsWithEvictionInfo`)
 Builds dynamic SQL on `process_output po`:
 - WHERE scope (`scope_clause`) by `project_dir` and/or `command_name IN (...)` (single command uses `= ?`).
-- Optional `and po.timestamp > ?` (`since_timestamp`), `and po.id > ?` (`after_log_id`), `and po.id >= ?` (`min_log_id`), `and po.log_type in (...)` (`log_types`), and a latest-launch subquery filter (`latest_launch_only`).
+- Optional `and po.timestamp > ?` (`since_timestamp`), `and po.id > ?` (`after_log_id`), `and po.id >= ?` (`min_log_id`), `and po.log_type in (...)` (`log_types`), `and po.run_id = ?` (`run_id`), and `and po.run_id is (select max(p2.run_id) ...same command...)` (`latest_launch_only`).
 - Always `order by po.timestamp desc, po.id desc`; optional `limit ?`.
 - If neither `project_dir` nor command names is given, the scope is `1 = 0` (no rows); the Node original threw instead.
 - Eviction detection (`get_process_logs_with_eviction_info`): if returned rows `>= limit`, re-runs the same query without limit wrapped in `select count(*) as total from (<sql>)`; if total > returned ⇒ `logs_were_evicted = true`.
 - Final list is reversed → returned in chronological (ascending) order.
-- `get_log_tail` (used by `logs --count`) builds on these; see [logs.md](logs.md) §6.
+- `get_log_tail` (used by `logs --count`) builds on these; `latest_run_ids` returns each command's `max(run_id)`. See [logs.md](logs.md) §3-6.
 
 ## 6. Cleanup / eviction algorithm (`rust/src/db/cleanup.rs`, originally `src/database/cleanup.ts`)
 
@@ -235,7 +257,7 @@ Eviction config (`rust/src/config/`, originally `src/configFile.ts`):
    - If `proc.log_collector_pid` is set **and** `is_process_alive(log_collector_pid)` → skip (the monitor is managing it).
    - Else if `is_process_alive(proc.pid)` → skip (service still alive).
    - Else (both dead) → it's stale:
-     - `save_process_log(conn, command_name, project_dir, ProcessExited (6), Some("Process cleaned up (stale entry after restart or crash)"))`.
+     - `save_run_log(conn, proc.run_id, command_name, project_dir, ProcessExited (6), Some("Process cleaned up (stale entry after restart or crash)"))`: the exit is stamped with the process row's run, so it never lands in a newer run.
      - `delete_process_entry(conn, command_name, project_dir, pid)`.
 2. `find_all_killed_processes()` (killed_at IS NOT NULL). For each → `delete_process_entry(...)` unconditionally (the monitor died before deleting; clean them up).
 

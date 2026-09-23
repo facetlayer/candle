@@ -20,6 +20,10 @@ pub struct ProcessLog {
     pub content: Option<String>,
     pub log_type: i64,
     pub timestamp: i64,
+    /// The run this row belongs to: the id of that run's
+    /// `process_start_initiated` row. `None` only for rows saved before the
+    /// service's first launch. See `run_of_row` in `db/mod.rs`.
+    pub run_id: Option<i64>,
 }
 
 /// Search parameters for [`get_process_logs`], mirroring `LogSearchOptions` in
@@ -36,15 +40,34 @@ pub struct LogSearchOptions {
     pub min_log_id: Option<i64>,
     /// Only rows of these `log_type`s. Empty matches every type.
     pub log_types: Vec<i64>,
-    /// Drop rows older than each command's latest `process_start_initiated`,
-    /// i.e. rows from a previous run.
+    /// Only rows from each command's latest run (the highest `run_id`).
     pub latest_launch_only: bool,
+    /// Only rows from this run.
+    pub run_id: Option<i64>,
 }
 
-/// Insert a new process log line.
+/// Insert a new process log line belonging to `run_id`.
 ///
-/// `timestamp` is intentionally omitted so the column DEFAULT fills it in (unix
-/// seconds), matching `saveProcessLog` in `processLogs.ts`.
+/// With `run_id: None` the database assigns the run by position (the latest
+/// launch at or before the row), which is only right for writers that can't
+/// be overtaken by a newer launch. `timestamp` is intentionally omitted so the
+/// column DEFAULT fills it in (unix seconds).
+pub fn save_run_log(
+    conn: &Connection,
+    run_id: Option<i64>,
+    command_name: &str,
+    project_dir: &str,
+    log_type: ProcessLogType,
+    content: Option<&str>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "insert into process_output(command_name, project_dir, content, log_type, run_id) values(?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![command_name, project_dir, content, log_type.as_i64(), run_id],
+    )?;
+    Ok(())
+}
+
+/// [`save_run_log`] with the run assigned by position.
 pub fn save_process_log(
     conn: &Connection,
     command_name: &str,
@@ -52,11 +75,46 @@ pub fn save_process_log(
     log_type: ProcessLogType,
     content: Option<&str>,
 ) -> rusqlite::Result<()> {
-    conn.execute(
-        "insert into process_output(command_name, project_dir, content, log_type) values(?1, ?2, ?3, ?4)",
-        rusqlite::params![command_name, project_dir, content, log_type.as_i64()],
+    save_run_log(conn, None, command_name, project_dir, log_type, content)
+}
+
+/// Record a new launch of `command_name` and return its run id: the id of the
+/// `process_start_initiated` row, which the database assigns as the row's own
+/// run (see `run_of_row` in `db/mod.rs`).
+pub fn start_run(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+) -> rusqlite::Result<i64> {
+    save_process_log(
+        conn,
+        command_name,
+        project_dir,
+        ProcessLogType::ProcessStartInitiated,
+        None,
     )?;
-    Ok(())
+    Ok(conn.last_insert_rowid())
+}
+
+/// The latest run id of each command in scope that has one.
+pub fn latest_run_ids(
+    conn: &Connection,
+    project_dir: &str,
+    command_names: &[String],
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let (scope, params) = scope_clause(&LogSearchOptions {
+        project_dir: Some(project_dir.to_string()),
+        command_names: command_names.to_vec(),
+        ..Default::default()
+    });
+    let sql = format!(
+        "select po.command_name, max(po.run_id) from process_output po where {scope} \
+         and po.run_id is not null group by po.command_name"
+    );
+    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(refs.as_slice(), |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
 }
 
 /// Build the log-search SQL + params, faithfully porting `buildLogSearchQuery`.
@@ -84,8 +142,13 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
 
     push_log_type_filter(&mut sql, &mut params, &options.log_types);
 
+    if let Some(run_id) = options.run_id {
+        sql.push_str(" and po.run_id = ?");
+        params.push(Value::Integer(run_id));
+    }
+
     if options.latest_launch_only {
-        push_latest_launch_filter(&mut sql, &mut params);
+        push_latest_launch_filter(&mut sql);
     }
 
     sql.push_str(" order by po.timestamp desc, po.id desc");
@@ -131,16 +194,13 @@ fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
     (clause, params)
 }
 
-/// Keep only rows at or after the row's command's latest launch marker.
-fn push_latest_launch_filter(sql: &mut String, params: &mut Vec<Value>) {
+/// Keep only rows from the row's command's latest run. `is` rather than `=` so
+/// a command that has never been launched (every `run_id` null) keeps its rows.
+fn push_latest_launch_filter(sql: &mut String) {
     sql.push_str(
-        " and po.id >= coalesce((select max(p2.id) from process_output p2 \
-         where p2.project_dir = po.project_dir and p2.command_name = po.command_name \
-         and p2.log_type = ?), 0)",
+        " and po.run_id is (select max(p2.run_id) from process_output p2 \
+         where p2.project_dir = po.project_dir and p2.command_name = po.command_name)",
     );
-    params.push(Value::Integer(
-        ProcessLogType::ProcessStartInitiated.as_i64(),
-    ));
 }
 
 fn push_log_type_filter(sql: &mut String, params: &mut Vec<Value>, log_types: &[i64]) {
@@ -162,6 +222,7 @@ fn row_to_log(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessLog> {
         content: row.get("content")?,
         log_type: row.get("log_type")?,
         timestamp: row.get("timestamp")?,
+        run_id: row.get("run_id")?,
     })
 }
 
@@ -243,87 +304,36 @@ fn printable_log_types() -> Vec<i64> {
 /// Result of [`get_log_tail`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LogTail {
-    /// Chronological rows: the newest `limit` printable rows, plus the launch
-    /// markers a [`LatestExecutionLogFilter`](crate::log_filters::LatestExecutionLogFilter)
-    /// needs to tell this launch's rows from the previous one's.
+    /// Chronological rows: the newest `limit` printable rows of each command's
+    /// latest run.
     pub logs: Vec<ProcessLog>,
-    /// Whether printable rows from the *latest* launch were left out by `limit`.
-    /// Rows from a previous launch are excluded up front and never count.
+    /// Whether printable rows from the latest run were left out by `limit`.
     pub truncated: bool,
 }
 
-/// Fetch the last `limit` printable log rows, for `candle logs --count`.
+/// Fetch the last `limit` printable log rows of the latest run, for
+/// `candle logs --count`.
 ///
-/// The limit applies only to printable rows from each command's latest run.
-/// Counting marker rows against it made `--count 3` print two lines whenever
-/// `process_started`, which the monitor writes after the first output, fell
-/// inside the window; counting a previous run's rows did the same after a
-/// restart.
+/// Marker rows and a previous run's rows never count against the limit: they
+/// made `--count 3` print two lines whenever `process_started` fell inside the
+/// window, or right after a restart.
 pub fn get_log_tail(
     conn: &Connection,
     options: &LogSearchOptions,
     limit: i64,
 ) -> rusqlite::Result<LogTail> {
-    let printable = LogSearchOptions {
-        limit: Some(limit),
-        log_types: printable_log_types(),
-        latest_launch_only: true,
-        ..options.clone()
-    };
-    let mut logs = get_process_logs(conn, &printable)?;
-    let Some(window_min_id) = logs.iter().map(|l| l.id).min() else {
-        return Ok(LogTail::default());
-    };
-
-    // Latest launch boundary per command, even if it predates the window.
-    let (scope, mut params) = scope_clause(options);
-    let mut boundary_sql =
-        format!("select max(po.id) from process_output po where {scope} and po.log_type = ?");
-    params.push(Value::Integer(
-        ProcessLogType::ProcessStartInitiated.as_i64(),
-    ));
-    if let Some(after) = options.after_log_id {
-        boundary_sql.push_str(" and po.id > ?");
-        params.push(Value::Integer(after));
-    }
-    boundary_sql.push_str(" group by po.command_name");
-    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-    let mut stmt = conn.prepare(&boundary_sql)?;
-    let oldest_boundary: Option<i64> = stmt
-        .query_map(refs.as_slice(), |row| row.get::<_, i64>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-        .into_iter()
-        .min();
-
-    let markers = LogSearchOptions {
-        limit: None,
-        min_log_id: Some(oldest_boundary.map_or(window_min_id, |b| b.min(window_min_id))),
-        log_types: vec![
-            ProcessLogType::ProcessStartInitiated.as_i64(),
-            ProcessLogType::ProcessStarted.as_i64(),
-        ],
-        ..options.clone()
-    };
-    logs.extend(get_process_logs(conn, &markers)?);
-    logs.sort_by_key(|l| l.id);
-
-    // Were printable rows from the latest launch cut off by the limit?
-    let (scope, mut params) = scope_clause(options);
-    let mut count_sql =
-        format!("select count(*) from process_output po where {scope} and po.id < ?");
-    params.push(Value::Integer(window_min_id));
-    if let Some(after) = options.after_log_id {
-        count_sql.push_str(" and po.id > ?");
-        params.push(Value::Integer(after));
-    }
-    push_log_type_filter(&mut count_sql, &mut params, &printable_log_types());
-    push_latest_launch_filter(&mut count_sql, &mut params);
-    let refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-    let hidden: i64 = conn.query_row(&count_sql, refs.as_slice(), |row| row.get(0))?;
-
+    let result = get_process_logs_with_eviction_info(
+        conn,
+        &LogSearchOptions {
+            limit: Some(limit),
+            log_types: printable_log_types(),
+            latest_launch_only: true,
+            ..options.clone()
+        },
+    )?;
     Ok(LogTail {
-        logs,
-        truncated: hidden > 0,
+        logs: result.logs,
+        truncated: result.logs_were_evicted,
     })
 }
 
@@ -528,6 +538,54 @@ mod tests {
         .unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].content, Some("a".to_string()));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_previous_runs_late_rows_stay_out_of_the_latest_run() {
+        let dir = temp_db_dir("process-logs-late-rows");
+        let conn = get_database(Some(&dir)).unwrap();
+        let save = |run: Option<i64>, t: ProcessLogType, c: Option<&str>| {
+            save_run_log(&conn, run, "api", "/proj", t, c).unwrap();
+        };
+
+        let old_run = start_run(&conn, "api", "/proj").unwrap();
+        save(Some(old_run), ProcessLogType::ProcessStarted, None);
+        save(Some(old_run), ProcessLogType::Stdout, Some("old output"));
+        let new_run = start_run(&conn, "api", "/proj").unwrap();
+        // The old monitor finishes writing after the relaunch.
+        save(
+            Some(old_run),
+            ProcessLogType::Stdout,
+            Some("old late output"),
+        );
+        save(
+            Some(old_run),
+            ProcessLogType::ProcessExited,
+            Some("Process was stopped"),
+        );
+        save(Some(new_run), ProcessLogType::ProcessStarted, None);
+        save(Some(new_run), ProcessLogType::Stdout, Some("new output"));
+
+        let tail = get_log_tail(
+            &conn,
+            &LogSearchOptions {
+                project_dir: Some("/proj".to_string()),
+                command_names: vec!["api".to_string()],
+                ..Default::default()
+            },
+            100,
+        )
+        .unwrap();
+        let contents: Vec<_> = tail.logs.iter().filter_map(|l| l.content.clone()).collect();
+        assert_eq!(contents, vec!["new output"]);
+        assert!(!tail.truncated);
+        assert_eq!(
+            latest_run_ids(&conn, "/proj", &[]).unwrap(),
+            vec![("api".to_string(), new_run)]
+        );
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

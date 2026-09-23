@@ -176,8 +176,9 @@ enum LatestRun {
     Failed,
 }
 
-/// Classify a service's latest run from its newest lifecycle row (start
-/// initiated / failed / started / exited).
+/// Classify a service's latest run from that run's newest lifecycle row (start
+/// initiated / failed / started / exited). A previous instance's late exit row
+/// belongs to an older run and is ignored.
 fn latest_run(
     conn: &Connection,
     project_dir: &str,
@@ -187,6 +188,8 @@ fn latest_run(
         .query_row(
             "select log_type, content from process_output \
              where project_dir = ?1 and command_name = ?2 and log_type in (?3, ?4, ?5, ?6) \
+             and run_id is (select max(run_id) from process_output \
+                            where project_dir = ?1 and command_name = ?2) \
              order by id desc limit 1",
             rusqlite::params![
                 project_dir,
@@ -683,6 +686,7 @@ mod tests {
             killed_at: None,
             shell: None,
             root: None,
+            run_id: None,
         }
     }
 

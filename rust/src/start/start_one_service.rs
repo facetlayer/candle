@@ -2,10 +2,11 @@
 //!
 //! Ports `startOneService` from `src/start/startOneService.ts`. The flow:
 //! check-start dedup → resolve the service config (transient or from file) →
-//! check the launch directory exists → kill any existing instance → seed a log
-//! cursor → record `process_start_initiated` → launch the monitor process
-//! (`candle --monitor`) → race the log table against a 10s timeout for
-//! `process_started` / `process_start_failed` → print the banner.
+//! check the launch directory exists → kill any existing instance → record
+//! `process_start_initiated`, whose id becomes the new run id → launch the
+//! monitor process (`candle --monitor`) with that run id → race this run's log
+//! rows against a 10s timeout for `process_started` / `process_start_failed` →
+//! print the banner.
 
 use std::path::Path;
 use std::thread;
@@ -19,23 +20,17 @@ use crate::db::process_table::find_processes_by_command_name_and_project_dir;
 use crate::dirs::candle_db_path;
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
-use crate::logs::process_logs::save_process_log;
-use crate::logs::{LogIterator, ProcessLogType};
+use crate::logs::process_logs::{get_process_logs, save_run_log, start_run, LogSearchOptions};
+use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 use crate::output;
-use crate::process_alive::{filter_alive_processes, is_process_alive};
+use crate::process_alive::filter_alive_processes;
 use crate::start::launch::launch_monitor;
 
 /// How long the CLI watches the log table for a start result before giving up.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// Poll interval while watching the log table (matches Node's `setTimeout(100)`).
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-/// How long to wait for a killed previous instance to finish exiting before
-/// recording the new launch. Bounded so a service that ignores SIGTERM can't
-/// block a start indefinitely.
-const PREVIOUS_INSTANCE_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
-/// Poll interval while draining the previous instance.
-const DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Options for [`start_one_service`], mirroring the relevant fields of Node's
 /// `RunOptions`.
@@ -58,57 +53,6 @@ pub struct StartResult {
 
 fn db_err(e: rusqlite::Error) -> CandleError {
     CandleError::Generic(format!("database error: {e}"))
-}
-
-/// PIDs belonging to the previous instance of `command_name`: the supervised
-/// shell and the monitor process that writes its log rows. Both must be gone
-/// before the old instance can be considered fully drained.
-///
-/// Rows already marked `killed_at` count too. `restart` (and `kill` followed by
-/// `start`) marks the row before this runs, but the marked instance's monitor
-/// can still be writing its last output and `process_exited` row. Skipping it
-/// let those rows land after the new launch boundary (see
-/// `formal/Candle/Protocol.lean`).
-fn previous_instance_pids(
-    conn: &Connection,
-    project_dir: &str,
-    command_name: &str,
-) -> Result<Vec<i64>, CandleError> {
-    let entries = find_processes_by_command_name_and_project_dir(conn, command_name, project_dir)
-        .map_err(db_err)?;
-
-    let mut pids = Vec::new();
-    for entry in &entries {
-        if entry.pid > 0 {
-            pids.push(entry.pid);
-        }
-        if let Some(collector_pid) = entry.log_collector_pid {
-            if collector_pid > 0 {
-                pids.push(collector_pid);
-            }
-        }
-    }
-
-    Ok(pids)
-}
-
-/// Block until none of `pids` is alive, or until `timeout` elapses. Returns
-/// whether every PID exited within the timeout.
-fn wait_for_pids_to_exit(pids: &[i64], timeout: Duration) -> bool {
-    if pids.is_empty() {
-        return true;
-    }
-
-    let deadline = Instant::now() + timeout;
-    loop {
-        if !pids.iter().copied().any(is_process_alive) {
-            return true;
-        }
-        if Instant::now() >= deadline {
-            return false;
-        }
-        thread::sleep(DRAIN_POLL_INTERVAL);
-    }
 }
 
 /// (device, inode) of the file at the connection's database path, or `None`
@@ -140,16 +84,10 @@ fn record_start_failure_if_idle(
     {
         return Ok(());
     }
-    save_process_log(
+    let run_id = start_run(conn, service_name, project_dir).map_err(db_err)?;
+    save_run_log(
         conn,
-        service_name,
-        project_dir,
-        ProcessLogType::ProcessStartInitiated,
-        None,
-    )
-    .map_err(db_err)?;
-    save_process_log(
-        conn,
+        Some(run_id),
         service_name,
         project_dir,
         ProcessLogType::ProcessStartFailed,
@@ -255,9 +193,9 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     }
 
     // 3. Kill any existing instance (start == restart). quiet_failure suppresses
-    //    "no running processes" noise.
-    let previous_pids = previous_instance_pids(conn, &opts.project_dir, &service.name)?;
-
+    //    "no running processes" noise. The kill waits for the old process tree;
+    //    its monitor may still be writing its last rows, but those carry the
+    //    old run id, so they never show up as part of the new run.
     handle_kill_command(
         conn,
         &opts.project_dir,
@@ -267,31 +205,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     )
     .map_err(db_err)?;
 
-    // The kill above waits for the old shell (escalating to SIGKILL), but its
-    // monitor exits a moment later. If we recorded the
-    // new launch while the old instance was still shutting down, the old shell's
-    // dying output and its monitor's `process_exited` row would be written to the
-    // log table *after* the new `process_start_initiated` row — and log consumers,
-    // which treat that row as the launch boundary, would replay them as if they
-    // belonged to the new instance. Wait for the old shell and its monitor to be
-    // gone first so every stale row lands before the boundary.
-    wait_for_pids_to_exit(&previous_pids, PREVIOUS_INSTANCE_DRAIN_TIMEOUT);
-
-    // 4. Seed the log watch position, then record process_start_initiated.
-    let mut log_iterator = LogIterator::new(opts.project_dir.clone(), vec![service.name.clone()]);
-    log_iterator
-        .reset_to_latest_log_message(conn)
-        .map_err(db_err)?;
-    let mut initial_log_position = log_iterator.copy();
-
-    save_process_log(
-        conn,
-        &service.name,
-        &opts.project_dir,
-        ProcessLogType::ProcessStartInitiated,
-        None,
-    )
-    .map_err(db_err)?;
+    // 4. Record the launch. Its row id is the new run id.
+    let run_id = start_run(conn, &service.name, &opts.project_dir).map_err(db_err)?;
 
     // 5. Launch the detached monitor process (`candle --monitor`).
     let info = MonitorLaunchInfo {
@@ -301,37 +216,49 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         root: service.root.clone(),
         enable_stdin: service.enable_stdin.unwrap_or(false),
         database_path: candle_db_path(),
+        run_id: Some(run_id),
     };
     launch_monitor(&info)
         .map_err(|e| CandleError::Generic(format!("Failed to launch monitor process: {e}")))?;
 
-    // 6. Success / failure race against a 10s timeout.
+    // 6. Success / failure race against a 10s timeout, on this run's rows only.
+    let this_run = |log_types: Vec<i64>| {
+        get_process_logs(
+            conn,
+            &LogSearchOptions {
+                project_dir: Some(opts.project_dir.clone()),
+                command_names: vec![service.name.clone()],
+                run_id: Some(run_id),
+                log_types,
+                ..Default::default()
+            },
+        )
+        .map_err(db_err)
+    };
     let deadline = Instant::now() + START_TIMEOUT;
     let mut started = false;
-    'watch: loop {
-        let logs = log_iterator.get_next_logs(conn, None).map_err(db_err)?;
-        for log in &logs {
-            if log.log_type == ProcessLogType::ProcessStarted.as_i64() {
+    loop {
+        let results = this_run(vec![
+            ProcessLogType::ProcessStarted.as_i64(),
+            ProcessLogType::ProcessStartFailed.as_i64(),
+        ])?;
+        if let Some(result) = results.first() {
+            if result.log_type == ProcessLogType::ProcessStarted.as_i64() {
                 started = true;
-                break 'watch;
+                break;
             }
-            if log.log_type == ProcessLogType::ProcessStartFailed.as_i64() {
-                let recent = initial_log_position
-                    .get_next_logs(conn, None)
-                    .map_err(db_err)?;
-                // Lifecycle rows such as `process_start_initiated` carry no
-                // content; skip them rather than emit blank lines.
-                let recent_logs = recent
-                    .iter()
-                    .filter_map(|l| l.content.clone())
-                    .filter(|c| !c.is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                return Err(CandleError::ProcessStartFailed {
-                    command_name: service.name.clone(),
-                    recent_logs,
-                });
-            }
+            // Lifecycle rows such as `process_start_initiated` carry no
+            // content; skip them rather than emit blank lines.
+            let recent_logs = this_run(vec![])?
+                .iter()
+                .filter_map(|l| l.content.clone())
+                .filter(|c| !c.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(CandleError::ProcessStartFailed {
+                command_name: service.name.clone(),
+                recent_logs,
+            });
         }
 
         if Instant::now() >= deadline {

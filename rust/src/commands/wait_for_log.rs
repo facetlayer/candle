@@ -13,9 +13,11 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::db::process_table::find_running_processes_by_project_dir;
-use crate::log_filters::{LatestExecutionLogFilter, ShowPastLogsBehavior};
+use crate::log_filters::LatestRunFilter;
 use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
-use crate::logs::process_logs::{get_log_tail, LogSearchOptions, ProcessLog};
+use crate::logs::process_logs::{
+    get_log_tail, get_process_logs, latest_run_ids, LogSearchOptions, ProcessLog,
+};
 use crate::logs::{LogIterator, ProcessLogType};
 use crate::output;
 use crate::process_alive::filter_alive_processes;
@@ -79,10 +81,6 @@ fn print_recent_logs(conn: &Connection, project_dir: &str, command_names: &[Stri
         RECENT_LOG_LINES,
     )
     .unwrap_or_default();
-    let mut filter =
-        LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
-    filter.check_latest_launch_status(&tail.logs);
-    let recent_logs = filter.filter(&tail.logs);
 
     let label = command_names.join(", ");
     let header = if tail.truncated {
@@ -96,7 +94,7 @@ fn print_recent_logs(conn: &Connection, project_dir: &str, command_names: &[Stri
         prefix: None,
         enable_app_name_prefix: command_names.len() != 1,
     };
-    for log in &recent_logs {
+    for log in &tail.logs {
         console_log_row(log, &options);
     }
     let logs_command = if command_names.len() == 1 {
@@ -132,19 +130,17 @@ pub fn handle_wait_for_log(
     message: &str,
     timeout_ms: u64,
 ) -> WaitForLogResult {
-    // Get recent logs
+    // Recent rows of each service's latest run. Every row carries its run, so
+    // this works even when the launch itself is older than the search window.
+    let mut log_filter = LatestRunFilter::new(None);
+    let _ = log_filter.seed_latest_runs(conn, project_dir, command_names);
     let mut log_iterator = LogIterator::with_limit(
         project_dir.to_string(),
         command_names.to_vec(),
         Some(LOG_COUNT_SEARCH_LIMIT),
     );
-    let all_initial_logs = log_iterator.get_next_logs(conn, None).unwrap_or_default();
-
-    // Use filter to only show logs from the most recent process run
-    let mut log_filter =
-        LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
-    log_filter.check_latest_launch_status(&all_initial_logs);
-    let initial_logs = log_filter.filter(&all_initial_logs);
+    let initial_logs =
+        log_filter.filter(&log_iterator.get_next_logs(conn, None).unwrap_or_default());
 
     // Look for the message in existing logs. A run that has already finished
     // still counts if it printed the message.
@@ -155,45 +151,42 @@ pub fn handle_wait_for_log(
         }
     }
 
+    let has_run = !latest_run_ids(conn, project_dir, command_names)
+        .unwrap_or_default()
+        .is_empty();
+    let latest_run_lifecycle = get_process_logs(
+        conn,
+        &LogSearchOptions {
+            project_dir: Some(project_dir.to_string()),
+            command_names: command_names.to_vec(),
+            log_types: vec![
+                ProcessLogType::ProcessStarted.as_i64(),
+                ProcessLogType::ProcessStartFailed.as_i64(),
+                ProcessLogType::ProcessExited.as_i64(),
+            ],
+            latest_launch_only: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_default();
+    let running = is_any_running(conn, project_dir, command_names);
+
+    // Never launched and nothing running: nothing is going to write the message.
+    if !has_run && !running {
+        return fail_not_running(conn, project_dir, command_names, message, false);
+    }
+    // The latest run already ended (and, with several services, none of them
+    // is still running).
+    if latest_run_lifecycle.iter().any(ends_run) && !running {
+        return fail_not_running(conn, project_dir, command_names, message, true);
+    }
+
     // Once the monitor has reported the start, the process row must exist for
     // as long as the service runs. Before that, a launch is still in progress.
-    let mut start_reported = initial_logs
-        .iter()
-        .any(|log| is_type(log, ProcessLogType::ProcessStarted));
-
-    if initial_logs.is_empty() {
-        // No launch in the search window and nothing running: nothing is
-        // going to write the message.
-        if !is_any_running(conn, project_dir, command_names) {
-            return fail_not_running(conn, project_dir, command_names, message, false);
-        }
-        // Running, but the launch is older than the search window, so every
-        // row in the window (and after it) is from the current run.
-        if all_initial_logs
+    let mut start_reported = !has_run
+        || latest_run_lifecycle
             .iter()
-            .any(|log| content_contains(&log.content, message))
-        {
-            output::out(&format!("Found message \"{message}\" in existing logs."));
-            return WaitForLogResult { success: true };
-        }
-        log_filter =
-            LatestExecutionLogFilter::new(ShowPastLogsBehavior::ShowLogsFromPreviousLaunch, None);
-        start_reported = true;
-    } else {
-        let has_process_started = initial_logs
-            .iter()
-            .any(|log| is_type(log, ProcessLogType::ProcessStartInitiated));
-        if !has_process_started {
-            output::error("Process has not started yet");
-            return WaitForLogResult { success: false };
-        }
-
-        // The latest run already ended (and, with several services, none of
-        // them is still running).
-        if initial_logs.iter().any(ends_run) && !is_any_running(conn, project_dir, command_names) {
-            return fail_not_running(conn, project_dir, command_names, message, true);
-        }
-    }
+            .any(|log| is_type(log, ProcessLogType::ProcessStarted));
 
     // Poll for logs until we find the message or timeout
     let time_started = Instant::now();

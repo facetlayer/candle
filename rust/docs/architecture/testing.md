@@ -142,7 +142,8 @@ create table processes(
   created_at integer not null default (strftime('%s','now')),
   killed_at integer,
   shell text,
-  root text
+  root text,
+  run_id integer
 );
 create table process_output(
   id integer primary key autoincrement,
@@ -150,7 +151,8 @@ create table process_output(
   project_dir text not null,
   content text,
   log_type integer not null,
-  timestamp integer not null default (strftime('%s','now'))
+  timestamp integer not null default (strftime('%s','now')),
+  run_id integer
 );
 create table process_last_cleanup( timestamp integer not null );
 create table stdin_messages(
@@ -165,7 +167,12 @@ create index idx_process_output_command_name on process_output(command_name);
 create index idx_process_output_project_dir on process_output(project_dir);
 create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
 create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id);
+create index idx_process_output_run on process_output(project_dir, command_name, run_id);
+create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
+-- plus trigger process_output_assign_run, which fills a NULL run_id by position; see database.md
 ```
+`run_id` (both tables) is the id of the run's `process_start_initiated` row; a command's latest run is its highest `run_id`. Tests that insert `process_output` rows with raw SQL and no `run_id` get one from the trigger.
+
 Times are **unix seconds** (`SystemTime` seconds / `strftime('%s','now')`). (The Node code also had a `RunningStatus` enum; no column uses it.)
 
 ### `ProcessLogType` enum — `process_output.log_type` integer values
@@ -260,7 +267,7 @@ Root-level tests:
    - Unknown flags yield yargs-style `Unknown argument` (strict mode). The Node CLI used yargs `.strictOptions()`; the Rust CLI's hand-rolled parser (`rust/src/cli/parser.rs`, not clap) rejects unknown flags with `Unknown argument: <flag>`.
 4. **Timeouts are in seconds on the CLI** (`--timeout 30`) but converted to ms internally (`timeout*1000`). Negative/zero handled as immediate failure.
 5. Stale detection uses signal-0 liveness; fake PID `2147483000` is chosen to be unused. Both `pid` and `log_collector_pid` deadness form the staleness condition.
-6. Multiple-launch log filtering: `logs` shows only the **most recent execution** (filtered via the latest-execution filter keyed off the last `process_start_initiated`/`process_started`). Markers from earlier runs must not appear.
+6. Multiple-launch log filtering: `logs` shows only the **most recent execution** (the rows whose `run_id` is the command's highest). Rows from earlier runs must not appear, even ones a previous instance wrote after the new launch marker (`watch-restart.test.ts`, `restart.test.ts`).
 7. `list-all` must work from any cwd (no config required); `list`/`start`/`kill`/`logs` require/resolve a config via upward search.
 8. Times stored as unix seconds; uptime formatting matches `\d+m \d+s` or `\d+s`.
 9. Config file lookup order: `.candle.json` then `.candle-setup.json` (deprecated), searching upward to filesystem root. Empty config file ⇒ `{services:[]}`.

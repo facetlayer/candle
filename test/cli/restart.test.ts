@@ -228,10 +228,9 @@ describe('CLI Restart Command', () => {
     describe('previous instance rows stay out of the new run', () => {
         // The shell leaves a background process holding its stdout open, so the
         // old monitor spends its full post-exit drain window (500ms) before it
-        // writes `process_exited`. Restart used to skip waiting for it, since
-        // its own kill had already marked the row, so the old exit landed after
-        // the new launch boundary and `logs` showed it as the new run's exit.
-        // Model: formal/Candle/Protocol.lean.
+        // writes `process_exited` — after the new launch has been recorded.
+        // Those rows carry the old run id, so `logs` must not show them as part
+        // of the new run. Model: formal/Candle/Protocol.lean.
         const assertLatestRunIsClean = async () => {
             const logs = (await workspace.runCli(['logs', 'escaping-child'])).stdoutAsString();
             expect(logs).toContain('run-started');
@@ -242,6 +241,14 @@ describe('CLI Restart Command', () => {
         it('restart does not show the previous instance exit', async () => {
             await workspace.runCli(['start', 'escaping-child']);
             await workspace.runCli(['restart', 'escaping-child']);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await assertLatestRunIsClean();
+            await workspace.runCli(['kill', 'escaping-child']);
+        });
+
+        it('start over a running instance does not show its exit', async () => {
+            await workspace.runCli(['start', 'escaping-child']);
+            await workspace.runCli(['start', 'escaping-child']);
             await new Promise(resolve => setTimeout(resolve, 1000));
             await assertLatestRunIsClean();
             await workspace.runCli(['kill', 'escaping-child']);
