@@ -41,7 +41,7 @@ jobs:
             os: ubuntu-22.04-arm
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
@@ -71,7 +71,7 @@ jobs:
           tar -czf "$NAME.tar.gz" -C "$(dirname "$STAGE")" "$NAME"
           echo "archive=$NAME.tar.gz" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: ${{ steps.package.outputs.archive }}
@@ -82,9 +82,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -124,7 +124,7 @@ jobs:
 
       - name: Checkout tap
         if: steps.check.outputs.enabled == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: facetlayer/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
