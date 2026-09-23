@@ -1,0 +1,5 @@
+name = "candle-formal"
+defaultTargets = ["Candle"]
+
+[[lean_lib]]
+name = "Candle"

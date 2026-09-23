@@ -11,6 +11,10 @@
     {
       "name": "echo-test",
       "shell": "node ../../sampleServers/echoServer.js"
+    },
+    {
+      "name": "escaping-child",
+      "shell": "(sleep 3 &); trap 'echo OLD-shutting-down; exit 0' TERM; echo run-started; while true; do sleep 0.1; done"
     }
   ]
 }

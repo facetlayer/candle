@@ -60,9 +60,15 @@ fn db_err(e: rusqlite::Error) -> CandleError {
     CandleError::Generic(format!("database error: {e}"))
 }
 
-/// PIDs belonging to the currently-running instance of `command_name`: the
-/// supervised shell and the monitor process that writes its log rows. Both must
-/// be gone before the old instance can be considered fully drained.
+/// PIDs belonging to the previous instance of `command_name`: the supervised
+/// shell and the monitor process that writes its log rows. Both must be gone
+/// before the old instance can be considered fully drained.
+///
+/// Rows already marked `killed_at` count too. `restart` (and `kill` followed by
+/// `start`) marks the row before this runs, but the marked instance's monitor
+/// can still be writing its last output and `process_exited` row. Skipping it
+/// let those rows land after the new launch boundary (see
+/// `formal/Candle/Protocol.lean`).
 fn previous_instance_pids(
     conn: &Connection,
     project_dir: &str,
@@ -72,7 +78,7 @@ fn previous_instance_pids(
         .map_err(db_err)?;
 
     let mut pids = Vec::new();
-    for entry in entries.iter().filter(|e| e.killed_at.is_none()) {
+    for entry in &entries {
         if entry.pid > 0 {
             pids.push(entry.pid);
         }

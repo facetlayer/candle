@@ -19,11 +19,43 @@ pub enum ShowPastLogsBehavior {
 #[derive(Debug, Clone, Copy)]
 struct LaunchStatus {
     start_log_id: i64,
-    /// Whether the monitor for this launch has reported its start result yet
-    /// (`process_started` / `process_start_failed`). Until it has, a
-    /// `process_exited` row can only have come from the previous instance —
-    /// see [`LatestExecutionLogFilter::filter`].
-    reported_start_result: bool,
+    /// Id of the first start result (`process_started` / `process_start_failed`)
+    /// after `start_log_id`, if one has been seen. A `process_exited` row before
+    /// it can only have come from the previous instance — see
+    /// [`LatestExecutionLogFilter::filter`].
+    ///
+    /// This is an id rather than a flag so the answer doesn't depend on how the
+    /// rows were batched: `check_latest_launch_status` may pre-scan rows *after*
+    /// a stale exit, and a batch may replay an older launch's start result.
+    /// `formal/Candle/LogFilterFix.lean` proves this version correct in both
+    /// batch and streaming use.
+    start_result_id: Option<i64>,
+}
+
+impl LaunchStatus {
+    fn new(start_log_id: i64) -> Self {
+        LaunchStatus {
+            start_log_id,
+            start_result_id: None,
+        }
+    }
+
+    /// Record `log` if it is this launch's first start result.
+    fn note_start_result(&mut self, log: &ProcessLog) {
+        if LatestExecutionLogFilter::is_start_result(log.log_type)
+            && self.start_result_id.is_none()
+            && log.id > self.start_log_id
+        {
+            self.start_result_id = Some(log.id);
+        }
+    }
+
+    /// Whether `log` is an exit written before this launch reported its start
+    /// result, i.e. the previous instance's exit.
+    fn is_stale_exit(&self, log: &ProcessLog) -> bool {
+        log.log_type == ProcessLogType::ProcessExited.as_i64()
+            && self.start_result_id.is_none_or(|result_id| log.id < result_id)
+    }
 }
 
 /// Filters logs to only show logs from the most recent process launch for each
@@ -73,17 +105,10 @@ impl LatestExecutionLogFilter {
 
         for log in logs {
             if log.log_type == ProcessLogType::ProcessStartInitiated.as_i64() {
-                self.recent_command_launch.insert(
-                    log.command_name.clone(),
-                    LaunchStatus {
-                        start_log_id: log.id,
-                        reported_start_result: false,
-                    },
-                );
-            } else if Self::is_start_result(log.log_type) {
-                if let Some(status) = self.recent_command_launch.get_mut(&log.command_name) {
-                    status.reported_start_result = true;
-                }
+                self.recent_command_launch
+                    .insert(log.command_name.clone(), LaunchStatus::new(log.id));
+            } else if let Some(status) = self.recent_command_launch.get_mut(&log.command_name) {
+                status.note_start_result(log);
             }
         }
     }
@@ -114,13 +139,8 @@ impl LatestExecutionLogFilter {
                     .get(&log.command_name)
                     .is_none_or(|status| log.id > status.start_log_id);
                 if is_newer {
-                    self.recent_command_launch.insert(
-                        log.command_name.clone(),
-                        LaunchStatus {
-                            start_log_id: log.id,
-                            reported_start_result: false,
-                        },
-                    );
+                    self.recent_command_launch
+                        .insert(log.command_name.clone(), LaunchStatus::new(log.id));
                 }
             }
 
@@ -131,9 +151,7 @@ impl LatestExecutionLogFilter {
                 // process_started, so an exit seen before this launch's start
                 // result belongs to the instance that was just killed — its
                 // shutdown can outlive the new launch record.
-                if log.log_type == ProcessLogType::ProcessExited.as_i64()
-                    && !status.reported_start_result
-                {
+                if status.is_stale_exit(log) {
                     false
                 } else {
                     // Only include logs from the latest launch onward.
@@ -149,10 +167,8 @@ impl LatestExecutionLogFilter {
                 false
             };
 
-            if Self::is_start_result(log.log_type) {
-                if let Some(status) = self.recent_command_launch.get_mut(&log.command_name) {
-                    status.reported_start_result = true;
-                }
+            if let Some(status) = self.recent_command_launch.get_mut(&log.command_name) {
+                status.note_start_result(log);
             }
 
             if should_include_log {
@@ -361,6 +377,66 @@ mod tests {
                 m.now,
             ),
         ];
+
+        let result = filter.filter(&logs);
+        assert_eq!(
+            contents(&result),
+            vec!["relaunch", "started", "Process exited with code 0"]
+        );
+    }
+
+    #[test]
+    fn hides_a_previous_instances_exit_when_the_batch_includes_the_new_start() {
+        // `logs` and `wait-for-log` pre-scan and filter the same batch. The
+        // pre-scan sees the new launch's process_started, which must not make
+        // the previous instance's earlier exit look like this launch's own.
+        let mut m = LogMaker::new();
+        let mut filter =
+            LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
+        let logs = vec![
+            m.make("relaunch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make("Process was stopped", ProcessLogType::ProcessExited, m.now),
+            m.make("started", ProcessLogType::ProcessStarted, m.now),
+            m.make("new-run", ProcessLogType::Stdout, m.now),
+        ];
+        filter.check_latest_launch_status(&logs);
+
+        let result = filter.filter(&logs);
+        assert_eq!(contents(&result), vec!["relaunch", "started", "new-run"]);
+    }
+
+    #[test]
+    fn a_replayed_older_start_result_does_not_count_for_the_new_launch() {
+        let mut m = LogMaker::new();
+        let mut filter =
+            LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
+        let logs = vec![
+            m.make("first-launch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make("first-started", ProcessLogType::ProcessStarted, m.now),
+            m.make("relaunch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make("Process was stopped", ProcessLogType::ProcessExited, m.now),
+        ];
+        filter.check_latest_launch_status(&logs);
+
+        let result = filter.filter(&logs);
+        assert_eq!(contents(&result), vec!["relaunch"]);
+    }
+
+    #[test]
+    fn shows_the_current_instances_own_exit_in_batch_mode() {
+        let mut m = LogMaker::new();
+        let mut filter =
+            LatestExecutionLogFilter::new(ShowPastLogsBehavior::OnlyShowAfterRecentLaunch, None);
+        let logs = vec![
+            m.make("relaunch", ProcessLogType::ProcessStartInitiated, m.now),
+            m.make("started", ProcessLogType::ProcessStarted, m.now),
+            m.make(
+                "Process exited with code 0",
+                ProcessLogType::ProcessExited,
+                m.now,
+            ),
+        ];
+        filter.check_latest_launch_status(&logs);
 
         let result = filter.filter(&logs);
         assert_eq!(

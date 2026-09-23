@@ -224,4 +224,36 @@ describe('CLI Restart Command', () => {
             expect(killedCount).toBeLessThanOrEqual(1);
         });
     });
+
+    describe('previous instance rows stay out of the new run', () => {
+        // The shell leaves a background process holding its stdout open, so the
+        // old monitor spends its full post-exit drain window (500ms) before it
+        // writes `process_exited`. Restart used to skip waiting for it, since
+        // its own kill had already marked the row, so the old exit landed after
+        // the new launch boundary and `logs` showed it as the new run's exit.
+        // Model: formal/Candle/Protocol.lean.
+        const assertLatestRunIsClean = async () => {
+            const logs = (await workspace.runCli(['logs', 'escaping-child'])).stdoutAsString();
+            expect(logs).toContain('run-started');
+            expect(logs).not.toContain('OLD-shutting-down');
+            expect(logs).not.toContain('Process exited');
+        };
+
+        it('restart does not show the previous instance exit', async () => {
+            await workspace.runCli(['start', 'escaping-child']);
+            await workspace.runCli(['restart', 'escaping-child']);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await assertLatestRunIsClean();
+            await workspace.runCli(['kill', 'escaping-child']);
+        });
+
+        it('kill followed by start does not show the previous instance exit', async () => {
+            await workspace.runCli(['start', 'escaping-child']);
+            await workspace.runCli(['kill', 'escaping-child']);
+            await workspace.runCli(['start', 'escaping-child']);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await assertLatestRunIsClean();
+            await workspace.runCli(['kill', 'escaping-child']);
+        });
+    });
 });
