@@ -1,13 +1,6 @@
 # Testing
 
-> **Note (post-Node-removal):** The Node.js implementation has been deleted. The dual-target harness
-> described below is now single-target — the suite always runs against the compiled Rust binary. The
-> `test:node` script, the `CANDLE_TEST_TARGET=node` branch, the Node log collector, and the CI `tests`
-> job no longer exist. The sections below describe the current single-target harness; the tables and
-> notes that still mention a Node target are marked historical and describe how the harness straddled
-> both implementations during the port.
-
-The acceptance test suite is a black-box conformance harness: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. It runs through one seam — `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts) — which spawns the compiled Rust binary. (Historically the seam also honored `CANDLE_TEST_TARGET=node` to run the Node implementation; that target has been removed.) Most tests are unchanged from the Node era.
+The acceptance test suite is a black-box conformance harness: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. Every spawn goes through one seam — `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts) — which returns the compiled Rust binary.
 
 ## 1. Test runner mechanics
 
@@ -26,33 +19,18 @@ test: {
 `test/setup.ts` is one line: `import 'expect-mcp/vitest-setup';` (registers custom matchers `toBeSuccessful`, `toHaveTool(s)`, `toMatchTextContent`).
 
 `package.json` scripts:
-- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run`** — builds the Rust release binary, then runs the suite against it.
+- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && vitest run`** — builds the Rust release binary, then runs the suite against it.
 - `test:watch`: `vitest`.
 - `format`: prettier over `test/` and `bin/`.
 
-(The former `test:rust` and `test:node` scripts are gone.)
+### The spawn seam
+`getCandleSpawn()` returns `{ cmd, baseArgs, mcpCommand }`: `cmd = <repo>/rust/target/release/candle`, `baseArgs = []`, `mcpCommand = "<bin> mcp"`. Every spawn in `TestWorkspace` flows through it.
 
-### Target selection — the central seam (historical)
-During the port, `CANDLE_TEST_TARGET` selected how the candle CLI under test was spawned. Today `getCandleSpawn()` ignores it and always returns the Rust binary; the `CANDLE_TEST_TARGET=rust` in the `test` script is vestigial. The table below is historical.
-
-| Target | What is spawned | Spawn form |
-|---|---|---|
-| `rust` (default) | `rust/target/release/candle` | direct exec (no `node`) |
-| `node` | `src/main-cli.ts` | `node <path> <args>` |
-
-`getCandleSpawn()` returns `{ cmd, baseArgs, mcpCommand }`:
-- Rust: `cmd = <repo>/rust/target/release/candle`, `baseArgs = []`, `mcpCommand = "<bin> --mcp"`.
-- Node: `cmd = "node"`, `baseArgs = ["<repo>/src/main-cli.ts"]`, `mcpCommand = "node <cli> --mcp"`. Node's native TypeScript type-stripping runs the `.ts` entrypoint directly; there is no compile step for the Node CLI itself, only for its log-collector.
-
-This is the single seam that pointed the whole Vitest suite at either implementation (today, only the Rust binary); every spawn in `TestWorkspace` flows through it.
-
-### What gets spawned, by target (historical; only the Rust column applies today)
-
-| What | Rust target | Node target |
-|---|---|---|
-| The CLI under test | `rust/target/release/candle <args>` | `node src/main-cli.ts <args>` |
-| MCP server under test | `<rust candle> --mcp` | `node src/main-cli.ts --mcp` |
-| The per-service monitor (spawned by the CLI) | `rust/target/release/candle --monitor` (stdin = JSON) | `node dist/main-log-collector.js` (stdin = JSON) |
+| What | Spawned as |
+|---|---|
+| The CLI under test | `rust/target/release/candle <args>` |
+| MCP server under test | `rust/target/release/candle mcp` |
+| The per-service monitor (spawned by the CLI) | `rust/target/release/candle --monitor` (stdin = JSON) |
 
 ## 2. `TestWorkspace` helper (`test/TestWorkspace.ts`)
 
@@ -103,19 +81,18 @@ Note: the MCP env does **not** set `FORCE_COLOR`. `mcpShell` comes from `expect-
 [`test/utils.ts`](../../../test/utils.ts):
 - `getTestTempDirectory(name)` → `test/temp/<name>` (unused by current tests).
 - `getSampleServersDirectory()` → `test/sampleServers`.
-- (The former `getCliPath()` helper, which pointed at the Node entrypoint, is gone. `test/simple.test.ts` now does a raw `spawn` of `getCandleSpawn()`'s `cmd` with `--help`.)
 
 `test/cli/utils.ts`:
 - Re-exports `TestWorkspace`, `CommandResult`.
 - `normalizeOutput(output)` — snapshot normalizer (only used by `help.test.ts`). Normalizes: CRLF→LF, trailing whitespace, uptime `\d+m \d+s|\d+s` → `<uptime>`, `PID: \d+`→`PID: <pid>`, `pid \d+`→`pid <pid>`, abs candle paths (`/Users/.../candle/`, `/home/.../candle/`, `C:\...\candle\`) → `<project>/`, `/tmp/...` → `<tmpdir>`, `CANDLE_DATABASE_DIR=...` → `=<dbdir>`.
 
-`bin/test-candle.ts` — dev helper (not used by Vitest, but documented in `CLAUDE.md`). Parses `--database-dir <path>` → sets `CANDLE_DATABASE_DIR`, `--enable-logs` → `CANDLE_ENABLE_LOGS=true`, passes the rest through to candle. Prints captured stdout/stderr line-arrays and exits with the child's exit code.
+`bin/test-candle.ts` — dev helper (not used by Vitest, but documented in `AGENTS.md`). Parses `--database-dir <path>` → sets `CANDLE_DATABASE_DIR`, `--enable-logs` → `CANDLE_ENABLE_LOGS=true`, passes the rest through to candle. Prints captured stdout/stderr line-arrays and exits with the child's exit code.
 
 ## 4. Database isolation & direct DB access by tests
 
 Isolation is purely via `CANDLE_DATABASE_DIR` → the DB file is `<dbDir>/candle.db`. The state-directory resolution order is: `CANDLE_DATABASE_DIR` → `XDG_STATE_HOME/candle` → `~/.local/state/candle`.
 
-Several tests open the DB **directly** with Node's built-in `node:sqlite` `DatabaseSync` and run raw SQL. These hard-code the schema and rely on the Rust DB layer producing a byte-compatible schema:
+Several tests open the DB **directly** with Node's built-in `node:sqlite` `DatabaseSync` and run raw SQL. These hard-code the schema, so they break if the Rust DB layer changes it:
 
 - `check-start.test.ts` and `list.test.ts` insert a stale row:
   ```sql
@@ -126,10 +103,10 @@ Several tests open the DB **directly** with Node's built-in `node:sqlite` `Datab
   ```sql
   select log_collector_pid from processes where command_name = ? and killed_at is null
   ```
-- `with-stdin/stdin.test.ts` defines its own `createStdinMessage` helper that inserts rows into `stdin_messages` with `node:sqlite` (it used to import one from `src/database/stdinMessagesTable.ts`). This bypasses the CLI for the write side, so it asserts on the shared schema.
+- `with-stdin/stdin.test.ts` defines its own `createStdinMessage` helper that inserts rows into `stdin_messages` with `node:sqlite`. This bypasses the CLI for the write side, so it asserts on the shared schema.
 
 ### Exact DB schema
-WAL mode + `busy_timeout=30000`. The Rust schema is applied with `create ... if not exists` on every open (the Node original used additive `safe-upgrades` migrations). Tables:
+WAL mode + `busy_timeout=30000`. The Rust schema is applied with `create ... if not exists` on every open. Tables:
 
 ```sql
 create table processes(
@@ -173,7 +150,7 @@ create index idx_process_output_launches on process_output(project_dir, command_
 ```
 `run_id` (both tables) is the id of the run's `process_start_initiated` row; a command's latest run is its highest `run_id`. Tests that insert `process_output` rows with raw SQL and no `run_id` get one from the trigger.
 
-Times are **unix seconds** (`SystemTime` seconds / `strftime('%s','now')`). (The Node code also had a `RunningStatus` enum; no column uses it.)
+Times are **unix seconds** (`SystemTime` seconds / `strftime('%s','now')`).
 
 ### `ProcessLogType` enum — `process_output.log_type` integer values
 `stdout=1, stderr=2, process_start_initiated=3, process_start_failed=4, process_started=5, process_exited=6`.
@@ -186,7 +163,7 @@ Defaults `LOG_EVICTION_DEFAULTS = { maxLogsPerService: 1000, maxRetentionSeconds
 
 ## 5. Sample servers (`test/sampleServers/*.js`) — log markers tests depend on
 
-These are ESM/CJS Node scripts launched via `node <file>`. They are test fixtures, not part of candle, so Node remains available to run them regardless of the target. Key stdout markers asserted by tests:
+These are ESM/CJS Node scripts launched via `node <file>`; they are test fixtures, not part of candle. Key stdout markers asserted by tests:
 
 | File | Behavior | Marker string(s) tested |
 |---|---|---|
@@ -260,11 +237,11 @@ Root-level tests:
 
 1. **`NON_AGENT_ENV` is set by the harness** → every agent marker var (`CLAUDECODE`, `GEMINI_CLI`, `CURSOR_AGENT`) is blanked, so `is_run_by_agent` is `false` (empty string ⇒ not-set). This matters because the suite may itself be run from inside a coding agent, whose marker would otherwise be inherited by the spawned CLI. When agent mode is on, the `watch` command is hidden from help and disabled, so `watch.test.ts` and `help.test.ts` depend on this blanking.
 2. **`FORCE_COLOR=0`** disables ANSI; output must contain no escape codes when this is set (tests do raw substring matching on `RUNNING`, `Started`, etc.).
-3. Exact output strings are load-bearing — preserved verbatim across implementations:
+3. Exact output strings are load-bearing:
    - Start: two lines — `[Started process '<name>'] $ <shell>` then `[With root directory: <dir>]` (the first must contain `Started` and `'<name>'`).
    - check-start skip: `[Service '<name>' is already running]` (contains `already running`).
    - Errors: `No service '<name>' configured for directory: <cwd>`; `No .candle.json file found in (or above) current directory: <cwd>`; `Process '<name>' failed to start. Recent logs:` + newline + log lines; `Process '<name>' failed to start: root directory does not exist: <dir>`; `No services configured in .candle.json`; `Exactly one service name is required when using --shell`; `Unrecognized command '<cmd>'`.
-   - Unknown flags yield yargs-style `Unknown argument` (strict mode). The Node CLI used yargs `.strictOptions()`; the Rust CLI's hand-rolled parser (`rust/src/cli/parser.rs`, not clap) rejects unknown flags with `Unknown argument: <flag>`.
+   - Unknown flags: the hand-rolled parser (`rust/src/cli/parser.rs`, not clap) rejects them with `Unknown argument: <flag>`.
 4. **Timeouts are in seconds on the CLI** (`--timeout 30`) but converted to ms internally (`timeout*1000`). Negative/zero handled as immediate failure.
 5. Stale detection uses signal-0 liveness; fake PID `2147483000` is chosen to be unused. Both `pid` and `log_collector_pid` deadness form the staleness condition.
 6. Multiple-launch log filtering: `logs` shows only the **most recent execution** (the rows whose `run_id` is the command's highest). Rows from earlier runs must not appear, even ones a previous instance wrote after the new launch marker (`watch-restart.test.ts`, `restart.test.ts`).
@@ -287,13 +264,11 @@ Test-side tooling:
 | `expect-mcp` (`mcpShell`, `MCPStdinSubprocess`, vitest matchers) | test-side MCP client driving the candle MCP server over stdio |
 | `vitest` | the black-box conformance harness (points at the Rust binary via `getCandleSpawn()`) |
 
-The Rust binary is exercised by this same Vitest suite; `cargo test` covers the Rust unit tests and `rust/tests/monitor_integration.rs` in addition. The Vitest suite is a single black-box harness; no test imports implementation code (the former `with-stdin` import of `src/` was replaced with a local `node:sqlite` helper).
+The Rust binary is exercised by this same Vitest suite; `cargo test` covers the Rust unit tests and `rust/tests/monitor_integration.rs` in addition. No Vitest test imports implementation code.
 
 ## 11. CI
 
 `.github/workflows/ci.yml` runs two jobs:
 
-- **`rust`**: sets up Node/pnpm (local action `.github/actions/setup-node-pnpm`), installs the Rust toolchain (with clippy), then in `rust/`: `cargo build --release`, `cargo test`, `cargo clippy --workspace --all-targets -- -D warnings`, then the acceptance suite (`CANDLE_TEST_TARGET=rust pnpm exec vitest run`).
+- **`rust`**: sets up Node/pnpm (local action `.github/actions/setup-node-pnpm`), installs the Rust toolchain (with clippy), then in `rust/`: `cargo build --release`, `cargo test`, `cargo clippy --workspace --all-targets -- -D warnings`, then the acceptance suite (`pnpm exec vitest run`).
 - **`docs`** ("docs & installer"): lints `install.sh` (`sh -n`, `--help`, `shellcheck`) and builds the `docs-site/` project (which fails on broken links).
-
-(The former Node-target `tests` job no longer exists.)

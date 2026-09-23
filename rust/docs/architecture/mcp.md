@@ -1,10 +1,10 @@
 # MCP server
 
-Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/src/mcp/mod.rs`](../../src/mcp/mod.rs), with the output-capture layer in [`rust/src/output.rs`](../../src/output.rs). It was ported from the original Node implementation in `src/mcp/mcp-main.ts` and `src/mcp/ConsoleLogInterceptor.ts`. That implementation has been removed; those paths (and the other `src/...` references below) are historical pointers only.
+Candle exposes an MCP (Model Context Protocol) server that lets an LLM client manage local dev processes. The Rust implementation lives in [`rust/src/mcp/mod.rs`](../../src/mcp/mod.rs), with the output-capture layer in [`rust/src/output.rs`](../../src/output.rs).
 
 ## 1. Overview & entry point
 
-The server is launched by the CLI when the user runs `candle mcp` or passes the `--mcp` flag. CLI dispatch in `main.rs` routes both forms to `serve_mcp()` (`--mcp` is checked after `--monitor`, `--version`, and `--help`) (`mcp/mod.rs`), which is the whole subsystem — it opens the database, captures the current working directory, and runs the blocking server loop. It diverges (`-> !`): it never returns, exiting the process when stdin closes.
+The server is launched by the CLI when the user runs `candle mcp`. CLI dispatch in `main.rs` routes the `mcp` command (after the `--monitor`, `--version`, and `--help` checks) to `serve_mcp()` (`mcp/mod.rs`), which is the whole subsystem — it opens the database, captures the current working directory, and runs the blocking server loop. It diverges (`-> !`): it never returns, exiting the process when stdin closes.
 
 ## 2. Transport
 
@@ -27,7 +27,7 @@ The `initialize` response is built directly in `handle_message`:
 ```
 
 - **Protocol version**: `2025-06-18`.
-- **Server name / version**: `env!("CARGO_PKG_NAME")` / `env!("CARGO_PKG_VERSION")`, reproducing the Node server's use of the `package.json` `name`/`version` fields (currently `candle`).
+- **Server name / version**: `env!("CARGO_PKG_NAME")` / `env!("CARGO_PKG_VERSION")`, i.e. the `name`/`version` from `rust/Cargo.toml` (currently `candle`).
 - **Capabilities**: declares the `tools` capability only, as an empty object `{}`. No resources, prompts, logging, etc.
 - **Instructions string** (server-level), byte-for-byte:
   > Tool for running and managing local dev servers. Use this when launching any local servers, including web servers, APIs, and other services.
@@ -60,18 +60,17 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `List services with structured output`
 - properties: `showAll` (boolean, "Show all services or just current directory (optional)")
 - required: none
-- handler: `handle_list(conn, cwd, showAll)` (originally `src/list-command.ts`) → `ListOutput`, serialized as:
+- handler: `handle_list(conn, cwd, show_all)` → `ListOutput`, serialized as:
   ```
   { processes: { serviceName, command, workingDir, uptime, pid, status, configChanged? }[] }
   ```
-  (The Node type also declared optional `showAll` / `message` fields that were never set; the Rust struct has only `processes`.)
   `showAll=true` lists all DB processes (no config file needed, status always `RUNNING`); otherwise lists processes for the current project dir.
 
 ### 5.2 `ListPorts`
 - description: `List open ports for running services`
 - properties: `showAll` (boolean), `serviceName` (string, "Filter to a specific service name (optional)")
 - required: none
-- handler: `handle_list_ports(conn, cwd, showAll, command_names)` (originally `src/list-ports-command.ts`) → `ListPortsOutput`:
+- handler: `handle_list_ports(conn, cwd, show_all, command_names)` → `ListPortsOutput`:
   ```
   { ports: { serviceName, pid, port, address, protocol, isChildProcess }[] }
   ```
@@ -83,14 +82,14 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - required: `["name"]`
 - handler: validates `name` is present (else error `Service name is required`); resolves the project dir through a `ProjectScope` (`projectDir` if given — made absolute and normalized like `--project-dir` — else `find_project_dir(cwd)`); validates the name with `assert_known_service_names_in_scope`, the same check `candle logs` uses (stored logs or a process row in the project, or a config entry when the project has its own config), so an unknown name is an `isError: true` response `Error: No service '<name>' configured for directory: <dir>`; then calls `handle_logs_command(conn, projectDir, [name], limit, None)`.
   - `DEFAULT_LOGS_LIMIT = 200`. The limit is nullish-defaulted: an explicit `0` passes through (the code only falls back to 200 when `limit` is absent or `null`, not when it is a falsy number; a non-integer value also falls back to 200).
-  - The limit has the same meaning as `logs --count`: it counts only printable lines from the service's latest run (`get_log_tail`, see [logs.md](logs.md) §6), and when lines were cut off the captured output starts with `-- showing the last N lines; use --count to see more --`.
+  - The limit has the same meaning as `logs --count`: it counts only printable lines from the service's latest run (`get_log_tail`, see [logs.md](logs.md) §6), and when lines were cut off the captured output starts with `-- showing the last N lines; pass a larger `limit` to see more --` (the MCP tool swaps in this hint for the CLI's `use --count to see more`).
   - `handle_logs_command` returns nothing — it **emits logs through [`crate::output`]**, so the actual log output is captured and surfaced through the response's `logs`, not through `result` (the handler returns `Ok(None)`). This is the one tool whose output flows entirely through the output-capture path.
 
 ### 5.4 `StartService`
 - description: `Start a config-defined service (use StartTransientService for transient processes)`
 - properties: `name` (string)
 - required: `["name"]`
-- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None`, `check_start: false` (originally `src/start/startOneService.ts`) → returns `{ projectDir, serviceName }`. Like the CLI, this takes the per-service start lock, kills any existing instance, and waits up to 10s for the start result (see [start-flow.md](start-flow.md)).
+- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None`, `check_start: false` → returns `{ projectDir, serviceName }`. Like the CLI, this takes the per-service start lock, kills any existing instance, and waits up to 10s for the start result (see [start-flow.md](start-flow.md)).
 
 ### 5.5 `StartTransientService`
 - description: `Start a transient process with a custom shell command (not defined in config file)`
@@ -114,18 +113,18 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - description: `Add a new server configuration to .candle.json`
 - properties: `name` (string), `shell` (string), `root` (string, "Root directory for the service (optional)")
 - required: `["name", "shell"]`
-- handler: validate `name && shell` (else `Service name and shell command are required`); calls `add_server_config({ name, shell, root, … }, cwd)`, then emits the returned success message once via `crate::output::out`. (The Node original double-logged this success message — once inside `addServerConfig` and again in the handler; the Rust implementation emits it a single time.) Returns nothing (`Ok(None)`).
+- handler: validate `name && shell` (else `Service name and shell command are required`); calls `add_server_config(&AddServerConfigArgs { name, shell, root, enable_stdin: false }, cwd)`, then emits the returned success message via `crate::output::out`. Returns nothing (`Ok(None)`).
   - `add_server_config` finds-or-creates `.candle.json` (default filename `.candle.json`), rejects duplicate service names (`Service '<name>' already exists in configuration`), validates, and writes the config with 2-space-indent JSON.
 
 ### 5.9 `OpenBrowser`
 - description: `Open a browser window to a running service's port` (note the literal apostrophe)
 - properties: `serviceName` (string, "Name of the service to open in browser")
 - required: `["serviceName"]`
-- handler: validate `serviceName` present (else `Service name is required`); resolve project dir; `handle_open_browser(conn, cwd, projectDir, serviceName)` (originally `src/open-browser-command.ts`) → `OpenBrowserOutput` `{ serviceName, port, url }`. Spawns the platform browser opener.
+- handler: validate `serviceName` present (else `Service name is required`); resolve project dir; `handle_open_browser(conn, cwd, projectDir, Some(serviceName))` → `OpenBrowserOutput` `{ serviceName, port, url }`. Spawns the platform browser opener.
 
 ## 6. Output capture (`crate::output`)
 
-Command handlers were written for CLI use and emit human-readable output. In the MCP server those lines must not hit stdout (they would corrupt the JSON-RPC stream) and must instead be **captured and returned inside the tool response**. Rust has no global mutable `console` to monkeypatch; instead the handlers emit through `crate::output::out` / `crate::output::err`, which by default pass through to the real stdout/stderr but buffer into a thread-local when a `capture` scope is active.
+Command handlers were written for CLI use and emit human-readable output. In the MCP server those lines must not hit stdout (they would corrupt the JSON-RPC stream) and must instead be **captured and returned inside the tool response**. The handlers emit through `crate::output::out` / `crate::output::err`, which by default pass through to the real stdout/stderr but buffer into a thread-local when a `capture` scope is active.
 
 Mechanism (`call_wrapped`):
 
@@ -140,7 +139,7 @@ match res {
 
 `capture` installs a thread-local buffer for the duration of one handler call (handlers run synchronously on the same thread, so no cross-thread sharing is needed), restores it even on panic, and returns the handler's value alongside everything emitted.
 
-`CapturedOutput` keeps the `stdout` and `stderr` lines separately plus a combined transcript in emission order. `mcp_log_lines()` produces the lines for the tool response, mirroring the Node `ConsoleLogInterceptor`:
+`CapturedOutput` keeps the `stdout` and `stderr` lines separately plus a combined transcript in emission order. `mcp_log_lines()` produces the lines for the tool response:
 - stdout lines pass through verbatim;
 - stderr lines are prefixed with `"[stderr] "`;
 - emission order is preserved across both streams.
@@ -160,7 +159,7 @@ JSON-RPC error codes used: `-32601` (method not found) for both unknown methods 
 1. **stdout purity** — only MCP frames on stdout. The whole output-capture layer exists for this.
 2. **stdin-close → exit(0)** — wired explicitly in the server loop; there is no auto-shutdown transport.
 3. **Content ordering** — logs item first, then the result/error item. Result is serialized as pretty (2-space) JSON. Error text is exactly `Error: <message>` (no stack in the visible text).
-4. **No-result vs JSON** — `KillService`, `RestartService`, `GetLogs`, and `AddServerConfig` return no structured result; their content is logs-only. No `"null"`/`"undefined"` text is emitted — a result item is pushed only when a value exists.
+4. **No-result vs JSON** — `KillService`, `RestartService`, `GetLogs`, and `AddServerConfig` return no structured result; their content is logs-only. No `"null"` text is emitted — a result item is pushed only when a value exists.
 5. **Single-element name arrays** — several tools wrap one name into a one-element list; the underlying handlers expect arrays.
 6. **`find_project_dir` errors** if no `.candle.json`/`.candle-setup.json` is found walking up from cwd; that error becomes an `isError: true` response (not a transport error). Config filenames, in priority order: `.candle.json`, `.candle-setup.json`.
 7. **`limit` default 200** is applied with nullish semantics: an explicit `0` is passed through, only an absent/`null` `limit` falls back to 200.

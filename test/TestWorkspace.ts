@@ -20,8 +20,7 @@ export interface CliOptions {
  * Describes how to spawn the candle CLI under test.
  *
  * Candle is the compiled Rust binary at rust/target/release/candle, spawned directly. This is the
- * single seam that points the whole Vitest suite at the implementation. (The suite historically also
- * supported a Node target via CANDLE_TEST_TARGET=node; the Node implementation has been removed.)
+ * single seam that points the whole Vitest suite at the implementation.
  */
 export interface CandleSpawn {
     cmd: string;

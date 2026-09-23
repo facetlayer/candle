@@ -1,10 +1,10 @@
 # Logs subsystem
 
-The Rust logs subsystem lives under `rust/src/logs/` (`log_type.rs`, `process_logs.rs`, `log_iterator.rs`, `console_log.rs`), `rust/src/log_filters/` (`latest_run_filter.rs`), and the CLI handlers `rust/src/commands/logs.rs` and `rust/src/commands/clear_logs.rs`. It was ported from the former Node implementation. That implementation has been removed; the `src/...` (TypeScript) references below are historical pointers to where each piece came from, not files that exist in the repo today.
+The Rust logs subsystem lives under `rust/src/logs/` (`log_type.rs`, `process_logs.rs`, `log_iterator.rs`, `console_log.rs`), `rust/src/log_filters/` (`latest_run_filter.rs`), and the CLI handlers `rust/src/commands/logs.rs` and `rust/src/commands/clear_logs.rs`.
 
 ## 1. Storage model
 
-All logs live in a single SQLite table `process_output`. Schema (mirrors `src/database/database.ts:28-35`):
+All logs live in a single SQLite table `process_output`. Schema (`rust/src/db/mod.rs`):
 
 ```sql
 create table process_output(
@@ -14,11 +14,11 @@ create table process_output(
     content text,                 -- nullable
     log_type integer not null,
     timestamp integer not null default (strftime('%s', 'now')),
-    run_id integer                -- nullable; see "Runs" below (Rust-only)
+    run_id integer                -- nullable; see "Runs" below
 )
 ```
 
-Indexes (the first three from `database.ts:47-49`, the last two Rust-only):
+Indexes:
 ```sql
 create index idx_process_output_command_name on process_output(command_name);
 create index idx_process_output_project_dir on process_output(project_dir);
@@ -28,7 +28,7 @@ create index idx_process_output_launches on process_output(project_dir, command_
 ```
 
 Critical points:
-- `timestamp` is **whole Unix seconds** (`strftime('%s','now')`), NOT milliseconds. Mixing with `Date.now()` (ms) is a recurring foot-gun — see the `/1000` conversion in the filter (§7).
+- `timestamp` is **whole Unix seconds** (`strftime('%s','now')`), NOT milliseconds. Mixing with millisecond wall-clock time is a recurring foot-gun — see the `/1000` conversion in the filter (§7).
 - `content` is nullable. Lifecycle events (types 3 and 5) typically have no content; stdout/stderr always have content. `console_log_row` passes `row.content` even for `process_exited`/`process_start_failed`, so content for those carries a human message.
 - `id` is a monotonically increasing autoincrement integer and is the canonical ordering tiebreaker / cursor.
 
@@ -45,7 +45,7 @@ Order-based readers ("everything after the latest launch marker") used to show a
 
 ## 2. ProcessLogType enum (exact integers)
 
-`rust/src/logs/log_type.rs` (mirrors `src/logs/ProcessLogType.ts`):
+`rust/src/logs/log_type.rs`:
 
 | Name | Value |
 |------|-------|
@@ -56,7 +56,7 @@ Order-based readers ("everything after the latest launch marker") used to show a
 | `process_started` | `5` (subprocess successfully started) |
 | `process_exited` | `6` |
 
-These integers are persisted in the DB and MUST be kept stable. The Rust enum is `#[repr(i64)]` with explicit discriminants, plus a `TryFrom<i64>`.
+These integers are persisted in the DB and MUST be kept stable. The enum is `#[repr(i64)]` with explicit discriminants, plus a `TryFrom<i64>`.
 
 The four "lifecycle" event types are `{3,4,5,6}`. `process_start_initiated` (3), NOT `process_started` (5), starts a run: its row id is the run id.
 
@@ -64,11 +64,10 @@ The four "lifecycle" event types are `{3,4,5,6}`. `process_start_initiated` (3),
 
 In `rust/src/logs/process_logs.rs`:
 
-`NewProcessLog` (insert): `command_name: string`, `project_dir: string`, `content?: string`, `log_type: number`.
-`ProcessLog` (row): `id`, `command_name`, `project_dir`, `content?`, `log_type`, `timestamp`, `run_id: Option<i64>` (all as above).
+`ProcessLog` (row): `id: i64`, `command_name: String`, `project_dir: String`, `content: Option<String>`, `log_type: i64`, `timestamp: i64`, `run_id: Option<i64>` (all as above).
 
-`LogSearchOptions` (derives `Default`; originally `processLogs.ts:22-31`):
-- `project_dir: Option<String>` (primary)
+`LogSearchOptions` (derives `Default`):
+- `project_dir: Option<String>` (primary; at least one of `project_dir` / `command_names` must be set)
 - `command_names: Vec<String>`: empty ⇒ all commands in the project
 - `limit: Option<i64>`
 - `since_timestamp: Option<i64>` (seconds)
@@ -78,7 +77,7 @@ In `rust/src/logs/process_logs.rs`:
 - `latest_launch_only: bool`: only rows from each command's latest run (highest `run_id`)
 - `run_id: Option<i64>`: only rows from this run
 
-Insert (`save_run_log`; `save_process_log` is the same with `run_id = NULL`):
+Insert (`save_run_log(conn, run_id, command_name, project_dir, log_type, content)`; `save_process_log` is the same with `run_id = NULL`):
 ```sql
 insert into process_output(command_name, project_dir, content, log_type, run_id) values(?, ?, ?, ?, ?)
 ```
@@ -88,20 +87,16 @@ Other helpers: `start_run` (insert a `process_start_initiated` row, return its i
 
 ## 4. Query accumulator
 
-The original `src/logs/SqlBuilder.ts` was a trivial accumulator: `add(sqlFragment, params[])` appends a string to `sql` and pushes params; `getSql()`/`getParams()` return them. No spacing/escaping logic. Fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and po.timestamp > ?'`). The Rust implementation uses the equivalent `String` + `Vec<rusqlite::types::Value>` pair, built inside `build_log_search_query` in `rust/src/logs/process_logs.rs`. The project/command part of the WHERE clause comes from a separate `scope_clause(options)` helper (also reused by `latest_run_ids`, §3), and the log-type and latest-launch filters from `push_log_type_filter` / `push_latest_launch_filter`.
+`build_log_search_query` in `rust/src/logs/process_logs.rs` accumulates the query as a `String` + `Vec<rusqlite::types::Value>` pair: each filter appends its SQL fragment and pushes its params. There is no spacing/escaping logic; fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and po.timestamp > ?'`). The project/command part of the WHERE clause comes from a separate `scope_clause(options)` helper (also reused by `latest_run_ids`, §3), and the log-type and latest-launch filters from `push_log_type_filter` / `push_latest_launch_filter`.
 
 ## 5. build_log_search_query — exact SQL
 
-`build_log_search_query` in `rust/src/logs/process_logs.rs` (ported from `src/logs/buildLogSearchQuery.ts`). Base SELECT is always `select po.* from process_output po where <scope>`. `scope_clause` branch logic (`has names` = `!command_names.is_empty()`):
+`build_log_search_query` in `rust/src/logs/process_logs.rs`. Base SELECT is always `select po.* from process_output po where <scope>`. `scope_clause` branch logic (`has names` = `!command_names.is_empty()`):
 
-- `projectDir` set **and** has names:
-  - 1 name: `... where po.project_dir = ? and po.command_name = ?` params `[projectDir, name]`
-  - N names: `... where po.project_dir = ? and po.command_name in (?, ?, ...)` params `[projectDir, ...names]`
-- `projectDir` set, no names: `... where po.project_dir = ?` params `[projectDir]`
-- No `projectDir`, has names:
-  - 1 name: `... where po.command_name = ?`
-  - N names: `... where po.command_name in (?, ...)`
-- Neither ⇒ the scope is `1 = 0`, so the query matches nothing. (The Node original threw `Error('Must provide projectDir or commandNames')`; Rust returns no rows rather than panicking.)
+- `project_dir` set **and** has names: `... where po.project_dir = ? and po.command_name in (?, ?, ...)` params `[project_dir, ...names]` (one name is `in (?)`)
+- `project_dir` set, no names: `... where po.project_dir = ?` params `[project_dir]`
+- No `project_dir`, has names: `... where po.command_name in (?, ...)`
+- Neither ⇒ the scope is `1 = 0`, so the query matches nothing (a caller error; it returns no rows rather than every row).
 
 Then appended in this fixed order:
 - if `since_timestamp` is set: `' and po.timestamp > ?'` (strictly greater)
@@ -113,23 +108,23 @@ Then appended in this fixed order:
 - always: `' order by po.timestamp desc, po.id desc'` (**most recent first**)
 - if `limit` is set: `' limit ?'`
 
-The IN-clause placeholder string is `'?, ?, ?'` (comma-space), matching the strings the original `__tests__/buildLogSearchQuery.test.ts` asserted. Examples:
-- Single name + limit: `select po.* from process_output po where po.project_dir = ? and po.command_name = ? order by po.timestamp desc, po.id desc limit ?`
+The IN-clause placeholder string is `'?, ?, ?'` (comma-space). Examples:
+- Single name + limit: `select po.* from process_output po where po.project_dir = ? and po.command_name in (?) order by po.timestamp desc, po.id desc limit ?`
 - All filters, 2 names: `... where po.project_dir = ? and po.command_name in (?, ?) and po.timestamp > ? and po.id > ? order by po.timestamp desc, po.id desc limit ?`
 
-## 6. getProcessLogs / eviction info
+## 6. get_process_logs / eviction info
 
-`rust/src/logs/process_logs.rs` (ported from `src/logs/processLogs.ts:47-81`).
+`rust/src/logs/process_logs.rs`.
 
 `get_process_logs_with_eviction_info(options)` returns `ProcessLogResult { logs, logs_were_evicted }`:
-1. Build query, run `db.list(sql, params)` → rows in DESC order (newest first).
-2. **Eviction detection**: only if `limit !== undefined` AND `rows.length >= limit`. Rebuild the same query with `limit: undefined`, wrap as `select count(*) as total from (<innerSql>)` with the inner params, run `db.get`. If `total > rows.length` ⇒ `logsWereEvicted = true`.
-3. Reverse the result in place to **chronological order (oldest first)** for the return value (`const sorted = logItems.reverse()` in the original).
-4. Returns `{ logs: sorted, logsWereEvicted }`.
+1. Build the query and run it → rows in DESC order (newest first).
+2. **Eviction detection**: only if `limit` is set AND `rows.len() >= limit`. Rebuild the same query with `limit: None`, wrap as `select count(*) as total from (<inner_sql>)` with the inner params, run `query_row`. If `total > rows.len()` ⇒ `logs_were_evicted = true`.
+3. Reverse the rows in place to **chronological order (oldest first)**.
+4. Returns `ProcessLogResult { logs, logs_were_evicted }`.
 
 `get_process_logs(options)` = `.logs` only.
 
-Subtle: query fetches newest-N (DESC + limit) then reverses, so you always get the *most recent* N logs presented oldest-first. The count subquery embeds the inner SQL via string interpolation — params order is preserved (inner params only, no limit param). The `db.list` analog returns rows in the SQL order, then reverses.
+Subtle: query fetches newest-N (DESC + limit) then reverses, so you always get the *most recent* N logs presented oldest-first. The count subquery embeds the inner SQL via string interpolation — params order is preserved (inner params only, no limit param).
 
 ### get_log_tail (used by `candle logs`)
 
@@ -137,8 +132,7 @@ Subtle: query fetches newest-N (DESC + limit) then reverses, so you always get t
 
 ## 7. LatestRunFilter
 
-`rust/src/log_filters/latest_run_filter.rs`. Keeps a row iff its `run_id` is the highest seen so far for its command (and, optionally, it is within a recent time window). Replaces the Node-era `LatestExecutionLogFilter` (launch-marker boundaries, `ShowPastLogsBehavior`) and `ExecutionStatusTracker`, which are gone.
-
+`rust/src/log_filters/latest_run_filter.rs`. Keeps a row iff its `run_id` is the highest seen so far for its command (and, optionally, it is within a recent time window). 
 State: `latest: HashMap<command_name, Option<i64>>` (highest `run_id` seen; `None` until a row with a run arrives) and `min_timestamp: Option<f64>`.
 
 - `new(recent_window_ms)`: `min_timestamp = (now_unix_millis - window_ms) / 1000.0` (ms→seconds; **non-integer float allowed**, compared with `>=` against integer-second timestamps).
@@ -155,14 +149,14 @@ Used by `watch` / `watch_started_services` and `wait-for-log`. `logs` needs no f
 
 ## 9. LogIterator
 
-`rust/src/logs/log_iterator.rs` (ported from `src/logs/LogIterator.ts`). Cursor over logs using `after_log_id`.
+`rust/src/logs/log_iterator.rs`. Cursor over logs using `after_log_id`.
 
 - Fields: `project_dir`, `command_names`, a default `limit: Option<i64>`, and `pub current_log_id: Option<i64>` (starts `None`). Constructors `new(project_dir, command_names)` and `with_limit(project_dir, command_names, limit)`.
 - `copy()`: a clone at the current cursor position.
 - `reset_to_latest_log_message(conn)`: sets `current_log_id = None`, queries with `limit: 1` (gets the single newest log), and if present sets `current_log_id` to its id. After this, iteration yields only logs strictly newer than that id (skips history).
 - `peek_next_logs(conn, limit_override)`: runs `get_process_logs` with `after_log_id: current_log_id` and the effective limit (`limit_override`, else the constructor limit) WITHOUT advancing. Returns chronological logs with `id > current_log_id` (when set).
 - `get_next_logs(conn, limit_override)`: calls peek; if non-empty, advances `current_log_id` to the last row's id; returns the batch.
-- There is no async `it()` stream as in the Node original. The polling loop lives in the caller (`watch`, `wait-for-log`).
+- There is no async stream; the polling loop lives in the caller (`watch`, `wait-for-log`).
 
 Subtle: `get_next_logs` advances by the **last** element id (batch granularity), relying on the chronological-order guarantee from `get_process_logs`. When `current_log_id` is `None` the WHERE clause omits the id filter entirely (so the first `get_next_logs` returns up to `limit` most-recent logs).
 
@@ -170,12 +164,12 @@ Polling intervals: `start_one_service` = 100ms (it polls this run's rows with `g
 
 ## 10. Console formatting
 
-`rust/src/logs/console_log.rs` (ported from `src/logs.ts`).
+`rust/src/logs/console_log.rs`.
 
 `ConsoleLogOptions`: `format: Option<OutputFormat>` (`Pretty` | `Json`, default `Pretty`), `prefix: Option<String>`, `enable_app_name_prefix: bool`.
 
-`console_log_row(row, options)` (mirrors `logs.ts:63-85`):
-- If `enableAppNamePrefix`: `prefix = `[${row.command_name}] ${prefix || ''}`` (prepends `[command] ` to any existing prefix).
+`console_log_row(row, options)`:
+- If `enable_app_name_prefix`: `prefix = format!("[{}] {}", row.command_name, prefix.unwrap_or_default())` (prepends `[command] ` to any existing prefix).
 - Dispatch by `log_type`:
   - `stdout (1)` → `console_log_stdout`
   - `stderr (2)` → `console_log_stderr`
@@ -183,50 +177,49 @@ Polling intervals: `start_one_service` = 100ms (it polls this run's rows with `g
   - `process_start_initiated (3)` and `process_started (5)` → **hidden** (no output)
 
 Exact output (all via `output::out`, i.e. stdout, one line each, even for stderr-typed rows). A `None` content renders as the empty string:
-- stdout pretty: `(prefix ?? '') + msg`
-- stdout json: `JSON.stringify({ stdout: msg })`
-- stderr pretty: `(prefix ?? '') + '[stderr] ' + msg`
-- stderr json: `JSON.stringify({ stderr: msg })`
-- system pretty: `(prefix ?? '') + '[' + msg + ']'` (i.e. wrapped in brackets)
-- system json: `JSON.stringify({ message: msg })`
+- stdout pretty: `prefix + msg`
+- stdout json: `{"stdout": msg}` (compact `serde_json`)
+- stderr pretty: `prefix + "[stderr] " + msg`
+- stderr json: `{"stderr": msg}`
+- system pretty: `prefix + "[" + msg + "]"` (i.e. wrapped in brackets)
+- system json: `{"message": msg}`
 
 So a blended-mode stderr line is: `[<command>] [stderr] <content>`. A system message in blended mode: `[<command>] [<content>]`.
 
-There are **no ANSI colors** in this code path — output is plain text. `prefix` in `watchProcess` blended mode includes a trailing space: `` `[${log.command_name}] ` `` (`watchProcess.ts:84`), whereas the `enableAppNamePrefix` path produces `[cmd] ` then concatenates raw content. These two prefix mechanisms produce slightly different spacing; `logs-command` uses `enableAppNamePrefix`, `watchProcess` uses `prefix`.
+There are **no ANSI colors** in this code path — output is plain text. `watch_process` in blended mode passes `prefix = "[<command_name>] "`; `logs` and `wait-for-log`'s recent-logs dump use `enable_app_name_prefix` instead, which produces the same `[cmd] ` text followed by any `prefix`.
 
-The Node `info_log(...)` debug file logger from `logs.ts` has no counterpart in `console_log.rs`. Its Rust equivalent is `debug::debug_log(msg)` in `rust/src/debug.rs` (see [cli.md](cli.md)): when `CANDLE_ENABLE_LOGS` is non-empty it appends `msg` plus a newline to `./candle.log` (cwd), with no timestamp, and swallows IO errors.
+The debug file logger is separate from console output: `debug::debug_log(msg)` in `rust/src/debug.rs` (see [cli.md](cli.md)): when `CANDLE_ENABLE_LOGS` is non-empty it appends `msg` plus a newline to `./candle.log` (cwd), with no timestamp, and swallows IO errors.
 
 ## 11. logs command
 
-`rust/src/commands/logs.rs` (ported from `src/logs-command.ts`).
+`rust/src/commands/logs.rs`.
 
 `handle_logs_command(conn, project_dir, command_names, &LogsCommandOptions { limit, start_at_id, json, more_hint })`:
 1. `is_blended_mode = command_names.len() != 1` (so 0 names ⇒ blended too).
 2. Fetch: in single mode, one `get_log_tail(conn, { project_dir, command_names, after_log_id: start_at_id }, limit)` (§6). In blended mode the limit applies **per service**: the names (or, with none given, `command_names_with_logs(project_dir, start_at_id)`) are fetched one `get_log_tail` each, and the results are merged in `id` order. A DB error yields an empty tail.
    (`fetch_latest_run_tail`; the tail is already restricted to the latest run, so there is no filter pass.)
 3. With `json`: print a pretty JSON array of `{ id, service, type, content, timestamp }` for the printable rows (`type` is `stdout`, `stderr`, `start_failed` or `exited`; launch markers are skipped) and return. No hint; an empty result is `[]`.
-4. If empty: print exactly `No logs found for service '<name>' in project '<projectDir>'.` (when exactly 1 name) else `No logs found for services in project '<projectDir>'.` Return.
+4. If empty: print exactly `No logs found for service '<name>' in project '<project_dir>'.` (when exactly 1 name) else `No logs found for services in project '<project_dir>'.` Return.
 5. If any tail was `truncated`: single mode prints `-- showing the last <N> lines; <more_hint> --`; blended mode prints `-- showing the last <N> lines per service (<truncated names> had more); <more_hint> --` (`the last line` when `N == 1`). A previous run's hidden lines never trigger it. The CLI's `more_hint` is `use --count to see more`; MCP `GetLogs` passes ``pass a larger `limit` to see more``.
 6. For each log: `console_log_row(log, { format: Pretty, enable_app_name_prefix: is_blended_mode })`.
 
-CLI flags map to: `--count` (limit, default 100), `--start-at` (id), `--json`. `cmd_logs` in `main.rs` parses them, runs `maybe_run_cleanup`, then validates names with `assert_known_service_names`: a name is accepted if it has stored logs or a process row in the project, or is configured; anything else is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
+CLI flags map to: `--count` (limit, default 100), `--start-at` (id), `--json`. `cmd_logs` in `main.rs` parses them (a `--count` below 1 or a non-numeric value is a fatal usage error), runs `maybe_run_cleanup`, then validates names with `assert_known_service_names_in_scope`: a name is accepted if it has stored logs or a process row in the project, or is configured; anything else is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
 
 ## 12. clear-logs command
 
-`rust/src/commands/clear_logs.rs` (ported from `src/clear-logs-command.ts`).
+`rust/src/commands/clear_logs.rs`.
 
 `cmd_clear_logs` first validates any names with `assert_known_service_names_in_scope` (the same rule as `logs`), so an unknown name is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
 
-`handle_clear_logs_command({ projectDir, commandNames })`:
-1. Print `Clearing logs for project: <projectDir>`.
-2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each `commandName`: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[commandName, projectDir]`; accumulate `result.changes || 0` into `clearedCount`.
-3. If `clearedCount > 0`: print `✓ Cleared <n> log entries` (leading U+2713 CHECK MARK). Else: print `- No logs found to clear`.
+`handle_clear_logs_command(conn, project_dir, command_names)`:
+1. Print `Clearing logs for project: <project_dir>`.
+2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each name: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[command_name, project_dir]`. The rows-affected counts (`Connection::execute`) are summed into `cleared_count`.
+3. If `cleared_count > 0`: print `Cleared <n> log entries`. Else: print `No logs found to clear`.
 4. Orphan cleanup: `DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)`.
 5. `VACUUM`.
-6. Print `\nLogs cleared successfully!` (leading blank line).
-7. On a database error the handler returns `Err`; `cmd_clear_logs` in `main.rs` prints `Error clearing logs: <e>` to stderr and exits 1.
+6. On a database error the handler returns `Err`; `cmd_clear_logs` in `main.rs` prints `Error: Could not clear logs: <e>` to stderr and exits 1.
 
-Note: requires `result.changes` from the DELETE (SQLite `changes()` / rows-affected). The orphan delete references the `processes` table.
+Note: the orphan delete references the `processes` table, so it also removes logs of other projects' services that have no process row.
 
 ## 13. Eviction / retention (`rust/src/db/cleanup.rs`) — related subsystem
 
@@ -236,28 +229,21 @@ Not strictly "logs command" but governs log lifetime. `maybe_run_cleanup(conn)` 
 - Per-service cap: group `process_output` by `(project_dir, command_name)` with `count(*)`, and skip (in Rust, not a SQL `having`) services at or under their project's `maxLogsPerService`; for each over-limit one, find `id` at `order by timestamp desc, id desc limit 1 offset maxLogsPerService`, then `delete ... where ... and id <= ?` (keeps newest `maxLogsPerService`).
 - `vacuum`; upsert `process_last_cleanup`.
 
-Defaults (`LOG_EVICTION_DEFAULTS` in `config/model.rs`, originally `configFile.ts:221-224`): `maxLogsPerService = 1000`, `maxRetentionSeconds = 86400` (24h). Config overrides via `.candle.json` `logEviction.{maxLogsPerService,maxRetentionSeconds}`, validated as positive integers ≥ 1.
+Defaults (`LOG_EVICTION_DEFAULTS` in `config/model.rs`): `maxLogsPerService = 1000`, `maxRetentionSeconds = 86400` (24h). Config overrides via `.candle.json` `logEviction.{maxLogsPerService,maxRetentionSeconds}`, validated as positive integers ≥ 1.
 
 ## 14. DB access layer
 
-The original TS used a wrapper `db` with: `run(sql, params) -> { changes }`, `list(sql, params) -> rows[]`, `get(sql, params) -> row | undefined`, `upsert(table, keyObj, valueObj)`, over synchronous SQLite (better-sqlite3-style). The Rust implementation uses `rusqlite` (sync) with prepared statements; `?` positional params map directly. `db.run` `changes` ⇒ `Connection::execute` return value.
+`rusqlite` (synchronous, bundled SQLite) with prepared statements and `?` positional params. `Connection::execute` returns the rows-affected count; `strftime('%s','now')` and the `count(*)` subquery are plain SQLite. Output goes through `output::out` (stdout in the CLI, captured under MCP); JSON output uses `serde_json`. Polling is a sync loop with `std::thread::sleep` (no async runtime). No color library is used in this subsystem.
 
-## 15. Dependency mapping (npm → Rust crate)
+## 15. Subtle / easy-to-get-wrong notes
 
-- SQLite (better-sqlite3 / node:sqlite synchronous) → `rusqlite` (bundled SQLite). `strftime('%s','now')` and `count(*)` subquery are plain SQLite, portable as-is.
-- `fs`/`path` (info_log) → `std::fs`, `std::path`.
-- Console output via `console.log` → `output::out` (stdout in the CLI, captured under MCP). JSON output uses `JSON.stringify` → `serde_json`. The async iterator/`setTimeout` polling → a sync loop with `std::thread::sleep` (no async runtime).
-- No color library is used in this subsystem.
-
-## 16. Subtle / easy-to-get-wrong notes
-
-1. Timestamps are **seconds**; `recentWindowMs/1000` yields a **float** cutoff compared with `>=` — the float/`f64` comparison is kept, or you'll off-by-one on boundary logs. Log timestamps are not converted to ms.
+1. Timestamps are **seconds**; `recent_window_ms / 1000.0` yields a **float** cutoff compared with `>=` — the float/`f64` comparison is kept, or you'll off-by-one on boundary logs. Log timestamps are not converted to ms.
 2. `get_process_logs` returns **chronological (reversed)** order despite the DESC SQL. Every downstream consumer assumes oldest-first. The reverse happens in app code, not SQL.
-3. Eviction detection (in `get_process_logs_with_eviction_info`, which `get_log_tail` uses for `truncated`) only triggers when `rows.length >= limit` AND `limit` is set; the count subquery must use the *limitless* query's params (no limit param appended).
-4. `afterLogId` uses `!= null` (skips both null/undefined) and `> ?` (strict). `sinceTimestamp` uses `!== undefined` and `> ?` (strict).
+3. Eviction detection (in `get_process_logs_with_eviction_info`, which `get_log_tail` uses for `truncated`) only triggers when `limit` is set AND `rows.len() >= limit`; the count subquery must use the *limitless* query's params (no limit param appended).
+4. `after_log_id` and `since_timestamp` apply only when `Some` (`Some(0)` still filters), and both use `> ?` (strict).
 5. A command's latest run is its highest `run_id`, never "rows after the newest launch marker": a previous instance's monitor can write rows after the new `process_start_initiated`. `process_start_initiated (3)`, not `process_started (5)`, starts a run.
 6. Hidden log types in console output: 3 and 5 produce no line. 4 and 6 render as bracketed system messages using their `content`.
 7. `console_log_row` reads `row.content` for system/stdout/stderr even though `content` is nullable; a `None` renders as the empty string (in practice stdout/stderr always have content).
-8. Two distinct prefix mechanisms (`prefix` string vs `enableAppNamePrefix`) — `logs` uses the latter, `watch` uses the former; spacing differs subtly.
+8. Two prefix mechanisms (`prefix` string vs `enable_app_name_prefix`) — `logs` uses the latter, `watch` the former; both render `[cmd] ` when used alone.
 9. `LatestRunFilter.filter` is **stateful** and designed to be called repeatedly across streaming batches; the map is not reset between calls.
-10. Exact user-facing strings (for tests): `'-- showing the last <N> lines; use --count to see more --'`, `"No logs found for service '<name>' in project '<dir>'."`, `'✓ Cleared <n> log entries'` (Unicode checkmark), `'- No logs found to clear'`, `'\nLogs cleared successfully!'`, `'Clearing logs for project: <dir>'`.
+10. Exact user-facing strings (for tests): `-- showing the last <N> lines; use --count to see more --`, `No logs found for service '<name>' in project '<dir>'.`, `Cleared <n> log entries`, `No logs found to clear`, `Clearing logs for project: <dir>`.

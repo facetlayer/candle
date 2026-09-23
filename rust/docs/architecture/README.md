@@ -1,9 +1,8 @@
 # Candle (Rust) — architecture reference
 
-This directory documents how the Rust implementation of the `candle` CLI is built. The Rust code
-under `rust/` began as a drop-in reimplementation of the original Node/TypeScript CLI, and is now the
-only implementation: the Node code has been removed. The Vitest suite in `../../test` runs against
-the compiled Rust binary and is the conformance harness (see [testing.md](testing.md)).
+This directory documents how the `candle` CLI under `rust/` is built. The Vitest suite in
+`../../test` runs against the compiled binary and is the conformance harness (see
+[testing.md](testing.md)); when a doc and the suite disagree, the suite is authoritative.
 
 These are internal docs aimed at developers working on the Rust code. Each subsystem doc describes
 what the code does, the exact strings/SQL/algorithms it must produce, and the subtleties that are
@@ -45,7 +44,7 @@ one file, and the CLI and its monitors can never fall out of version sync.
 | [list-ports-browser.md](list-ports-browser.md) | `list`/`list-all`, `list-ports`/`list-ports-all` (per-platform port detection), `open-browser` | `commands/{list,list_ports,open_browser}`, `listening_ports`, `process_tree` |
 | [mcp.md](mcp.md) | the stdio JSON-RPC MCP server and its nine tools | `mcp/mod`, `output` |
 | [cli.md](cli.md) | errors, debug logging, agent-mode detection, doc files (`list-docs`/`get-doc`), `--project-dir` scope resolution, `find-orphans`, command-name validation, version handling | `errors`, `debug`, `run_context`, `doc_files`, `project_scope`, `commands/{mod,find_orphans}`; CLI `parser`/`help` |
-| [testing.md](testing.md) | the Vitest conformance harness, the `CANDLE_TEST_TARGET` switch, and CI | `../../test/*` |
+| [testing.md](testing.md) | the Vitest conformance harness, its `getCandleSpawn()` seam, fixtures, and CI | `../../test/*` |
 
 ## Cross-cutting conventions
 
@@ -53,30 +52,28 @@ one file, and the CLI and its monitors can never fall out of version sync.
 directly; they emit through `output::out`/`output::err`. In the CLI this passes through to real
 stdout/stderr. `output::capture(f)` buffers it into a `CapturedOutput` (with `stdout`/`stderr` vecs, a
 `transcript()`, and `mcp_log_lines()` that prefixes stderr lines with `[stderr] `). This is what lets
-the MCP server capture handler output instead of corrupting the JSON-RPC stream, without
-monkeypatching a global console.
+the MCP server capture handler output instead of corrupting the JSON-RPC stream.
 
 **Synchronous design.** The implementation is synchronous throughout, matching `rusqlite`'s sync
-model and the original TypeScript's synchronous SQLite semantics. Line-buffered stdout/stderr readers
+model. Line-buffered stdout/stderr readers
 use threads + channels; there is no async runtime.
 
 **Minimal, hand-rolled dependencies.** The crate depends only on `rusqlite` (bundled SQLite),
 `serde`/`serde_json` (with `preserve_order` for byte-identical, key-order-preserving config
 write-back), `libc` (signals, `setsid`, `flock`), and `include_dir` (embeds `docs/` for
 `list-docs`/`get-doc`). The CLI argument parser, the grouped help renderer, and
-the MCP JSON-RPC server are all hand-rolled rather than pulled from crates, because each must match
-the original's exact output byte-for-byte (yargs-style `Unknown argument` errors, grouped help
+the MCP JSON-RPC server are all hand-rolled rather than pulled from crates, because each must produce
+exact output byte-for-byte (`Unknown argument` errors, grouped help
 section headers, MCP content shapes).
 
-## Parity invariants
+## Invariants
 
-These are the contracts the Rust implementation maintains so the shared acceptance suite passes
-against it. They are byte-level and must not drift.
+These are the contracts the acceptance suite depends on. They are byte-level and must not drift.
 
-- **SQLite schema is a superset of** the former Node database (same DDL including
-  `default (strftime('%s','now'))`, autoincrement, column order, and the original four indexes — notably
-  `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)`), plus a trailing nullable
-  `run_id` column on `processes` and `process_output`, two more indexes, and the `process_output_assign_run`
+- **SQLite schema is fixed.** Four tables (`processes`, `process_output`, `process_last_cleanup`,
+  `stdin_messages`) with `default (strftime('%s','now'))` timestamps, autoincrement ids, a fixed column
+  order, six indexes — notably `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)` —
+  a trailing nullable `run_id` column on `processes` and `process_output`, and the `process_output_assign_run`
   trigger. Migration creates missing tables and rebuilds a table that lacks a column (backfilling `run_id`).
   Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).
@@ -91,18 +88,9 @@ against it. They are byte-level and must not drift.
   newline and then closes stdin; the monitor reads to EOF. The monitor is detached into a new session
   (`setsid`) and is never waited on, so it outlives the CLI. Getting EOF/detach wrong hangs every
   start. See [start-flow.md](start-flow.md).
-- **`logCollector` is retired.** The `.candle.json` key that chose between the Node and Rust
-  collector sidecars no longer exists. It is not a valid `set-config` key; a leftover entry in a
+- **`logCollector` is retired.** This obsolete `.candle.json` key, which once selected a log-collector
+  sidecar, no longer exists. It is not a valid `set-config` key; a leftover entry in a
   config file is preserved verbatim as an unknown key and otherwise ignored.
 - **Version** comes from `env!("CARGO_PKG_VERSION")`.
 - **MCP stdout purity.** Only newline-delimited JSON-RPC frames reach stdout; all handler output is
-  captured. Tool list, ordering, content shapes, and error codes match the former Node server. See
-  [mcp.md](mcp.md).
-
-## Relationship to the Node implementation
-
-The Rust modules were ported from the Node subsystems that used to live in `../../src`. That
-implementation has been removed, so the `src/...` (TypeScript) paths the subsystem docs mention are
-historical pointers to where each piece came from, not files you can open. The Vitest suite, which
-encoded the Node behavior during the port, is now the behavioral source of truth: when a doc and the
-suite disagree, the suite is authoritative.
+  captured. Tool list, ordering, content shapes, and error codes are fixed. See [mcp.md](mcp.md).

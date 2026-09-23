@@ -1,18 +1,18 @@
 # Kill & restart
 
 ## 0. Scope & files
-This subsystem covers three CLI commands and their shared helpers. The Rust implementation lives under `rust/src/`. `src/...` references name files in the original Node/TypeScript implementation, which has been removed; they are historical pointers only.
+This subsystem covers three CLI commands and their shared helpers, all under `rust/src/`.
 
-- `candle kill [name...]` (alias `stop`) → `handle_kill_command` (`rust/src/kill/mod.rs`; ported from `src/kill-command.ts`)
-- `candle kill-all` → `handle_kill_all` (`rust/src/kill/mod.rs`; ported from `src/kill-all-command.ts`)
-- `candle restart [name...]` → `handle_restart` (`rust/src/commands/restart.rs`; ported from `src/restart-command.ts`)
+- `candle kill [name...]` (alias `stop`) → `handle_kill_command` (`rust/src/kill/mod.rs`)
+- `candle kill-all` → `handle_kill_all` (`rust/src/kill/mod.rs`)
+- `candle restart [name...]` → `handle_restart` (`rust/src/commands/restart.rs`)
 - Shared kill helpers: `kill_one_running_process`, `kill_process_tree_and_wait`, `kill_process_tree` (`rust/src/kill/mod.rs`), `get_process_tree` (`rust/src/process_tree.rs`)
 - DB layer: `rust/src/db/process_table.rs`, schema in `rust/src/db/mod.rs`
 - Liveness check: `rust/src/process_alive.rs`
 
 ## 1. Data model
 
-### 1.1 `processes` table schema (`rust/src/db/mod.rs`; originally `src/database/database.ts:16-27`)
+### 1.1 `processes` table schema (`rust/src/db/mod.rs`)
 ```sql
 create table processes(
     id integer primary key autoincrement,
@@ -24,13 +24,15 @@ create table processes(
     created_at integer not null default (strftime('%s', 'now')),
     killed_at integer,
     shell text,
-    root text
+    root text,
+    run_id integer
 )
 ```
 Key semantics:
 - A process is considered **running** iff `killed_at IS NULL`.
-- All timestamps are **Unix seconds** (`Math.floor(Date.now() / 1000)` in the original), not millis. In Rust: `SystemTime::now().duration_since(UNIX_EPOCH).as_secs()`.
+- All timestamps are **Unix seconds** (`SystemTime::now().duration_since(UNIX_EPOCH).as_secs()`), not millis.
 - `pid` is the PID of the service's shell process (root of the tree). `log_collector_pid` is a separate supervising process (not killed by this subsystem — see §6).
+- `run_id` identifies the service's current run (see [database.md](database.md)); this subsystem doesn't read it.
 - The `ProcessEntry` struct maps 1:1 to columns. `log_collector_pid`, `killed_at`, `shell`, and `root` are `Option`s.
 
 ### 1.2 Queries used (exact SQL)
@@ -61,7 +63,7 @@ Note the asymmetry: name-based kill queries **all** entries (incl. killed), whil
 
 **The counter counts kills, not rows.** Because the name-based query includes already-killed rows, a
 row left over from a previous kill gets swept here — `kill_process_tree` on its dead pid returns
-`process_not_found`, and the row is deleted. That sweep is garbage collection, not a kill, and
+`ProcessNotFound`, and the row is deleted. That sweep is garbage collection, not a kill, and
 `kill_one_running_process` returns `false` for it. Counting it would suppress the "No running
 processes found" message, making the output of `candle kill <name>` depend on whether the reaper had
 already cleared the previous kill's row — the message would silently vanish (the sweep's own notice
@@ -86,7 +88,7 @@ Logic:
    - **Stale-entry branch**: if `process.killed_at` is set AND `process.killed_at < now_secs - 300` (older than 5 minutes):
      - If `!quiet`: warn `[Cleaning up stale process entry for '<command_name>' with PID: <pid>]`
      - `delete_process_entry(...)` (hard delete).
-   - **Else** (normal): `update_process_killed_at({ ..., killed_at: now_secs })` — sets `killed_at` to current time; row remains, awaiting reaper deletion.
+   - **Else** (normal): `update_process_killed_at(conn, command_name, project_dir, pid, now_secs)` — sets `killed_at` to current time; row remains, awaiting reaper deletion.
 
    **`ProcessNotFound`:**
    - If `!quiet` and the row has no `killed_at` (it claimed to be running): warn `[Cleaning up stale process entry for '<command_name>' with PID: <pid>]`. A row already marked killed (the second kill inside `restart`) is swept silently.
@@ -103,18 +105,18 @@ Subtle: in the success path, the row is normally only *marked* `killed_at`, not 
 
 `handle_kill_all(conn, quiet)`.
 
-- `find_all_processes()` → `select * from processes` — **every row across every project on the system**, with **no `killed_at` filter**. So it will also re-process already-killed-but-not-yet-reaped rows (`kill_process_tree` on a dead pid returns `process_not_found` → deletes the row, which is harmless cleanup).
+- `find_all_processes()` → `select * from processes` — **every row across every project on the system**, with **no `killed_at` filter**. So it will also re-process already-killed-but-not-yet-reaped rows (`kill_process_tree` on a dead pid returns `ProcessNotFound` → deletes the row, which is harmless cleanup).
 - For each: `kill_one_running_process(process, options)`, counting only real kills (same rule as above).
 - If count == 0: print `No running processes found` (no project qualifier). No `quiet_failure` concept here.
 - No name validation, no project_dir. This is the system-wide nuke.
 
 ## 5. `kill_process_tree` (`rust/src/kill/mod.rs`) + `get_process_tree` (`rust/src/process_tree.rs`)
 
-Return type: `KillResult::{Success, ProcessNotFound, Error}` (the Node `'success' | 'process_not_found' | 'error'`).
+Return type: `KillResult::{Success, ProcessNotFound, Error}`.
 
 1. Guard: if `pid <= 0` → **panic** `internal error: kill_process_tree called with invalid PID: <pid>` (an invariant violation; callers already guard).
 2. `pids = get_process_tree(pid)` — collect root + all descendants.
-3. If `pids.len() == 0` → return `'process_not_found'`. (Note: `get_process_tree` always includes the root pid itself, so length is 0 only in degenerate cases; in practice the not-found result is realized via the per-pid ESRCH loop below making `all_not_found` stay true — but the array always contains at least the root, so the real not-found signal is `all_not_found`, see below.)
+3. If `pids.len() == 0` → return `ProcessNotFound`. (Note: `get_process_tree` always includes the root pid itself, so length is 0 only in degenerate cases; in practice the not-found result is realized via the per-pid ESRCH loop below making `all_not_found` stay true — but the array always contains at least the root, so the real not-found signal is `all_not_found`, see below.)
 4. **Kill order: children first, root last.** Implemented by reversing `pids` then iterating. The tree is built breadth/DFS with root at index 0 and descendants appended, so reversing puts deepest descendants first, root last.
 5. For each pid: send `SIGTERM`.
    - On `ESRCH` (no such process): ignore, continue.
@@ -152,7 +154,7 @@ Parsing (`run_command_for_pids`): run via `std::process::Command` with stdin/std
 - The signal-0 existence probe (`is_process_alive`) is `libc::kill(pid, 0)`, treating `EPERM` as alive, `ESRCH` as dead.
 
 ## 6. DB lifecycle & reaping interaction (context, not in kill path)
-- Normal `kill` only sets `killed_at`. Final deletion is performed by either the per-service monitor (`candle --monitor`) on child exit, or by `cleanup_stale_processes()` (`rust/src/db/cleanup.rs`; originally `src/database/staleProcessCleanup.ts`), which (a) deletes running rows whose `pid` and `log_collector_pid` are both dead, and (b) **deletes every row where `killed_at is not null`**. This two-phase (mark then reap) behavior is what makes `candle list` stop showing `RUNNING` immediately after kill (test `kill.test.ts:74` asserts `not.toContain('RUNNING')`).
+- Normal `kill` only sets `killed_at`. Final deletion is performed by either the per-service monitor (`candle --monitor`) on child exit, or by `cleanup_stale_processes()` (`rust/src/db/cleanup.rs`), which (a) deletes running rows whose `pid` and `log_collector_pid` are both dead, and (b) **deletes every row where `killed_at is not null`**. This two-phase (mark then reap) behavior is what makes `candle list` stop showing `RUNNING` immediately after kill (test `kill.test.ts:74` asserts `not.toContain('RUNNING')`).
 - This subsystem never kills `log_collector_pid`. Only the service tree rooted at `pid`.
 - `start` reuses this path: `start_one_service` calls `handle_kill_command(conn, project_dir, [name], quiet_failure = true, quiet = false)` to replace a running instance, then waits up to 2s for the old shell and monitor pids to exit (see [start-flow.md](start-flow.md)).
 
@@ -161,18 +163,18 @@ Parsing (`run_command_for_pids`): run via `std::process::Command` with stdin/std
 Signature: `handle_restart(conn, project_dir, command_names) -> Result<Vec<String>, CandleError>`, returning the resolved list of restarted names. `cmd_restart` resolves the project with `configured_project_dir_or_exit`, calls `assert_valid_command_names` first, and after the handler either watches the new launches (`watch_started_services`, interactive mode) or prints the `Run 'candle logs ...' to see logs.` hint, then exits 0.
 
 Flow:
-1. **If `command_names` empty**: load `find_running_processes_by_project_dir(project_dir)`. If none → `UsageError('No running processes found in this project to restart')` (propagates; CLI prints to stderr, exit 1). Else `command_names` = the running rows' names, deduped in first-seen order.
-2. Wrapped in a closure standing in for the TS try/catch (an error is returned as `Generic("Failed to restart: <message>")`, which the CLI prints to **stderr** before exiting 1):
+1. **If `command_names` empty**: load `find_running_processes_by_project_dir(project_dir)`. If none → `CandleError::UsageError("No running processes found in this project to restart")` (propagates; CLI prints to stderr, exit 1). Else `command_names` = the running rows' names, deduped in first-seen order.
+2. Wrapped in a closure so any failure can be reported uniformly (an error is returned as `Generic("Failed to restart: <message>")`, which the CLI prints to **stderr** before exiting 1):
    a. **Snapshot phase** (before killing): for each name store the first row from `find_processes_by_command_name_and_project_dir(name, dir)`, if any. This captures `shell`/`root` before the kill marks/deletes rows.
    b. `handle_kill_command(conn, project_dir, names, false, false)` — kills (no quiet flags, so it prints `[Killed ...]`).
    c. **Restart phase**: for each name, decide command source:
-      - `is_service_defined_in_config(name, project_dir)` = true (name found in `.candle.json` via `find_config_file` + `find_service_by_name`) → pass `shell=None, root=None` so `start_one_service` **reloads from config** (picks up edited `shell`/`root`).
+      - `is_service_defined_in_config(project_dir, name)` = true (name found in `.candle.json` via `find_config_file` + `find_service_by_name`) → pass `shell=None, root=None` so `start_one_service` **reloads from config** (picks up edited `shell`/`root`).
       - Otherwise (transient process not in config) → use captured `shell`/`root` from the snapshot map.
       - Call `start_one_service(conn, RunOptions { command_name, project_dir, shell, root, enable_stdin: false, check_start: false })`.
 
 **Subtle:** restart = (mark-kill all) then (start each), sequentially. The snapshot MUST be taken before kill because kill may delete the row (stale/not-found paths), losing `shell`/`root`. `is_service_defined_in_config` swallows all errors → treats "no config" as "not defined" → falls back to stored command.
 
-## 8. CLI wiring (`rust/src/main.rs`; originally `src/main-cli.ts`)
+## 8. CLI wiring (`rust/src/main.rs`)
 - Commands: `restart [name...]`, `kill [name...]` (alias `stop`), `kill-all`. `kill` and `restart` accept `--project-dir`; `restart` also takes `--watch` / `--bg` / `--exit-after-ms`.
 - Dispatch (after `open_db()` + `maybe_run_cleanup`):
   - `cmd_kill`: `project_dir_or_exit(scope)`; `assert_valid_command_names` unless `--project-dir` was explicit; `handle_kill_command(conn, project_dir, names, false, false)`. A DB error prints `candle: database error: <e>` and exits 1.
@@ -194,11 +196,11 @@ Flow:
 - `Warning: Could not kill process <pid>: <msg>` (stderr)
 - assert_valid_command_names failure: stderr `No service '<name>' configured for directory: <dir>`; non-zero exit.
 
-## 10. Crates used (replacing the original npm deps)
-- `@facetlayer/sqlite-wrapper` (wraps `node:sqlite`, synchronous) → **`rusqlite`** (bundled sqlite). The `.list/.run/.insert` helpers map to `prepare`+`query_map` / `execute` / `execute`+`last_insert_rowid`. The DB lives in a state dir (`get_state_directory()` → `rust/src/dirs.rs`), with env override `CANDLE_DATABASE_DIR`.
-- `yargs` → the hand-rolled parser in `rust/src/cli/parser.rs` (no `clap`). Variadic positional, alias `stop` → `kill`.
-- `child_process.spawn` for `pgrep`/`ps` → **`std::process::Command`**.
-- `process.kill(pid, signal)` → **`libc`**: `libc::kill(pid, SIGTERM)` / `SIGKILL`, and `libc::kill(pid, 0)` for the signal-0 liveness probe, checking `errno` for `ESRCH` and `EPERM`. (There is no `nix` dependency.)
+## 10. Crates used
+- **`rusqlite`** (bundled sqlite), synchronous. The DB lives in a state dir (`get_state_directory()` → `rust/src/dirs.rs`), with env override `CANDLE_DATABASE_DIR`.
+- CLI parsing is the hand-rolled parser in `rust/src/cli/parser.rs` (no `clap`). Variadic positional, alias `stop` → `kill`.
+- `pgrep`/`ps` are run with **`std::process::Command`**.
+- Signals go through **`libc`**: `libc::kill(pid, SIGTERM)` / `SIGKILL`, and `libc::kill(pid, 0)` for the signal-0 liveness probe, checking `errno` for `ESRCH` and `EPERM`. (There is no `nix` dependency.)
 
 ## 11. Cross-subsystem dependencies
 - `restart` depends on the **start** subsystem (`start_one_service`) and the **config** subsystem (`find_config_file` / `find_service_by_name`, surfaced as `is_service_defined_in_config`).

@@ -1,6 +1,6 @@
 # Start flow
 
-Scope: the `start` / `check-start` command path, the monitor process, transient vs configured services, success/failure detection, and the `process_tree` / `process_alive` helpers. The Rust implementation lives under `rust/src/`. `src/...` line references name files in the original Node/TypeScript implementation, which has been removed; they are historical pointers only.
+Scope: the `start` / `check-start` command path, the monitor process, transient vs configured services, success/failure detection, and the `process_tree` / `process_alive` helpers. The implementation lives under `rust/src/`.
 
 ## 1. High-level architecture
 
@@ -41,7 +41,7 @@ candle start NAME
 
 ## 2. CLI surface
 
-Two commands share `cmd_start` in `rust/src/main.rs` (originally `src/main-cli.ts:102-135`):
+Two commands share `cmd_start` in `rust/src/main.rs`:
 
 - `start [name...]` (alias `run [name...]`) → `handle_start_command` with `check_start = false`.
 - `check-start [name...]` → `handle_start_command` with `check_start = true`.
@@ -56,17 +56,17 @@ Options (both):
 
 Positional `name...` becomes `command_names`.
 
-## 3. `handle_start_command` (`rust/src/start/start_command.rs`; originally `src/start-command.ts:25-63`)
+## 3. `handle_start_command` (`rust/src/start/start_command.rs`)
 
 `handle_start_command(conn, StartCommandOptions { project_dir, command_names, shell, root, enable_stdin, check_start }) -> Result<Vec<String>, CandleError>` (returns the started names).
 
 1. `command_names = opts.command_names` (possibly empty).
-2. **If no `--shell`**: `command_names = resolve_command_names_or_all(project_dir, command_names)` — if names are empty, loads **all** configured service names from `.candle.json`; raises `UsageError('No services configured in .candle.json')` if config has zero services (originally `configFile.ts:259-269`).
+2. **If no `--shell`**: `command_names = resolve_command_names_or_all(project_dir, command_names)` — if names are empty, loads **all** configured service names from `.candle.json`; raises `UsageError('No services configured in .candle.json')` if config has zero services.
 3. **If `--root` is set without `--shell`**: resolve each name with `get_service_config_by_name` (so an unknown name still gets `MissingServiceWithName`), then fail with `UsageError("--root only applies to transient services started with --shell. ...")` rather than silently dropping the flag.
 4. **If `--shell` is set** (transient): require exactly one name, else `UsageError('Exactly one service name is required when using --shell')`. Call `start_one_service` once with `shell/root/enable_stdin/check_start`.
 5. **Else**: loop over resolved names, calling `start_one_service` for each (sequentially). Transient flags are NOT passed in this branch (`enable_stdin: false`).
 
-## 4. `start_one_service` (`rust/src/start/start_one_service.rs`; originally `src/start/startOneService.ts:45-194`)
+## 4. `start_one_service` (`rust/src/start/start_one_service.rs`)
 
 `start_one_service(conn, RunOptions { command_name, project_dir, shell: Option, root: Option, enable_stdin: bool, check_start: bool })`. Returns a `StartResult { project_dir, service_name }`.
 
@@ -83,24 +83,19 @@ Step 0 is `service_lock::acquire(project_dir, command_name)`, held (as the `Serv
 ### 4.1 check-start dedup — runs BEFORE config resolution
 
 ```
-if check_start {
-  if command_name is empty → UsageError('Command name is required');
-  existing = find_processes_by_command_name_and_project_dir(command_name, project_dir);
-  not_killed = existing.filter(killed_at is None);
-  running = filter_alive_processes(not_killed);
-  if running.len() > 0 {
-    println!("[Service '{command_name}' is already running]");
-    return { project_dir, service_name: command_name };
-  }
+if command_name is empty && (check_start || shell is set) → UsageError('Command name is required');
+if check_start && is_service_running(project_dir, command_name) {
+  println!("[Service '{command_name}' is already running]");
+  return { project_dir, service_name: command_name };
 }
 ```
 
-Subtlety: dedup uses **both** `killed_at IS NULL` filtering **and** a liveness probe (`filter_alive_processes`). Reboots/external kills leave `killed_at=NULL` rows whose PIDs are dead; without the liveness check, `check-start` would wrongly skip. `filter_alive_processes` also **deletes** the dead rows as a side effect. Done before config resolution so dedup works for transient names not in config.
+Subtlety: `is_service_running` (`rust/src/process_alive.rs`) uses **both** `killed_at IS NULL` filtering **and** a liveness probe (`filter_alive_processes`). Reboots/external kills leave `killed_at=NULL` rows whose PIDs are dead; without the liveness check, `check-start` would wrongly skip. `filter_alive_processes` also **deletes** the dead rows as a side effect. Done before config resolution so dedup works for transient names not in config.
 
 ### 4.2 Resolve `ServiceConfig`
 
 - Transient (`shell` set): require `command_name`; validate `root` with `is_valid_root_path` (absolute OK; relative must not start with `..` after normalize) else `UsageError('Invalid root path: "<root>". Root must be an absolute path or a relative path within the project.')`. Build `ServiceConfig { name, shell, root, enable_stdin }`.
-- Configured: `get_service_config_by_name(command_name, Some(project_dir))` (`rust/src/config/file.rs`) — exact match by name, else **loose substring matching** that walks up directories matching `root` (originally `configFile.ts:276-349`); raises `MissingServiceWithNameError` (message `No service '<name>' configured for directory: <projectDir>`) if not found.
+- Configured: `get_service_config_by_name(command_name, Some(project_dir))` (`rust/src/config/file.rs`) — exact match by name, else **loose substring matching** that walks up directories matching `root` (see [config.md](config.md) §9); raises `MissingServiceWithName` (message `No service '<name>' configured for directory: <project_dir>`) if not found.
 
 ### 4.2a Launch directory check
 
@@ -110,7 +105,7 @@ Subtlety: dedup uses **both** `killed_at IS NULL` filtering **and** a liveness p
 
 `handle_kill_command(conn, project_dir, [service.name], quiet_failure = true, quiet = false)`. Always kills any current instance before starting (so `start` = restart). See §8.
 
-The kill waits for the old shell (escalating to SIGKILL after 5s, §8), but its monitor exits a moment later, so the old instance may still be writing its last output and `process_exited` row. `start_one_service` does **not** wait for it: those rows carry the old run's `run_id`, so no reader shows them as part of the new run (see [logs.md](logs.md) §1 "Runs"). (An earlier version waited up to 2s for the old PIDs to exit before recording the launch; that wait is gone.)
+The kill waits for the old shell (escalating to SIGKILL after 5s, §8), but its monitor exits a moment later, so the old instance may still be writing its last output and `process_exited` row. `start_one_service` does **not** wait for it: those rows carry the old run's `run_id`, so no reader shows them as part of the new run (see [logs.md](logs.md) §1 "Runs").
 
 ### 4.4 Record the launch
 
@@ -118,7 +113,7 @@ The kill waits for the old shell (escalating to SIGKILL after 5s, §8), but its 
 
 ### 4.5 Database path
 
-The monitor is handed `candle_db_path()`, i.e. `<state_dir>/candle.db`. (Historically this step chose between the Node and Rust log collectors; there is only one monitor now.)
+The monitor is handed `candle_db_path()`, i.e. `<state_dir>/candle.db`.
 
 ### 4.6 Launch
 
@@ -126,7 +121,7 @@ The monitor is handed `candle_db_path()`, i.e. `<state_dir>/candle.db`. (Histori
 
 ### 4.7 Success / failure detection
 
-A single synchronous poll loop (the Node original raced two promises) over **this run's rows only** (`get_process_logs` with `run_id: Some(run_id)`), so a previous instance's late rows can't be mistaken for this launch's result:
+A single synchronous poll loop over **this run's rows only** (`get_process_logs` with `run_id: Some(run_id)`), so a previous instance's late rows can't be mistaken for this launch's result:
 - Every `POLL_INTERVAL` (100ms), fetch this run's `process_started` / `process_start_failed` rows:
   - `process_started` → break (success).
   - `process_start_failed` → `recent_logs` = the non-empty `content` of all this run's rows, joined with `\n`; return `CandleError::ProcessStartFailed { command_name, recent_logs }`.
@@ -180,7 +175,7 @@ This JSON shape (camelCase keys: `commandName`, `projectDir`, `shell`, `root`, `
 - If no flags beyond `--monitor` are passed (the production path, since the launcher passes none) → read launch info as JSON from stdin.
 - Else parse flags (`--flag value` or `--flag=value`): `--command-name` (required), `--project-dir` (required), `--shell` (required), `--root`, `--enable-stdin` (bool, default false), `--database-path`, `--run-id` (integer; a non-integer prints an error and exits 1). `project-dir` is resolved to an absolute path; `database-path` defaults to `<state_dir>/candle.db`. An unknown flag or missing required flag prints an error and exits 1.
 
-Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF** and parses the trimmed text as one JSON object; a read or parse error prints `Error: failed to ... launch info from stdin` and exits 1. Because it waits for EOF, the parent must close stdin. (The Node collector instead read the first complete line, which with no trailing newline also only completed at EOF.)
+Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF** and parses the trimmed text as one JSON object; a read or parse error prints `Error: failed to ... launch info from stdin` and exits 1. Because it waits for EOF, the parent must close stdin.
 
 `main.rs` checks for `--monitor` anywhere in argv before any other dispatch and calls `run_monitor_mode`, which exits with the service's exit code (0 when there is none).
 
@@ -194,7 +189,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 7. Main loop: write output lines until the `Exit` event, calling `maybe_run_cleanup` about every 60s (`CLEANUP_INTERVAL_MS`). The reader threads and the wait thread share one channel, so `Exit` can arrive before the child's last lines. After `Exit` (here and in the grace period), `drain_after_exit` keeps writing lines until the channel disconnects (both pipes at EOF) or `POST_EXIT_DRAIN_MS` (500ms) passes. Normally the pipes close right after the exit and the drain ends at once; the limit only matters when a background grandchild holds the pipes open (possibly forever), and losing a few lines written after it in that case is acceptable. Then `save_run_log(process_exited, "Process exited with code <n>")` (or `"Process was stopped"` when killed by a signal), `delete_process_entry`, and return the exit code.
 
 ### 7.3 Supervising the service (`monitor::run`)
-- `launch_dir = root ? Path::new(project_dir).join(root) : project_dir`. (Note: this uses Rust's `Path::join`, where an **absolute** root replaces the base, so in practice the cwd matches `resolve_launch_dir` except for lexical normalization. The Node original concatenated unconditionally.)
+- `launch_dir = root ? Path::new(project_dir).join(root) : project_dir`. `Path::join` lets an **absolute** root replace the base, so the cwd matches `resolve_launch_dir` except for lexical normalization.
 - Run `sh -c <shell>`, cwd = `launch_dir`, stdout/stderr piped, stdin piped only when `enable_stdin` (else null). Each stdout/stderr **line** → `save_run_log(conn, run_id, command_name, project_dir, Stdout|Stderr, Some(line))`.
 - If `enable_stdin`: `clear_stdin_messages(command_name, project_dir)`, then a thread with its own connection, every `STDIN_POLL_INTERVAL_MS` (500ms) until the child exits:
   - `msg = pop_stdin_message(command_name, project_dir)` (oldest row, deletes it); if present, write `msg.data` bytes to the subprocess stdin (`encoding` is ignored). A write error stops the thread.
@@ -223,7 +218,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 - `filter_alive_processes(conn, entries)`: keep entry if `log_collector_pid` alive **OR** `pid` alive; otherwise `delete_process_entry(conn, command_name, project_dir, pid)` and drop it.
 
 ## 11. Database (`rust/src/db/mod.rs`, `rust/src/db/process_table.rs`)
-SQLite at `<state_dir>/candle.db`. `state_dir` (`rust/src/dirs.rs`; originally `src/dirs.ts:9-22`): `$CANDLE_DATABASE_DIR`, else `$XDG_STATE_HOME/candle`, else `~/.local/state/candle`. Pragmas: `journal_mode=WAL`, `busy_timeout=30000` (multi-process access). Schema (`create ... if not exists`, run on every open; see [database.md](database.md)):
+SQLite at `<state_dir>/candle.db`. `state_dir` (`rust/src/dirs.rs`): `$CANDLE_DATABASE_DIR`, else `$XDG_STATE_HOME/candle`, else `~/.local/state/candle`. Pragmas: `journal_mode=WAL`, `busy_timeout=30000` (multi-process access). Schema (`create ... if not exists`, run on every open; see [database.md](database.md)):
 
 ```sql
 create table processes(
@@ -277,12 +272,10 @@ Key SQL used by start-flow:
 ### Log polling (`get_process_logs`, `rust/src/logs/process_logs.rs`)
 `get_process_logs` returns rows reversed into chronological order. `start_one_service`'s poll loop queries with `run_id: Some(run_id)` and `log_types: [process_started, process_start_failed]`, then sleeps 100ms. Filtering by run (not by "rows after a cursor") means only this launch's result counts.
 
-## 12. Crates used (replacing the original npm deps)
-- `@facetlayer/subprocess` (`startShellCommand`, `Subprocess`, line-buffered stdout/stderr, `waitForStart`/`waitForExit`, detached spawn) → `std::process::Command`; `std::io::BufReader::lines()` on reader threads for line splitting; detach via `libc::setsid` in `pre_exec`.
-- `@facetlayer/parse-stdout-lines` (`unixPipeToLines`, splits on `\n`, emits trailing partial line on EOF) → `BufRead::lines()`, which also yields a trailing partial line. The monitor's stdin handshake reads to EOF instead of line-by-line.
-- `@facetlayer/sqlite-wrapper` (schema migrations, WAL) → `rusqlite`. Sets `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000`.
-- `yargs` → the hand-rolled parser in `rust/src/cli/parser.rs`.
-- `@modelcontextprotocol/sdk`: not in start-flow (mcp command).
+## 12. Crates and system facilities
+- Subprocesses: `std::process::Command`; reader threads split output into lines (a trailing partial line is still emitted at EOF); detach via `libc::setsid` in `pre_exec`. The monitor's stdin handshake reads to EOF instead of line-by-line.
+- SQLite: `rusqlite`, with `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000`.
+- CLI parsing: the hand-rolled parser in `rust/src/cli/parser.rs`.
 - Liveness/process tree/locking: `libc` (`kill`, `setsid`, `flock`) plus `pgrep`/`ps`.
 
 ## 13. Subtle behaviors
@@ -296,7 +289,7 @@ Key SQL used by start-flow:
    **The deadline must not discard queued events.** The grace loop reads stdout/stderr/exit events off a channel, writing each output line to `process_output` as it arrives. When the deadline expires it drains what has already arrived with `try_recv` before deciding. Without that drain, a process that dies instantly — which still emits its error output *before* its exit event — could be reported as started purely because persisting those lines took longer than the remaining window, leaving the exit event unread. The decision is about what the process did, not about how fast its logs were written.
 8. **Spawn-failure branch creates no process row** (the spawn fails before `create_process_entry`), while the grace-period-failure branch deletes the row it created.
 9. **10s CLI timeout** rejects with `'Process failed to start (timed out while waiting)'` independent of the monitor — the monitor keeps running even if the CLI times out.
-10. **launchDir**: the banner uses `resolve_launch_dir` (normalized); the monitor's cwd uses a plain `Path::join`. Both let an absolute root win, so they differ only in normalization. (In Node the monitor concatenated even absolute roots.)
+10. **Launch directory**: the banner uses `resolve_launch_dir` (normalized); the monitor's cwd uses a plain `Path::join`. Both let an absolute root win, so they differ only in normalization.
 11. **Start lock**: concurrent starts of one service serialize on the `flock` from §4.0; different services (or projects) never contend.
 12. **Exact output strings** (the two-line start banner `[Started process '<name>'] $ <shell>` / `[With root directory: <dir>]`, `[Service '<name>' is already running]`, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
 13. **Config resolution order**: `.candle.json` then deprecated `.candle-setup.json`; loose substring + directory-aware matching for service names; walk up parent dirs to find config.

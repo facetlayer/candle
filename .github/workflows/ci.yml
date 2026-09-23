@@ -40,7 +40,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Acceptance suite (Rust target)
-        run: CANDLE_TEST_TARGET=rust pnpm exec vitest run
+        run: pnpm exec vitest run
 
   docs:
     name: docs & installer

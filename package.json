@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.33.2",
   "description": "Vitest acceptance suite for the Rust-based Candle CLI. The Candle implementation lives in ./rust; this package exists only to run the end-to-end tests in ./test against the compiled binary.",
   "scripts": {
-    "test": "cargo build --release --manifest-path rust/Cargo.toml && CANDLE_TEST_TARGET=rust vitest run",
+    "test": "cargo build --release --manifest-path rust/Cargo.toml && vitest run",
     "test:watch": "vitest",
     "format": "prettier --write 'test/**/*.{ts,js,json}' 'bin/**/*.ts'"
   },
