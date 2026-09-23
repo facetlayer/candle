@@ -1,7 +1,0 @@
-.build/
-.swiftpm/
-build/
-Package.resolved
-*.xcodeproj
-DerivedData/
-test/screenshots/
