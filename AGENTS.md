@@ -55,3 +55,12 @@ Without these flags, it passes through to Candle normally.
 
 There is an extensive test suite in ./test using Vitest.
 
+# Commits
+
+Save a git commit after each chunk of work (a finished task, a fix, or a
+self-contained step) without waiting to be asked. Stage only the specific files you
+changed. Use conventional-commits style.
+
+For user-facing changes, add a ` - ` bullet under `# Unreleased` at the top of
+CHANGELOG.md (create the heading if missing). Skip it for docs-only or internal
+changes.
