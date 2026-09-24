@@ -129,11 +129,11 @@ Return type: `KillResult::{Success, ProcessNotFound, Error}`.
 ### 5.2 `kill_process_tree_and_wait(pid, grace) -> KillOutcome` (`rust/src/kill/mod.rs`)
 
 Used by `kill_one_running_process` with `grace = KILL_GRACE_PERIOD` (5s). A service that traps or ignores `SIGTERM` would otherwise keep running while Candle's records said it was dead.
-1. Snapshot the whole tree with `get_process_tree(pid)` **before** signalling.
-2. `kill_process_tree(pid)`. `ProcessNotFound` → `KillOutcome::ProcessNotFound`; `Error` → `KillOutcome::Error`.
-3. On `Success`, poll `is_process_alive` for **every pid in the snapshot** every `KILL_POLL_INTERVAL` (20ms) for up to `grace`. If they all exit → `Terminated`.
-4. Otherwise, for each snapshot pid still alive, take its current tree (picking up anything it forked since), dedupe, and send `SIGKILL` to all of them, children first. Errors are ignored.
-5. Wait up to `SIGKILL_WAIT` (1s) for every targeted pid. If they all exit → `Escalated`; else → `Error`.
+1. Snapshot the whole tree with `get_process_tree(pid)` **before** signalling, and record `group = led_process_group(pid)`: `Some(pid)` when `getpgid(pid) == pid`. The monitor spawns each service as its own process-group leader (`process_group(0)`), so this is `Some` for services launched by a current monitor. A service launched by an older monitor shares the monitor's group and gets `None`, so its monitor is never group-signalled.
+2. `kill_process_tree(pid)`. `ProcessNotFound` → `KillOutcome::ProcessNotFound`; `Error` → `KillOutcome::Error`. On `Success`, if `group` is set, also `kill(-pgid, SIGTERM)` (errors ignored). This reaches descendants the tree walk can't see: a double-forked child reparented to init keeps the service's process group.
+3. Poll every `KILL_POLL_INTERVAL` (20ms) for up to `grace` until **every pid in the snapshot** is dead (`is_process_alive`) and, if `group` is set, the group is empty (`kill(-pgid, 0)` fails with `ESRCH`). If so → `Terminated`.
+4. Otherwise, for each snapshot pid still alive, take its current tree (picking up anything it forked since), dedupe, and send `SIGKILL` to all of them, children first; then `kill(-pgid, SIGKILL)` if `group` is set. Errors are ignored.
+5. Wait up to `SIGKILL_WAIT` (1s) for every targeted pid and the group. If they all exit → `Escalated`; else → `Error`.
 
 `KillOutcome` is `Terminated | Escalated | ProcessNotFound | Error`. The snapshot matters: when the root shell exits on `SIGTERM`, a child that ignored it is reparented to init, so a tree re-read from the root would no longer find it.
 

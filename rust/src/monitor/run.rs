@@ -10,7 +10,7 @@
 //! 6. on exit, log `process_exited` and delete the `processes` row.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -225,9 +225,15 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 
     // Spawn the monitored service. On spawn failure: log process_start_failed,
     // exit, do NOT create (or delete) a process row.
+    //
+    // The service leads its own process group (pgid == its pid), separate from
+    // the monitor's. Descendants stay in that group even after they're
+    // reparented (a double-forked `(daemon &)`), so `kill` can reach them with
+    // one group signal without also stopping the monitor.
     let mut child = match Command::new("sh")
         .arg("-c")
         .arg(&shell)
+        .process_group(0)
         .current_dir(&launch_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

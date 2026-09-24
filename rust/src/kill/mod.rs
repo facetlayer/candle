@@ -104,12 +104,37 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
     }
 }
 
-/// Wait until every PID in `pids` is gone or `timeout` elapses. Returns
-/// whether they all exited.
-fn wait_for_all_to_exit(pids: &[i64], timeout: Duration) -> bool {
+/// The process group led by `pid`, if `pid` is alive and leads one.
+///
+/// Services launched by a current monitor lead their own group (see
+/// `monitor::run`), which also holds descendants that were reparented away from
+/// the tree. Checking leadership first keeps an older service, which shares its
+/// monitor's group, from taking the monitor down with it.
+fn led_process_group(pid: i64) -> Option<i64> {
+    let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+    (pgid as i64 == pid).then_some(pid)
+}
+
+/// Whether any process is left in process group `pgid`.
+fn process_group_alive(pgid: i64) -> bool {
+    let result = unsafe { libc::kill(-(pgid as libc::pid_t), 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Signal every process in group `pgid`, ignoring errors (the group may
+/// already be empty).
+fn signal_process_group(pgid: i64, signal: libc::c_int) {
+    unsafe {
+        libc::kill(-(pgid as libc::pid_t), signal);
+    }
+}
+
+/// Wait until every PID in `pids` (and every member of `group`, if given) is
+/// gone or `timeout` elapses. Returns whether they all exited.
+fn wait_for_all_to_exit(pids: &[i64], group: Option<i64>, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
-        if !pids.iter().copied().any(is_process_alive) {
+        if !pids.iter().copied().any(is_process_alive) && !group.is_some_and(process_group_alive) {
             return true;
         }
         if Instant::now() >= deadline {
@@ -128,16 +153,25 @@ fn wait_for_all_to_exit(pids: &[i64], timeout: Duration) -> bool {
 /// reparented to init and would drop out of any re-snapshot taken from the
 /// root. Returns `Escalated` when `SIGKILL` was needed, so callers can tell the
 /// user. Other outcomes match [`kill_process_tree`].
+///
+/// When `pid` leads its own process group, the group is signalled and waited
+/// on too. That reaches descendants the tree walk can't see, such as a
+/// double-forked child that was reparented to init.
 pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
     let snapshot = get_process_tree(pid);
+    // Before signalling: once the leader exits, getpgid on it fails.
+    let group = led_process_group(pid);
 
     match kill_process_tree(pid) {
         KillResult::Success => {}
         KillResult::ProcessNotFound => return KillOutcome::ProcessNotFound,
         KillResult::Error => return KillOutcome::Error,
     }
+    if let Some(pgid) = group {
+        signal_process_group(pgid, libc::SIGTERM);
+    }
 
-    if wait_for_all_to_exit(&snapshot, grace) {
+    if wait_for_all_to_exit(&snapshot, group, grace) {
         return KillOutcome::Terminated;
     }
 
@@ -156,8 +190,11 @@ pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
             libc::kill(*target as libc::pid_t, libc::SIGKILL);
         }
     }
+    if let Some(pgid) = group {
+        signal_process_group(pgid, libc::SIGKILL);
+    }
 
-    if wait_for_all_to_exit(&targets, SIGKILL_WAIT) {
+    if wait_for_all_to_exit(&targets, group, SIGKILL_WAIT) {
         KillOutcome::Escalated
     } else {
         KillOutcome::Error

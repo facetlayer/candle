@@ -205,7 +205,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 
 ### 7.3 Supervising the service (`monitor::run`)
 - `launch_dir = root ? Path::new(project_dir).join(root) : project_dir`. `Path::join` lets an **absolute** root replace the base, so the cwd matches `resolve_launch_dir` except for lexical normalization.
-- Run `sh -c <shell>`, cwd = `launch_dir`, stdout/stderr piped, stdin piped only when `enable_stdin` (else null). Each stdout/stderr **line** → `save_run_log(conn, run_id, command_name, project_dir, Stdout|Stderr, Some(line))`.
+- Run `sh -c <shell>` as the leader of a new process group (`process_group(0)`, so pgid = the service pid, separate from the monitor's; `kill` signals this group, see kill-restart.md §5.2), cwd = `launch_dir`, stdout/stderr piped, stdin piped only when `enable_stdin` (else null). Each stdout/stderr **line** → `save_run_log(conn, run_id, command_name, project_dir, Stdout|Stderr, Some(line))`.
 - If `enable_stdin`: `clear_stdin_messages(command_name, project_dir)`, then a thread with its own connection, every `STDIN_POLL_INTERVAL_MS` (500ms) until the child exits:
   - `msg = pop_stdin_message(command_name, project_dir)` (oldest row, deletes it); if present, write `msg.data` bytes to the subprocess stdin (`encoding` is ignored). A write error stops the thread.
 

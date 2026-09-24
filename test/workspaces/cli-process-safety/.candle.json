@@ -9,6 +9,14 @@
       "shell": "sh -c \"trap '' TERM; echo ready; while true; do sleep 0.2; done\" & wait"
     },
     {
+      "name": "daemonizer",
+      "shell": "(sleep 600 & echo \"daemon $!\"); echo ready; sleep 600"
+    },
+    {
+      "name": "stubborn-daemonizer",
+      "shell": "(trap '' TERM; sleep 600 & echo \"daemon $!\"); echo ready; sleep 600"
+    },
+    {
       "name": "slow",
       "shell": "echo ready; sleep 600"
     },

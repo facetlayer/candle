@@ -258,7 +258,9 @@ Kill named service(s)
 If no `service names` are provided: Kill all services for this project directory.
 
 Candle sends `SIGTERM` to the service and its child processes, and escalates to `SIGKILL` for any of
-them still running 5 seconds later. The escalation is reported on stderr.
+them still running 5 seconds later. The escalation is reported on stderr. Each service runs in its own
+process group, so this also reaches background children that detached from the service's process tree
+(such as a double-forked `(daemon &)`), unless they started a new session with `setsid`.
 
 ### `candle restart`
 
