@@ -1,7 +1,8 @@
 //! `clear-logs` command handler.
 //!
 //! Deletes stored process output for the named command(s) within the project,
-//! then cleans up orphaned rows and vacuums the database.
+//! then vacuums the database. Other services' logs are never touched; old logs
+//! are bounded by retention cleanup (`db/cleanup.rs`).
 
 use rusqlite::Connection;
 
@@ -45,11 +46,6 @@ pub fn handle_clear_logs_command(
         output::out("No logs found to clear");
     }
 
-    // Clean up orphaned logs and optimize the database.
-    conn.execute(
-        "DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)",
-        [],
-    )?;
     conn.execute("VACUUM", [])?;
 
     Ok(())
@@ -141,21 +137,6 @@ mod tests {
         save_process_log(&conn, "a", "/proj", ProcessLogType::Stdout, Some("1")).unwrap();
         save_process_log(&conn, "b", "/proj", ProcessLogType::Stdout, Some("2")).unwrap();
         save_process_log(&conn, "a", "/other", ProcessLogType::Stdout, Some("3")).unwrap();
-        // Keep /other's row from being swept as orphaned.
-        crate::db::process_table::create_process_entry(
-            &conn,
-            &crate::db::process_table::CreateProcessEntry {
-                command_name: "a".to_string(),
-                project_dir: "/other".to_string(),
-                pid: 99_999_999,
-                log_collector_pid: None,
-                shell: None,
-                root: None,
-                run_id: None,
-                transient: false,
-            },
-        )
-        .unwrap();
 
         let (_, captured) = output::capture(|| {
             handle_clear_logs_command(&conn, "/proj", &[]).unwrap();
@@ -172,6 +153,30 @@ mod tests {
         };
         assert_eq!(count("/proj"), 0);
         assert_eq!(count("/other"), 1);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keeps_logs_of_other_services_without_process_rows() {
+        let dir = temp_db_dir("clear-logs-keep-others");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        // None of these have a `processes` row, like a crashed or stopped service.
+        save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("1")).unwrap();
+        save_process_log(&conn, "other", "/proj", ProcessLogType::Stdout, Some("2")).unwrap();
+        save_process_log(&conn, "crashed", "/elsewhere", ProcessLogType::Stderr, Some("3")).unwrap();
+
+        let (_, captured) = output::capture(|| {
+            handle_clear_logs_command(&conn, "/proj", &["svc".to_string()]).unwrap();
+        });
+        assert!(captured.stdout.iter().any(|l| l == "Cleared 1 log entries"));
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM process_output", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

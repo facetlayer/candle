@@ -217,11 +217,10 @@ CLI flags map to: `--count` (limit, default 100), `--previous` / `--all-runs` (`
 1. Print `Clearing logs for project: <project_dir>`.
 2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each name: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[command_name, project_dir]`. The rows-affected counts (`Connection::execute`) are summed into `cleared_count`.
 3. If `cleared_count > 0`: print `Cleared <n> log entries`. Else: print `No logs found to clear`.
-4. Orphan cleanup: `DELETE FROM process_output WHERE (command_name, project_dir) NOT IN (SELECT command_name, project_dir FROM processes)`.
-5. `VACUUM`.
-6. On a database error the handler returns `Err`; `cmd_clear_logs` in `main.rs` prints `Error: Could not clear logs: <e>` to stderr and exits 1.
+4. `VACUUM`.
+5. On a database error the handler returns `Err`; `cmd_clear_logs` in `main.rs` prints `Error: Could not clear logs: <e>` to stderr and exits 1.
 
-Note: the orphan delete references the `processes` table, so it also removes logs of other projects' services that have no process row.
+It deletes only what it names. Logs of other services, including stopped or crashed ones and ones in other projects, are left alone; old logs are bounded by retention cleanup (§13).
 
 ## 13. Eviction / retention (`rust/src/db/cleanup.rs`) — related subsystem
 

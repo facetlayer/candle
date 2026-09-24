@@ -1,4 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-clear-logs');
@@ -116,6 +118,37 @@ describe('CLI Clear-Logs Command', () => {
             const result = await workspace.runCli(['clear-logs', 'echo']);
 
             expect(result.stderrAsString()).toBe('');
+        });
+    });
+
+    describe('clear-logs leaves other services alone', () => {
+        it('keeps a crashed service\'s logs when clearing another project', async () => {
+            // `start` may itself report the crash, depending on timing.
+            await workspace.runCli(['start', 'crashed', '--shell', 'echo "important crash output"; exit 2'], {
+                ignoreExitCode: true,
+            });
+            await workspace.runCli(['wait-for-log', 'crashed', '--message', 'important crash output']);
+
+            // Wait until the monitor has removed its process row.
+            for (let i = 0; i < 50; i++) {
+                const ps = JSON.parse((await workspace.runCli(['ps', '--json'])).stdoutAsString());
+                if (!ps.some((row: { serviceName: string }) => row.serviceName === 'crashed')) break;
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+
+            // A second project sharing the same database.
+            workspace.ensureSubdir('other-project');
+            const otherDir = path.join(workspace.dbDir, 'other-project');
+            fs.writeFileSync(
+                path.join(otherDir, '.candle.json'),
+                JSON.stringify({ services: [{ name: 'other', shell: 'echo other output' }] }, null, 2),
+            );
+            await workspace.runCli(['start', 'other'], { cwd: otherDir });
+            await workspace.runCli(['wait-for-log', 'other', '--message', 'other output'], { cwd: otherDir });
+            await workspace.runCli(['clear-logs', 'other'], { cwd: otherDir });
+
+            const logs = await workspace.runCli(['logs', 'crashed']);
+            expect(logs.stdoutAsString()).toContain('important crash output');
         });
     });
 

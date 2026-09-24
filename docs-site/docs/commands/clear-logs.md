@@ -10,7 +10,7 @@ candle clear-logs [name...]
 
 ## Description
 
-The `clear-logs` command deletes log entries from the database. It also optimizes the database and removes any orphaned log entries.
+The `clear-logs` command deletes log entries from the database for the named services in the current project, then optimizes the database. Logs of other services and other projects are not affected.
 
 ## Arguments
 
@@ -45,8 +45,7 @@ candle clear-logs
 ## Behavior
 
 1. Deletes log entries for the named services, or for every service in the project when no names are given. A name that isn't configured and has no stored logs is an error, `No service '<name>' configured for directory: <dir>`, exit 1 (the same rule as `logs`)
-2. Removes orphaned log entries (logs for any service, in any project, that Candle no longer tracks)
-3. Optimizes the database to reclaim space
+2. Optimizes the database to reclaim space
 
 ## Notes
 
