@@ -23,7 +23,7 @@ use crate::config::commands::{add_server_config, AddServerConfigArgs};
 use crate::config::file::find_project_dir;
 use crate::errors::CandleError;
 use crate::project_scope::ProjectScope;
-use crate::start::start_one_service::{start_one_service, RunOptions};
+use crate::start::start_one_service::{start_one_service, IfRunning, RunOptions};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 const SERVER_INSTRUCTIONS: &str = "Tool for running and managing local dev servers. Use this when launching any local servers, including web servers, APIs, and other services.";
@@ -87,7 +87,7 @@ fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "StartService",
-            description: "Start a config-defined service (use StartTransientService for transient processes)",
+            description: "Start a config-defined service. Does nothing if it is already running (use RestartService to restart it). Use StartTransientService for transient processes.",
             schema: json!({
                 "type": "object",
                 "properties": { "name": { "type": "string" } },
@@ -121,10 +121,10 @@ fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "RestartService",
-            description: "Restart a running service. If no name provided, restarts all running services in the project.",
+            description: "Restart a service (starting it if it is stopped). If no name provided, restarts every service in the project.",
             schema: json!({
                 "type": "object",
-                "properties": { "name": { "type": "string", "description": "Name of the service to restart. If not provided, restarts all running services." } }
+                "properties": { "name": { "type": "string", "description": "Name of the service to restart. If not provided, restarts every configured service, plus any running transient processes." } }
             }),
             handler: tool_restart_service,
         },
@@ -248,7 +248,7 @@ fn tool_start_service(
             shell: None,
             root: None,
             enable_stdin: false,
-            check_start: false,
+            if_running: IfRunning::Skip,
         },
     )?;
     Ok(Some(json!({
@@ -281,7 +281,7 @@ fn tool_start_transient_service(
             shell: Some(shell),
             root: arg_str(args, "root").map(str::to_string),
             enable_stdin: false,
-            check_start: false,
+            if_running: IfRunning::Skip,
         },
     )?;
     Ok(Some(json!({
@@ -315,7 +315,7 @@ fn tool_restart_service(
     let names: Vec<String> = arg_str(args, "name")
         .map(|s| vec![s.to_string()])
         .unwrap_or_default();
-    crate::commands::restart::handle_restart(conn, &project_dir, &names)?;
+    crate::commands::restart::handle_restart(conn, &project_dir, &names, None, None)?;
     Ok(None)
 }
 

@@ -86,16 +86,16 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
   - `handle_logs_command` returns nothing — it **emits logs through [`crate::output`]**, so the actual log output is captured and surfaced through the response's `logs`, not through `result` (the handler returns `Ok(None)`). This is the one tool whose output flows entirely through the output-capture path.
 
 ### 5.4 `StartService`
-- description: `Start a config-defined service (use StartTransientService for transient processes)`
+- description: `Start a config-defined service. Does nothing if it is already running (use RestartService to restart it). Use StartTransientService for transient processes.`
 - properties: `name` (string)
 - required: `["name"]`
-- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None`, `check_start: false` → returns `{ projectDir, serviceName }`. Like the CLI, this takes the per-service start lock, kills any existing instance, and waits up to 10s for the start result (see [start-flow.md](start-flow.md)).
+- handler: validate `name` (else `Service name is required`); resolve project dir; `start_one_service` with `shell: None`, `root: None`, `if_running: IfRunning::Skip` → returns `{ projectDir, serviceName }`. Like `candle start`, this takes the per-service start lock, leaves an already-running instance alone (reporting it in the captured output), and otherwise waits up to 10s for the start result (see [start-flow.md](start-flow.md) §4).
 
 ### 5.5 `StartTransientService`
 - description: `Start a transient process with a custom shell command (not defined in config file)`
 - properties: `name` (string, "Name for the transient process"), `shell` (string, "Shell command to run the service"), `root` (string, "Root directory for the service (optional, relative to project)")
 - required: `["name", "shell"]`
-- handler: validate `name && shell` (else `Service name and shell command are required`); resolve project dir; `start_one_service` with the given `shell` and optional `root` → returns `{ projectDir, serviceName }`.
+- handler: validate `name && shell` (else `Service name and shell command are required`); resolve project dir; `start_one_service` with the given `shell` and optional `root`, `if_running: IfRunning::Skip` → returns `{ projectDir, serviceName }`. As with `candle start --shell`, a running instance with the same command is left alone, and one with a different command is an error pointing at restart (start-flow.md §4.1).
 
 ### 5.6 `KillService`
 - description: `Kill a running service`
@@ -104,10 +104,10 @@ The registry `tool_definitions()` defines nine tools, in this order. Every `inpu
 - handler: validate `name`; resolve project dir; `assert_valid_command_names(conn, cwd, [name])` (as `candle kill`: an unknown name is an error); `handle_kill_command(conn, projectDir, [name], false, false)`. **Returns nothing** (`Ok(None)`) — the response contains only captured logs (if any) with `isError: false`. The call can block for up to about 6s if the service ignores SIGTERM (5s grace, then SIGKILL; see [kill-restart.md](kill-restart.md)).
 
 ### 5.7 `RestartService`
-- description: `Restart a running service. If no name provided, restarts all running services in the project.`
-- properties: `name` (string, "Name of the service to restart. If not provided, restarts all running services.")
+- description: `Restart a service (starting it if it is stopped). If no name provided, restarts every service in the project.`
+- properties: `name` (string, "Name of the service to restart. If not provided, restarts every configured service, plus any running transient processes.")
 - required: none
-- handler: resolve project dir; `handle_restart(conn, projectDir, names)`, where `names` is the one-element list `[name]` if provided, else empty. Empty `names` ⇒ restart all running services. Returns nothing (`Ok(None)`).
+- handler: resolve project dir; `handle_restart(conn, projectDir, names, None, None)`, where `names` is the one-element list `[name]` if provided, else empty. Empty `names` ⇒ restart every configured service plus running transients (see [kill-restart.md](kill-restart.md) §7). There is no `shell`/`root` input, so it can't replace a transient's command. Returns nothing (`Ok(None)`).
 
 ### 5.8 `AddServerConfig`
 - description: `Add a new server configuration to .candle.json`

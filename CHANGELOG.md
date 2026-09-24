@@ -1,10 +1,15 @@
 # Unreleased
+ - **Breaking:** `candle start` no longer restarts a service that is already running; it leaves it alone and says so. Use `candle restart` to kill and relaunch.
+ - **Breaking:** removed `candle check-start` (`candle start` now behaves the way it did).
+ - `candle restart` with no names restarts every service in the project, starting any that are stopped.
+ - `candle restart <name> --shell <cmd>` replaces the command of a transient process. `candle start` with a different `--shell` for a running service is now an error.
+ - Starting or restarting several services no longer stops at the first failure; the rest are still started, then the failures are listed.
  - Installer: fail when `SHA256SUMS` has no (or more than one) entry for the archive, instead of printing "Checksum verified" without checking. Warn visibly when the checksum can't be verified at all.
  - Switches like `--json`, `--bg` and `--force` now reject an inline value (`--force=false` used to enable force).
  - `--version` / `--help` given as an option value (e.g. `wait-for-log api --message --version`) is treated as the value, not handled as a flag.
  - `--` ends option parsing; everything after it is positional.
  - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
- - Docs: `project-setup` explains terminal vs. background `start`, start/check-start/restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
+ - Docs: `project-setup` explains terminal vs. background `start`, start vs. restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
  - `candle get-doc` no longer prints a `(File source: ...)` line after each doc.
 
 

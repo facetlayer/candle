@@ -145,7 +145,7 @@ describe('Name Collision Behavior', () => {
         expect(logsResult.stdoutAsString()).toContain('Echo server started');
     });
 
-    it('should kill existing transient when starting new one with same name', async () => {
+    it('should refuse to start a different command under a running name, and restart --shell replaces it', async () => {
         // Start first transient
         await workspace.runCli([
             'start',
@@ -156,15 +156,21 @@ describe('Name Collision Behavior', () => {
 
         await workspace.runCli(['wait-for-log', 'same-name', '--message', 'Test server started']);
 
-        // Start second transient with same name but different shell
-        const result = await workspace.runCli([
-            'start',
+        // Starting the same name with a different shell is an error...
+        const result = await workspace.runCli(
+            ['start', 'same-name', '--shell', 'node ../../sampleServers/echoServer.js'],
+            { ignoreExitCode: true }
+        );
+        expect(result.failed()).toBe(true);
+        expect(result.stderrAsString()).toContain('already running with a different command');
+
+        // ...and restart --shell replaces it.
+        await workspace.runCli([
+            'restart',
             'same-name',
             '--shell',
             'node ../../sampleServers/echoServer.js',
         ]);
-
-        expect(result.stdoutAsString()).toBeDefined();
 
         // Verify new one is running
         await workspace.runCli(['wait-for-log', 'same-name', '--message', 'Echo server started']);
@@ -183,8 +189,9 @@ describe('Name Collision Behavior', () => {
         ]);
         await workspace.runCli(['wait-for-log', 'my-transient', '--message', 'Test server started']);
 
-        // Start a config service (test uses testProcess.js which outputs "Test server started successfully")
-        await workspace.runCli(['start', 'test']);
+        // Restart the config service, replacing the transient that shadowed it
+        // (test uses testProcess.js which outputs "Test server started successfully")
+        await workspace.runCli(['restart', 'test']);
         await workspace.runCli(['wait-for-log', 'test', '--message', 'Test server started']);
 
         // Both should be running
@@ -196,7 +203,7 @@ describe('Name Collision Behavior', () => {
 
 describe('Config Drift Detection', () => {
     it('should not show warning when config matches DB', async () => {
-        await workspace.runCli(['start', 'test']);
+        await workspace.runCli(['restart', 'test']);
         await workspace.runCli(['wait-for-log', 'test', '--message', 'Test server started']);
 
         const listResult = await workspace.runCli(['list']);
@@ -207,6 +214,7 @@ describe('Config Drift Detection', () => {
 
     it('should show warning when transient shadows config service', async () => {
         // Start 'test' as transient with different shell (echoServer instead of testProcess)
+        await workspace.runCli(['kill', 'test']);
         await workspace.runCli([
             'start',
             'test',
@@ -242,7 +250,7 @@ describe('Config Drift Detection', () => {
 
 describe('Database Schema', () => {
     it('should store shell in DB for config-based process', async () => {
-        await workspace.runCli(['start', 'test']);
+        await workspace.runCli(['restart', 'test']);
         await workspace.runCli(['wait-for-log', 'test', '--message', 'Test server started']);
 
         // Restart should work even though we're reading from DB

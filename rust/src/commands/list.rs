@@ -78,7 +78,7 @@ fn now_millis() -> i64 {
 
 /// Whether a running process's stored command differs from its config entry.
 /// Compares `shell`, and `root` with empty/null/None normalized to "unset".
-fn has_config_drift(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> bool {
+pub fn has_config_drift(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> bool {
     let service = match service {
         Some(s) => s,
         None => return false,
@@ -130,6 +130,11 @@ pub fn format_uptime(milliseconds: i64) -> String {
     }
 
     parts.join(" ")
+}
+
+/// A running process's uptime, formatted with [`format_uptime`].
+pub fn format_entry_uptime(entry: &ProcessEntry) -> String {
+    format_uptime(now_millis() - entry.start_time * 1000)
 }
 
 fn running_row(

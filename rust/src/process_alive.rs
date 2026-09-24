@@ -57,20 +57,30 @@ pub fn filter_alive_processes(
     Ok(alive)
 }
 
-/// Whether `command_name` has a running instance in `project_dir`: a process
+/// The running instance of `command_name` in `project_dir`, if any: a process
 /// row not marked killed whose PID is alive. Dead rows found along the way are
 /// deleted (see [`filter_alive_processes`]).
-pub fn is_service_running(
+pub fn find_running_service(
     conn: &Connection,
     project_dir: &str,
     command_name: &str,
-) -> rusqlite::Result<bool> {
+) -> rusqlite::Result<Option<ProcessEntry>> {
     let not_killed =
         find_processes_by_command_name_and_project_dir(conn, command_name, project_dir)?
             .into_iter()
             .filter(|p| p.killed_at.is_none())
             .collect();
-    Ok(!filter_alive_processes(conn, not_killed)?.is_empty())
+    Ok(filter_alive_processes(conn, not_killed)?.into_iter().next())
+}
+
+/// Whether `command_name` has a running instance in `project_dir`. See
+/// [`find_running_service`].
+pub fn is_service_running(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+) -> rusqlite::Result<bool> {
+    Ok(find_running_service(conn, project_dir, command_name)?.is_some())
 }
 
 #[cfg(test)]

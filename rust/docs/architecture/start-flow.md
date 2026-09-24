@@ -1,12 +1,12 @@
 # Start flow
 
-Scope: the `start` / `check-start` command path, the monitor process, transient vs configured services, success/failure detection, and the `process_tree` / `process_alive` helpers. The implementation lives under `rust/src/`.
+Scope: the `start` command path (and the per-service launch that `restart` reuses), the monitor process, transient vs configured services, success/failure detection, and the `process_tree` / `process_alive` helpers. The implementation lives under `rust/src/`.
 
 ## 1. High-level architecture
 
 There are **two OS processes** per launched service:
 
-1. **CLI process** (`candle start ...`) — resolves config, kills existing instances, spawns the monitor, then blocks watching the SQLite log table until it sees a success/failure marker and prints a result line. In non-interactive mode (or with `--bg`) it then prints a `Run 'candle logs ...' to see logs.` hint and exits; in interactive mode (or with `--watch`) it streams the new launch's logs until Ctrl+C (`watch_started_services`). Either way the service keeps running without it.
+1. **CLI process** (`candle start ...`) — resolves config, leaves an already-running instance alone (`restart` kills it instead), spawns the monitor, then blocks watching the SQLite log table until it sees a success/failure marker and prints a result line. In non-interactive mode (or with `--bg`) it then prints a `Run 'candle logs ...' to see logs.` hint and exits; in interactive mode (or with `--watch`) it streams the new launch's logs until Ctrl+C (`watch_started_services`). Either way the service keeps running without it.
 2. **Monitor process** (`candle --monitor`) — the same `candle` executable re-invoked in monitor mode: a detached, long-lived process that actually spawns the user's shell command, pipes its stdout/stderr into the SQLite `process_output` table, owns the DB `processes` row lifecycle, optionally feeds stdin, and exits when the service exits.
 
 Communication between the two is **only** through the SQLite database (`candle.db`) plus a one-shot JSON handshake over the monitor's stdin.
@@ -17,9 +17,9 @@ candle start NAME
   → handle_start_command          (rust/src/start/start_command.rs)
     → start_one_service           (rust/src/start/start_one_service.rs)
         - acquire per-service start lock (rust/src/start/service_lock.rs)
-        - check-start dedup
+        - already-running check (IfRunning::Skip → report and return)
         - resolve ServiceConfig (transient or from config file)
-        - handle_kill_command (kill existing)
+        - handle_kill_command (kill existing; only finds one under IfRunning::Replace)
         - start_run → process_start_initiated row; its id is the run id
         - launch_monitor            (rust/src/start/launch.rs)
             → spawn `candle --monitor` detached, write LaunchInfo JSON (incl. run_id) to its stdin, end stdin
@@ -41,56 +41,71 @@ candle start NAME
 
 ## 2. CLI surface
 
-Two commands share `cmd_start` in `rust/src/main.rs`:
+`cmd_start` in `rust/src/main.rs` handles `start [name...]` (alias `run [name...]`) → `handle_start_command`. (There is no `check-start`; `start` itself leaves running services alone. `restart` — see [kill-restart.md](kill-restart.md) §7 — is the command that relaunches.)
 
-- `start [name...]` (alias `run [name...]`) → `handle_start_command` with `check_start = false`.
-- `check-start [name...]` → `handle_start_command` with `check_start = true`.
-
-Options (both):
+Options:
 - `--shell <string>` — shell command for a **transient** process.
 - `--root <string>` — root dir for a transient process.
 - `--enable-stdin` (boolean) — enable DB-driven stdin feeding.
 - `--project-dir <dir>`: explicit project scope; must be a project with its own config (`configured_project_dir_or_exit`).
-
-`start` only: `--watch` / `--bg` (force interactive / non-interactive; both together is an error) and `--exit-after-ms` (for the post-launch watch). `check-start` never watches.
+- `--watch` / `--bg` (force interactive / non-interactive; both together is an error) and `--exit-after-ms` (for the post-launch watch). In interactive mode `start` watches even when every named service was already running.
 
 Positional `name...` becomes `command_names`.
 
 ## 3. `handle_start_command` (`rust/src/start/start_command.rs`)
 
-`handle_start_command(conn, StartCommandOptions { project_dir, command_names, shell, root, enable_stdin, check_start }) -> Result<Vec<String>, CandleError>` (returns the started names).
+`handle_start_command(conn, StartCommandOptions { project_dir, command_names, shell, root, enable_stdin }) -> Result<Vec<String>, CandleError>` (returns the started names).
 
 1. `command_names = opts.command_names` (possibly empty).
 2. **If no `--shell`**: `command_names = resolve_command_names_or_all(project_dir, command_names)` — if names are empty, loads **all** configured service names from `.candle.json`; raises `UsageError('No services configured in .candle.json')` if config has zero services.
 3. **If `--root` is set without `--shell`**: resolve each name with `get_service_config_by_name` (so an unknown name still gets `MissingServiceWithName`), then fail with `UsageError("--root only applies to transient services started with --shell. ...")` rather than silently dropping the flag.
-4. **If `--shell` is set** (transient): require exactly one name, else `UsageError('Exactly one service name is required when using --shell')`. Call `start_one_service` once with `shell/root/enable_stdin/check_start`.
-5. **Else**: loop over resolved names, calling `start_one_service` for each (sequentially). Transient flags are NOT passed in this branch (`enable_stdin: false`).
+4. **If `--shell` is set** (transient): require exactly one name, else `UsageError('Exactly one service name is required when using --shell')`. Call `start_one_service` once with `shell/root/enable_stdin` and `if_running: IfRunning::Skip`.
+5. **Else**: `start_each(conn, names, ...)` with `IfRunning::Skip` for each name. Transient flags are NOT passed in this branch (`enable_stdin: false`).
+
+### 3.1 `start_each` (shared with `restart`)
+
+`start_each(conn, names, run_options: impl FnMut(&str) -> RunOptions) -> Result<(), CandleError>` calls `start_one_service` for each name **sequentially**, in order.
+- **One name**: its error is returned as-is (so a single failed start reports exactly as before).
+- **Several names**: a failure does **not** stop the loop. Each error is printed immediately via `output::err("Error: <e>")` and the remaining services are still started. If any failed, it returns `Generic("<N> of <M> services failed to start: <a>, <b>")`, so the CLI still exits 1.
 
 ## 4. `start_one_service` (`rust/src/start/start_one_service.rs`)
 
-`start_one_service(conn, RunOptions { command_name, project_dir, shell: Option, root: Option, enable_stdin: bool, check_start: bool })`. Returns a `StartResult { project_dir, service_name }`.
+`start_one_service(conn, RunOptions { command_name, project_dir, shell: Option, root: Option, enable_stdin: bool, if_running: IfRunning })`. Returns a `StartResult { project_dir, service_name }`.
+
+`IfRunning` says what to do when the service is already running:
+- `Skip` — leave it running and report it (§4.1). Used by `start`/`run` and the MCP `StartService` / `StartTransientService` tools.
+- `Replace` — kill it (§4.3) and launch a new instance. Used by `restart` (CLI and MCP `RestartService`).
 
 ### 4.0 Per-service start lock (`rust/src/start/service_lock.rs`)
 
-Step 0 is `service_lock::acquire(project_dir, command_name)`, held (as the `ServiceStartLock` guard) until `start_one_service` returns. `start` is kill-then-launch, so without it two concurrent starts of the same service could each see "nothing running" (or each kill the same old instance) and each launch a new one, leaving duplicates. With it, the second start sees the first launch's row and kills it (or `check-start` skips it).
+Step 0 is `service_lock::acquire(project_dir, command_name)`, held (as the `ServiceStartLock` guard) until `start_one_service` returns. Without it, two concurrent starts of the same service could each see "nothing running" (or two restarts could each kill the same old instance) and each launch a new one, leaving duplicates. With it, the second caller sees the first launch's row: `start` skips it, `restart` kills and replaces it.
 - The lock is a blocking advisory `flock(LOCK_EX)` (retried on `EINTR`) on `<state dir>/locks/start-<hex>.lock`, where `<hex>` is the 16-digit FNV-1a 64-bit hash of `project_dir + '\0' + service_name` (`lock_path`). The `locks/` dir is created on demand.
 - The kernel releases it if the CLI dies. Rust opens files close-on-exec, so the detached monitor never inherits it.
 - Failure to acquire → `Generic("Failed to acquire start lock: <e>")`.
-- The lock is taken before the check-start dedup, so both checks and launches are serialized per service.
+- The lock is taken before the already-running check, so both checks and launches are serialized per service.
 - Before the per-service lock, `acquire` takes `<state dir>/locks/database.lock` **shared** (`LOCK_SH`). `erase-database` takes the same file **exclusive** for its whole live-process check and erase (`erase_database_guarded`), so a start can't launch between the check and the deletion. Starts don't block each other. The fixed order (database lock, then service lock) can't deadlock because erase takes only the database lock.
 - A start that waited on an erase may hold a connection to the deleted `candle.db`. So `start_one_service` stats the connection's DB path (dev, inode) before taking the lock and again after; if they differ, it fails with `Generic("The database was erased while this start was waiting. Run the command again.")`.
 
-### 4.1 check-start dedup — runs BEFORE config resolution
+### 4.1 Already-running check (`IfRunning::Skip`) — runs BEFORE config resolution
 
 ```
-if command_name is empty && (check_start || shell is set) → UsageError('Command name is required');
-if check_start && is_service_running(project_dir, command_name) {
-  println!("[Service '{command_name}' is already running]");
-  return { project_dir, service_name: command_name };
+if command_name is empty && shell is set → UsageError('Command name is required');
+if if_running == Skip {
+  if let Some(entry) = find_running_service(project_dir, command_name) {
+    return report_already_running(opts, entry);
+  }
 }
 ```
 
-Subtlety: `is_service_running` (`rust/src/process_alive.rs`) uses **both** `killed_at IS NULL` filtering **and** a liveness probe (`filter_alive_processes`). Reboots/external kills leave `killed_at=NULL` rows whose PIDs are dead; without the liveness check, `check-start` would wrongly skip. `filter_alive_processes` also **deletes** the dead rows as a side effect. Done before config resolution so dedup works for transient names not in config.
+`find_running_service` (`rust/src/process_alive.rs`; `is_service_running` is a wrapper around it) uses **both** `killed_at IS NULL` filtering **and** a liveness probe (`filter_alive_processes`). Reboots/external kills leave `killed_at=NULL` rows whose PIDs are dead; without the liveness check, `start` would wrongly skip. `filter_alive_processes` also **deletes** the dead rows as a side effect. Done before config resolution so the check works for transient names not in config.
+
+`report_already_running` compares the running row against what this `start` asked for, with `has_config_drift` (`rust/src/commands/list.rs`, the same check behind `ps`'s `[config changed]`):
+- The expected config is the transient `--shell`/`--root` when `--shell` was given, else the service's `.candle.json` entry. A running transient that isn't in the config has nothing to compare, so it never drifts.
+- **`--shell` given and it differs** → `UsageError("Service '<name>' is already running with a different command: $ <running shell>\nTo replace it, run 'candle restart <name> --shell <cmd>'.")`. Silently keeping the old command would look like the new one started.
+- **Configured service whose config changed** → prints `[Service '<name>' is already running (pid <pid>, up <uptime>) with an outdated command; use 'candle restart <name>' to apply the .candle.json changes]` and succeeds.
+- **Otherwise** → prints `[Service '<name>' is already running (pid <pid>, up <uptime>); use 'candle restart <name>' to restart it]` and succeeds.
+
+`<pid>` is the row's `pid` (the user shell); `<uptime>` is `format_entry_uptime` (the same format as `ps`). Returns `{ project_dir, service_name }` without launching anything.
 
 ### 4.2 Resolve `ServiceConfig`
 
@@ -103,7 +118,7 @@ Subtlety: `is_service_running` (`rust/src/process_alive.rs`) uses **both** `kill
 
 ### 4.3 Kill existing
 
-`handle_kill_command(conn, project_dir, [service.name], quiet_failure = true, quiet = false)`. Always kills any current instance before starting (so `start` = restart). See §8.
+`handle_kill_command(conn, project_dir, [service.name], quiet_failure = true, quiet = false)`. Kills any current instance before launching. Under `IfRunning::Replace` (`restart`) that is the running instance; under `Skip` a running instance already returned in §4.1, so this only catches one that §4.1 didn't count as running (e.g. a row already marked killed whose process is still shutting down). See §8.
 
 The kill waits for the old shell (escalating to SIGKILL after 5s, §8), but its monitor exits a moment later, so the old instance may still be writing its last output and `process_exited` row. `start_one_service` does **not** wait for it: those rows carry the old run's `run_id`, so no reader shows them as part of the new run (see [logs.md](logs.md) §1 "Runs").
 
@@ -125,7 +140,7 @@ A single synchronous poll loop over **this run's rows only** (`get_process_logs`
 - Every `POLL_INTERVAL` (100ms), fetch this run's `process_started` / `process_start_failed` rows:
   - `process_started` → break (success).
   - `process_start_failed` → `recent_logs` = the non-empty `content` of all this run's rows, joined with `\n`; return `CandleError::ProcessStartFailed { command_name, recent_logs }`.
-- After `START_TIMEOUT` (10s) with neither → `Generic('Process failed to start (timed out while waiting)')`.
+- After `START_TIMEOUT` (10s) with neither → `Generic("Process '<name>' failed to start (timed out while waiting)")`.
 
 ### 4.8 Success output
 
@@ -281,15 +296,15 @@ Key SQL used by start-flow:
 ## 13. Subtle behaviors
 1. **stdin handshake needs EOF**: the monitor reads stdin to EOF before parsing, so the parent must close stdin after writing.
 2. **Detached, never joined**: the monitor runs in its own session (`setsid`) and the CLI never waits on it.
-3. **check-start dual liveness check**: must filter `killed_at IS NULL` *and* probe PIDs, *and* delete dead rows. Missing the probe causes false "already running".
+3. **Already-running dual liveness check** (`find_running_service`): must filter `killed_at IS NULL` *and* probe PIDs, *and* delete dead rows. Missing the probe causes false "already running".
 4. **`filter_alive_processes` checks `log_collector_pid` first, then `pid`** — either alive keeps the row.
 5. **Two PIDs per row**: `pid` = user shell; `log_collector_pid` = the monitor process. Kill targets `pid` (the shell tree) via SIGTERM, children-first, escalating to SIGKILL for any process in the tree that outlives the 5s grace period.
 6. **Timestamps are unix seconds** (`strftime('%s','now')` and `SystemTime` seconds), not ms. The 5-minute stale check compares seconds.
 7. **Grace period 500ms**: success = `process_started` only after surviving 500ms, or exiting with code 0 within it (a command that exits 0 within 500ms is still treated as started, then immediately logged as exited). A nonzero exit or a signal within 500ms → `process_start_failed` + row deleted.
    **The deadline must not discard queued events.** The grace loop reads stdout/stderr/exit events off a channel, writing each output line to `process_output` as it arrives. When the deadline expires it drains what has already arrived with `try_recv` before deciding. Without that drain, a process that dies instantly — which still emits its error output *before* its exit event — could be reported as started purely because persisting those lines took longer than the remaining window, leaving the exit event unread. The decision is about what the process did, not about how fast its logs were written.
 8. **Spawn-failure branch creates no process row** (the spawn fails before `create_process_entry`), while the grace-period-failure branch deletes the row it created.
-9. **10s CLI timeout** rejects with `'Process failed to start (timed out while waiting)'` independent of the monitor — the monitor keeps running even if the CLI times out.
+9. **10s CLI timeout** rejects with `"Process '<name>' failed to start (timed out while waiting)"` independent of the monitor — the monitor keeps running even if the CLI times out.
 10. **Launch directory**: the banner uses `resolve_launch_dir` (normalized); the monitor's cwd uses a plain `Path::join`. Both let an absolute root win, so they differ only in normalization.
 11. **Start lock**: concurrent starts of one service serialize on the `flock` from §4.0; different services (or projects) never contend.
-12. **Exact output strings** (the two-line start banner `[Started process '<name>'] $ <shell>` / `[With root directory: <dir>]`, `[Service '<name>' is already running]`, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
+12. **Exact output strings** (the two-line start banner `[Started process '<name>'] $ <shell>` / `[With root directory: <dir>]`, `[Service '<name>' is already running (pid <pid>, up <uptime>); use 'candle restart <name>' to restart it]` and its outdated-command variant, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
 13. **Config resolution order**: `.candle.json` then deprecated `.candle-setup.json`; loose substring + directory-aware matching for service names; walk up parent dirs to find config.

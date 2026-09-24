@@ -152,8 +152,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "kill" => cmd_kill(args),
         "kill-all" => cmd_kill_all(),
         "find-orphans" => cmd_find_orphans(args),
-        "start" => cmd_start(args, false),
-        "check-start" => cmd_start(args, true),
+        "start" => cmd_start(args),
         "list" => cmd_list(args, false, ListView::Detail),
         "ps" => cmd_list(args, false, ListView::PsTable),
         "list-all" => cmd_list(args, true, ListView::FullTable),
@@ -377,16 +376,17 @@ fn print_logs_hint(started: &[String]) {
     println!("{hint}");
 }
 
-/// `start` / `run` (`check_start = false`) and `check-start` (`check_start =
-/// true`): resolve the project dir, then launch the requested service(s).
+/// `start` / `run`: resolve the project dir, then launch the requested
+/// service(s). Services that are already running are left alone.
 ///
-/// In interactive mode, `start` stays attached and streams the new process's
-/// logs until Ctrl+C (the process keeps running). In non-interactive mode (and
-/// always for `check-start`), it exits as soon as the launch is confirmed.
-fn cmd_start(args: &CommandArgs, check_start: bool) {
+/// In interactive mode, `start` stays attached and streams the process's logs
+/// until Ctrl+C (the process keeps running), including for a service that was
+/// already running. In non-interactive mode, it exits as soon as the launch is
+/// confirmed.
+fn cmd_start(args: &CommandArgs) {
     let project_dir = configured_project_dir_or_exit(&scope_of(args));
 
-    let watch_after = !check_start && should_watch_after_launch(args);
+    let watch_after = should_watch_after_launch(args);
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -397,7 +397,6 @@ fn cmd_start(args: &CommandArgs, check_start: bool) {
         shell: args.value("shell").map(str::to_string),
         root: args.value("root").map(str::to_string),
         enable_stdin: args.has("enable-stdin"),
-        check_start,
     };
 
     match handle_start_command(&conn, opts) {
@@ -549,10 +548,10 @@ fn cmd_clear_logs(args: &CommandArgs) {
     }
 }
 
-/// `restart`: kill the named (or all running) services in the project, then
-/// start them again. An unknown service name fails validation (stderr + exit 1);
-/// an empty project with nothing running yields the "No running processes" usage
-/// error from the handler. Follows the same interactive/non-interactive behavior
+/// `restart`: kill the named services (or every service in the project), then
+/// start them again; stopped services are simply started. An unknown service
+/// name fails validation (stderr + exit 1). `--shell`/`--root` replace a
+/// transient process's command, so they skip that validation. Follows the same interactive/non-interactive behavior
 /// as `start` (see [`cmd_start`]).
 fn cmd_restart(args: &CommandArgs) {
     let scope = scope_of(args);
@@ -563,11 +562,15 @@ fn cmd_restart(args: &CommandArgs) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
-        fail_with(&e);
+    let shell = args.value("shell").map(str::to_string);
+    let root = args.value("root").map(str::to_string);
+    if shell.is_none() {
+        if let Err(e) = assert_valid_command_names(&conn, scope.base_dir(), &args.positionals) {
+            fail_with(&e);
+        }
     }
 
-    match handle_restart(&conn, &project_dir, &args.positionals) {
+    match handle_restart(&conn, &project_dir, &args.positionals, shell, root) {
         Ok(restarted) => {
             if watch_after {
                 let exit_after_ms: Option<u64> = numeric_flag(args, "exit-after-ms");

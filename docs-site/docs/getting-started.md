@@ -69,8 +69,8 @@ stop watching; the services keep running until you `candle kill` them. From a sc
 coding agent, `start` returns right after launching; add `--bg` to get that behavior in a
 terminal too.
 
-If a service is already running, `start` replaces it. Use `candle check-start` to start it
-only when it isn't running already.
+If a service is already running, `start` leaves it alone. Use `candle restart` to kill and
+relaunch it.
 
 ## Viewing Logs
 

@@ -85,7 +85,7 @@ because it may no longer exist.
 DB-keyed commands (`kill`, `logs`, `clear-logs`, `wait-for-log`) call only `resolve()`.
 
 `require_own_config()` is the second check, for commands that need service definitions (`start`,
-`check-start`, `restart`, `list`, `ps`, `watch`, `list-ports`, `open-browser`). It requires an
+`restart`, `list`, `ps`, `watch`, `list-ports`, `open-browser`). It requires an
 explicit dir to contain a config file itself. Without it, config discovery would walk up and resolve
 services from an *ancestor* project while the process rows stayed keyed to the directory the user
 named — one command silently acting on two projects. For `Discover` it is always `Ok`, since walking

@@ -55,9 +55,9 @@ describe('process safety', () => {
     });
 
     describe('concurrent start', () => {
-        it('leaves exactly one instance when started five times at once', async () => {
+        it('leaves exactly one instance when restarted five times at once', async () => {
             await Promise.all(
-                Array.from({ length: 5 }, () => workspace.runCli(['start', 'slow'])),
+                Array.from({ length: 5 }, () => workspace.runCli(['restart', 'slow'])),
             );
 
             const list = await workspace.runCli(['list-all', '--json']);
@@ -69,9 +69,9 @@ describe('process safety', () => {
             await workspace.runCli(['kill', 'slow']);
         }, 60000);
 
-        it('check-start launches once when raced', async () => {
+        it('start launches once when raced', async () => {
             const results = await Promise.all(
-                Array.from({ length: 5 }, () => workspace.runCli(['check-start', 'slow'])),
+                Array.from({ length: 5 }, () => workspace.runCli(['start', 'slow'])),
             );
             const launched = results.filter((r) => r.stdoutAsString().includes("[Started process 'slow']"));
             expect(launched).toHaveLength(1);

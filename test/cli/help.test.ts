@@ -25,7 +25,6 @@ describe('CLI Help Command', () => {
             const commands = [
                 'run',
                 'start',
-                'check-start',
                 'restart',
                 'kill',
                 'kill-all',
@@ -107,7 +106,7 @@ describe('CLI Help Command', () => {
 
     describe('internal flags', () => {
         it('should not list --enable-stdin in command help', async () => {
-            for (const cmd of ['start', 'check-start', 'add-service']) {
+            for (const cmd of ['start', 'restart', 'add-service']) {
                 const result = await workspace.runCli([cmd, '--help']);
                 expect(result.stdoutAsString()).not.toContain('enable-stdin');
             }

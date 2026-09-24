@@ -29,9 +29,13 @@ to the project root and can't escape it.
    `restart`, `ls`, `list-ports`, `wait-for-log`.
  - `restart` reuses the `--shell` and `--root` it was started with. If the name
    is also defined in `.candle.json`, `restart` uses the config instead.
- - Starting a transient process with the name of a running service (configured
-   or transient) kills the existing process first. `ls` then flags it with
-   `[config changed]` if the name is in the config.
+ - To change a running transient process's command, pass the new one to
+   `restart`: `candle restart myserver --shell "node server.js --port 4000"`.
+ - If a service with that name is already running (configured or transient),
+   `start` leaves it alone: with the same command it reports that it's already
+   running, and with a different command it fails and points at
+   `candle restart <name> --shell <cmd>`. When a transient process replaces a
+   configured service of the same name, `ls` flags it with `[config changed]`.
  - It appears in `ls` only while running. Once killed or exited it drops off the
    list, unlike a configured service, which stays listed as not running.
 

@@ -107,20 +107,60 @@ describe('CLI Restart Command', () => {
             await workspace.runCli(['start', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            // Restart with no name restarts all running services
+            // Restart with no name restarts every service in the project
             const result = await workspace.runCli(['restart']);
 
             expect(result.stdoutAsString()).toContain('Started');
         });
 
-        it('should error when no running processes to restart', async () => {
-            // Make sure nothing is running
+        it('should start every configured service when nothing is running', async () => {
             await workspace.runCli(['kill-all']);
 
-            const result = await workspace.runCli(['restart'], { ignoreExitCode: true });
+            const result = await workspace.runCli(['restart']);
+
+            const output = result.stdoutAsString();
+            for (const name of ['web', 'echo', 'echo-test', 'escaping-child']) {
+                expect(output).toContain(`[Started process '${name}']`);
+            }
+            // Stopped services are simply started, without "nothing to kill" noise.
+            expect(output + result.stderrAsString()).not.toContain('No running processes');
+
+            await workspace.runCli(['kill']);
+        });
+
+        it('should error when there is nothing to restart', async () => {
+            const emptyWorkspace = new TestWorkspace('cli-restart-empty');
+            fs.writeFileSync(
+                path.join(emptyWorkspace.dbDir, '.candle.json'),
+                JSON.stringify({ services: [] })
+            );
+            try {
+                const result = await emptyWorkspace.runCli(['restart'], { ignoreExitCode: true });
+
+                expect(result.failed()).toBe(true);
+                expect(result.stderrAsString()).toContain('No services to restart');
+            } finally {
+                await emptyWorkspace.cleanup();
+            }
+        });
+    });
+
+    describe('restart a transient process with --shell', () => {
+        it('should replace the running command', async () => {
+            await workspace.runCli(['start', 'swap', '--shell', 'node ../../sampleServers/testProcess.js']);
+
+            const result = await workspace.runCli(['restart', 'swap', '--shell', 'node ../../sampleServers/echoServer.js']);
+
+            expect(result.stdoutAsString()).toContain("[Started process 'swap'] $ node ../../sampleServers/echoServer.js");
+            await workspace.runCli(['wait-for-log', 'swap', '--message', 'Echo server started']);
+            await workspace.runCli(['kill', 'swap']);
+        });
+
+        it('should require exactly one name with --shell', async () => {
+            const result = await workspace.runCli(['restart', 'echo', 'web', '--shell', 'true'], { ignoreExitCode: true });
 
             expect(result.failed()).toBe(true);
-            expect(result.stderrAsString()).toContain('No running processes');
+            expect(result.stderrAsString()).toContain('Exactly one service name');
         });
     });
 
@@ -150,13 +190,16 @@ describe('CLI Restart Command', () => {
             await workspace.runCli(['start', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-            // Restart without name restarts all running services
+            // Restart without name restarts every service in the project
             const result = await workspace.runCli(['restart']);
 
             const output = result.stdoutAsString() + result.stderrAsString();
-            const killedCount = (output.match(/Killed/g) || []).length;
+            const killedNames = [...output.matchAll(/Killed '([^']+)'/g)].map(m => m[1]);
 
-            expect(killedCount).toBeLessThanOrEqual(1);
+            expect(killedNames).toContain('echo');
+            expect(new Set(killedNames).size).toBe(killedNames.length);
+
+            await workspace.runCli(['kill']);
         });
 
         it('should not print duplicate kill messages even with multiple rapid restarts', async () => {

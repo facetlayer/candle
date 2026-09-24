@@ -16,11 +16,13 @@ of the nearest `.candle.json` file).
 # Basic commands:
 
  - See what services are available: `candle ls`
- - Start a service in the background: `candle start <service-name>`
+ - Start a service in the background: `candle start <service-name>`. If it's
+   already running, this leaves it alone, so it's safe to run just to make sure a
+   service is up.
  - Browse logs: `candle logs` or `candle logs <service-name>`
  - Configure a new service: `candle add-service <service-name> --shell <shell>`
  - Kill a service: `candle kill <service-name>`
- - Restart a service: `candle restart <service-name>`
+ - Restart a service (for example, to pick up code or config changes): `candle restart <service-name>`
  - Kill all services in this project: `candle kill`
 
 More commands are available by running: `candle help`

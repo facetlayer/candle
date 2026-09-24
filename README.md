@@ -130,8 +130,17 @@ Launch the service(s).
 
 If no `service names` are provided: then launch all services in the project.
 
-If the service(s) are already running then the existing instances are killed first.
-Concurrent starts of the same service are serialized, so they never leave duplicate instances.
+A service that is already running is left alone, so `start` is safe to repeat. Candle
+reports it and points at `restart`:
+
+    [Service 'web' is already running (pid 12345, up 3m 5s); use 'candle restart web' to restart it]
+
+If you've edited that service in `.candle.json` since it launched, the message says so, and
+`candle restart` applies the change. Concurrent starts of the same service are serialized, so
+they never leave duplicate instances.
+
+If one service fails to start, the rest are still started. `start` then exits 1 and names
+the services that failed.
 
 If called in interactive mode (see "interactive mode detection" below), `start` will
 then start watching the service and printing console messages. Press Ctrl-C to leave this mode.
@@ -144,12 +153,6 @@ Options:
 ### `candle run`
 
 Alias for `candle start`.
-
-### `candle check-start`
-
-Similar to `start` but only starts the service(s) if they are not already running.
-If the service is running already, this command is a no-op. Unlike `start`, it never
-watches logs afterward.
 
 ### `candle list`
 
@@ -262,13 +265,18 @@ them still running 5 seconds later. The escalation is reported on stderr.
     candle restart
     candle restart [service name(s)]
 
-Restart running service(s) for this current directory.
+Kill the service(s) and start them again. A service that isn't running is simply started.
 
-If no `service names` are provided: Restart all running services for this project directory
+If no `service names` are provided: restart every service in the project (every service in
+`.candle.json`, plus any running transient processes).
 
 Config-defined services are reloaded from `.candle.json`, so edits to `shell` or `root` take
 effect. Like `start`, `restart` watches the logs afterward in interactive mode, and accepts
 `--watch` and `--bg`.
+
+To change the command of a transient process (one started with `candle start <name> --shell <cmd>`;
+see `candle get-doc transient-processes`), pass a new one with `--shell` (and optionally `--root`):
+`candle restart api --shell "npm run dev"`.
 
 ### `candle wait-for-log`
 
@@ -430,7 +438,7 @@ the project, and the current directory is ignored. The path may be relative.
     candle ps --project-dir ~/work/api
     candle start --project-dir ~/work/api web
 
-Accepted by the commands that act on a single project: `start`, `run`, `check-start`, `restart`,
+Accepted by the commands that act on a single project: `start`, `run`, `restart`,
 `kill`, `list`, `ps`, `logs`, `watch`, `wait-for-log`, `clear-logs`, `list-ports`, and
 `open-browser`. The system-wide commands (`list-all`, `list-ports-all`, `kill-all`,
 `find-orphans`) don't take it.

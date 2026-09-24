@@ -44,7 +44,7 @@ When earlier lines from the latest run were left out, the output starts with a h
 
 ### StartService
 
-Start a config-defined service.
+Start a config-defined service. Does nothing if it's already running (use `RestartService` to restart it).
 
 **Parameters:**
 - `name` (string, required) - Name of the service to start
@@ -69,10 +69,10 @@ An unknown name is an error, `No service '<name>' configured for directory: <dir
 
 ### RestartService
 
-Restart a running service.
+Restart a service, starting it if it's stopped.
 
 **Parameters:**
-- `name` (string, optional) - Name of the service to restart. If not provided, restarts all running services.
+- `name` (string, optional) - Name of the service to restart. If not provided, restarts every service in the project.
 
 ### AddServerConfig
 

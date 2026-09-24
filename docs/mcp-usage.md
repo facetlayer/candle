@@ -46,9 +46,9 @@ Generic client configuration:
 ## Tools
 
  - `ListServices` — services in the project with status, PID and uptime. `showAll: true` lists every project on the machine.
- - `StartService` — start a service defined in `.candle.json`.
+ - `StartService` — start a service defined in `.candle.json`. Does nothing if it's already running.
  - `StartTransientService` — start a one-off process from a `shell` command (and optional `root`). See `candle get-doc transient-processes`.
- - `RestartService` — restart one service, or every running service if no name is given.
+ - `RestartService` — restart one service (starting it if it's stopped), or every service in the project if no name is given.
  - `KillService` — stop a service.
  - `GetLogs` — recent output for a service (`limit`, default 200).
  - `ListPorts` — ports the running services are listening on.

@@ -1,8 +1,9 @@
 //! Starting a single service.
 //!
 //! The flow:
-//! check-start dedup → resolve the service config (transient or from file) →
-//! check the launch directory exists → kill any existing instance → record
+//! already-running check (`start` leaves a running instance alone) → resolve
+//! the service config (transient or from file) → check the launch directory
+//! exists → kill any existing instance (`restart`) → record
 //! `process_start_initiated`, whose id becomes the new run id → launch the
 //! monitor process (`candle --monitor`) with that run id → race this run's log
 //! rows against a 10s timeout for `process_started` / `process_start_failed` →
@@ -15,7 +16,9 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use crate::config::model::ServiceConfig;
+use crate::commands::list::{format_entry_uptime, has_config_drift};
 use crate::config::{get_service_config_by_name, is_valid_root_path};
+use crate::db::process_table::ProcessEntry;
 use crate::dirs::candle_db_path;
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
@@ -23,13 +26,22 @@ use crate::logs::process_logs::{get_process_logs, save_run_log, start_run, LogSe
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 use crate::output;
-use crate::process_alive::is_service_running;
+use crate::process_alive::{find_running_service, is_service_running};
 use crate::start::launch::launch_monitor;
 
 /// How long the CLI watches the log table for a start result before giving up.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// Poll interval while watching the log table.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// What [`start_one_service`] does when the service is already running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IfRunning {
+    /// Leave it running and report that (`start`).
+    Skip,
+    /// Kill it and launch a new instance (`restart`).
+    Replace,
+}
 
 /// Options for [`start_one_service`].
 #[derive(Debug, Clone)]
@@ -39,7 +51,7 @@ pub struct RunOptions {
     pub shell: Option<String>,
     pub root: Option<String>,
     pub enable_stdin: bool,
-    pub check_start: bool,
+    pub if_running: IfRunning,
 }
 
 /// Result of a successful (or skipped) start.
@@ -84,11 +96,57 @@ fn record_start_failure_if_idle(
     Ok(())
 }
 
+/// Handle `start` on a service that is already running: report it and leave it
+/// alone. A transient `--shell` that differs from what's running is an error,
+/// since silently keeping the old command would look like the new one started.
+fn report_already_running(
+    opts: &RunOptions,
+    entry: &ProcessEntry,
+) -> Result<StartResult, CandleError> {
+    let name = &opts.command_name;
+    let expected = match &opts.shell {
+        Some(shell) => Some(ServiceConfig {
+            name: name.clone(),
+            shell: shell.clone(),
+            root: opts.root.clone(),
+            enable_stdin: None,
+        }),
+        // A running transient that isn't in the config has nothing to compare.
+        None => get_service_config_by_name(name, Some(Path::new(&opts.project_dir)))
+            .ok()
+            .map(|found| found.service_config),
+    };
+    let drifted = has_config_drift(entry, expected.as_ref());
+    let status = format!("pid {}, up {}", entry.pid, format_entry_uptime(entry));
+
+    if drifted && opts.shell.is_some() {
+        return Err(CandleError::UsageError(format!(
+            "Service '{name}' is already running with a different command: $ {}\n\
+             To replace it, run 'candle restart {name} --shell <cmd>'.",
+            entry.shell.as_deref().unwrap_or("")
+        )));
+    }
+    if drifted {
+        output::out(&format!(
+            "[Service '{name}' is already running ({status}) with an outdated command; \
+             use 'candle restart {name}' to apply the .candle.json changes]"
+        ));
+    } else {
+        output::out(&format!(
+            "[Service '{name}' is already running ({status}); use 'candle restart {name}' to restart it]"
+        ));
+    }
+    Ok(StartResult {
+        project_dir: opts.project_dir.clone(),
+        service_name: name.clone(),
+    })
+}
+
 /// Launch a single service as a detached subprocess and wait for it to report a
 /// start result. See module docs for the full sequence.
 pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartResult, CandleError> {
     // 0. Serialize starts of this service. Held until return, so a concurrent
-    //    start sees this launch's row (and kills it, or check-start skips it)
+    //    start sees this launch's row (and skips it, or restart kills it)
     //    instead of racing it into a duplicate instance.
     let db_identity = database_file_identity(conn);
     let _start_lock = crate::start::service_lock::acquire(&opts.project_dir, &opts.command_name)
@@ -105,23 +163,18 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
 
     // Configured services are looked up by name below; the other paths use
     // the name as given.
-    if opts.command_name.is_empty() && (opts.check_start || opts.shell.is_some()) {
+    if opts.command_name.is_empty() && opts.shell.is_some() {
         return Err(CandleError::UsageError(
             "Command name is required".to_string(),
         ));
     }
 
-    // 1. check-start dedup — runs BEFORE config resolution so it works for
-    //    transient names that aren't in the config file.
-    if opts.check_start && is_service_running(conn, &opts.project_dir, &opts.command_name)? {
-        output::out(&format!(
-            "[Service '{}' is already running]",
-            opts.command_name
-        ));
-        return Ok(StartResult {
-            project_dir: opts.project_dir,
-            service_name: opts.command_name,
-        });
+    // 1. `start` leaves a running instance alone. Runs BEFORE config
+    //    resolution so it works for transient names that aren't in the config.
+    if opts.if_running == IfRunning::Skip {
+        if let Some(entry) = find_running_service(conn, &opts.project_dir, &opts.command_name)? {
+            return report_already_running(&opts, &entry);
+        }
     }
 
     // 2. Resolve the service config.
@@ -162,7 +215,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         )));
     }
 
-    // 3. Kill any existing instance (start == restart). quiet_failure suppresses
+    // 3. Kill any existing instance (restart, or a `start` racing a process
+    //    that is shutting down). quiet_failure suppresses
     //    "no running processes" noise. The kill waits for the old process tree;
     //    its monitor may still be writing its last rows, but those carry the
     //    old run id, so they never show up as part of the new run.
@@ -226,9 +280,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
                 });
             }
             None if Instant::now() >= deadline => {
-                return Err(CandleError::Generic(
-                    "Process failed to start (timed out while waiting)".to_string(),
-                ));
+                return Err(CandleError::Generic(format!(
+                    "Process '{}' failed to start (timed out while waiting)",
+                    service.name
+                )));
             }
             None => thread::sleep(POLL_INTERVAL),
         }

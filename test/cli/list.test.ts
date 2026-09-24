@@ -33,7 +33,7 @@ describe('CLI List Command', () => {
         });
 
         it('should show running process in list', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             const [status, command, directory] = entryFor(
@@ -47,7 +47,7 @@ describe('CLI List Command', () => {
         });
 
         it('should show multiple running processes', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['start', 'echo-test']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
             await workspace.runCli(['wait-for-log', 'echo-test', '--message', 'Echo server started']);
@@ -59,7 +59,7 @@ describe('CLI List Command', () => {
         });
 
         it('should show uptime for running processes', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             const result = await workspace.runCli(['list']);
@@ -93,7 +93,7 @@ describe('CLI List Command', () => {
         });
 
         it('should show the launched shell for a running process', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             const [, command] = entryFor(
@@ -105,7 +105,7 @@ describe('CLI List Command', () => {
         });
 
         it('should show the transient shell for a process started with --shell', async () => {
-            await workspace.runCli(['start', 'echo', '--shell', WEB_SHELL]);
+            await workspace.runCli(['restart', 'echo', '--shell', WEB_SHELL]);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Test server started']);
 
             const [, command] = entryFor(
@@ -167,7 +167,7 @@ describe('CLI List Command', () => {
 
     describe('ls alias', () => {
         it('should work with ls alias', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             const listResult = await workspace.runCli(['list']);
@@ -181,7 +181,7 @@ describe('CLI List Command', () => {
 
     describe('list output format', () => {
         it('should use the multiline detail view, not a table', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             const output = (await workspace.runCli(['list'])).stdoutAsString();
@@ -217,7 +217,7 @@ describe('CLI List Command', () => {
 
         it('should show config changed warning for transient overrides', async () => {
             // Start 'echo' as transient with different shell
-            await workspace.runCli(['start', 'echo', '--shell', WEB_SHELL]);
+            await workspace.runCli(['restart', 'echo', '--shell', WEB_SHELL]);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Test server started']);
 
             const [status] = entryFor(
@@ -262,7 +262,7 @@ describe('CLI List Command', () => {
         });
 
         it('should not show killed process as RUNNING', async () => {
-            await workspace.runCli(['start', 'echo']);
+            await workspace.runCli(['restart', 'echo']);
             await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
             // Verify it's running

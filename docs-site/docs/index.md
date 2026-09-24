@@ -52,9 +52,9 @@ candle start server --shell "python -m http.server 8080"
 
 | Command | Description |
 |---------|-------------|
-| [`start`](commands/start) | Start service(s) in the background |
+| [`start`](commands/start) | Start service(s) in the background, if not already running |
 | [`run`](commands/run) | Alias for `start` |
-| [`restart`](commands/restart) | Restart running service(s) |
+| [`restart`](commands/restart) | Kill and relaunch service(s) |
 | [`kill`](commands/kill) | Stop running service(s) |
 | [`list`](commands/list) | Show details for this project's services |
 | [`ps`](commands/ps) | Compact status table for this project's services |

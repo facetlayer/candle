@@ -17,14 +17,17 @@ The `start` command launches one or more services in the background.
 
 The flow of running `start`:
 
-1. If the service is already running, restart it.
-2. Launch and wait for the service to successfully start.
+1. If the service is already running, leave it alone and say so.
+2. Otherwise, launch it and wait for it to successfully start.
 3. Wait for a 'grace period' (500ms) to make sure the service stays running.
 
+Because a running service is left alone, `start` is safe to repeat: run it whenever you
+want to make sure a service is up. To kill and relaunch a service, use
+[restart](restart).
+
 Starts of the same service are serialized. If two `start` commands for one service run at
-the same time, for example from parallel agents or scripts, the second waits for the first
-to finish and then restarts it, so you always end up with one instance. Two racing
-`check-start` commands launch the service once.
+the same time, for example from parallel agents or scripts, the service is launched once
+and the other command reports it as already running.
 
 What happens next depends on how `start` was invoked:
 
@@ -41,7 +44,7 @@ is not a terminal or when run by a coding agent (such as Claude Code). Use
 
 ## Arguments
 
-- `name` - Name of the service(s) to start. If omitted, starts all services defined in the configuration file.
+- `name` - Name of the service(s) to start. If omitted, starts every service defined in the configuration file that isn't already running.
 
 ## Options
 
@@ -80,6 +83,17 @@ $ candle start api
 candle start api web worker
 ```
 
+### Start a service that is already running
+
+```
+$ candle start api
+[Service 'api' is already running (pid 12345, up 3m 5s); use 'candle restart api' to restart it]
+```
+
+If `.candle.json` has changed since the service launched, the message says the
+service is running an outdated command and that `candle restart api` applies the
+change.
+
 ### Start a service in the background without watching logs
 
 ```bash
@@ -112,6 +126,14 @@ candle start server --shell "python -m http.server 8080"
 candle start server --shell "npm run dev" --root ./packages/api
 ```
 
+If a service with that name is already running with the same command, `start`
+leaves it alone. If it's running a different command, `start` fails and points
+at [restart](restart), which replaces it:
+
+```bash
+candle restart server --shell "python -m http.server 9090"
+```
+
 ## When a start fails
 
 If the service can't be launched, `start` exits with code 1 and says why. A
@@ -131,8 +153,17 @@ sh: nosuch-binary: command not found
 Process failed to start: exited with code 127
 ```
 
+When starting several services, a failure doesn't stop the others: every
+service is attempted, and `start` then exits with code 1 and names the ones that
+failed:
+
+```
+Error: 1 of 3 services failed to start: api
+```
+
 ## See Also
 
 - [run](run) - Alias for `start`
+- [restart](restart) - Kill and relaunch a service
 - [logs](logs) - View logs from started services
 - [watch](watch) - Watch live output from running services

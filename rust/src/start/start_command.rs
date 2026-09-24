@@ -1,7 +1,8 @@
-//! The `start` / `check-start` command handler.
+//! The `start` command handler.
 //!
 //! Resolves which services to start (all configured ones when none are named),
 //! enforces the transient `--shell` rules, and starts each service sequentially.
+//! Services that are already running are left alone.
 
 use std::path::Path;
 
@@ -9,7 +10,8 @@ use rusqlite::Connection;
 
 use crate::config::{get_service_config_by_name, resolve_command_names_or_all};
 use crate::errors::CandleError;
-use crate::start::start_one_service::{start_one_service, RunOptions};
+use crate::output;
+use crate::start::start_one_service::{start_one_service, IfRunning, RunOptions};
 
 /// Options for [`handle_start_command`].
 #[derive(Debug, Clone)]
@@ -19,7 +21,38 @@ pub struct StartCommandOptions {
     pub shell: Option<String>,
     pub root: Option<String>,
     pub enable_stdin: bool,
-    pub check_start: bool,
+}
+
+/// Start each named service in order, continuing past failures so one broken
+/// service doesn't keep the rest from starting. With a single name its error is
+/// returned as-is; with several, each failure is printed as it happens and a
+/// summary error naming the failed services is returned at the end.
+pub fn start_each(
+    conn: &Connection,
+    names: &[String],
+    mut run_options: impl FnMut(&str) -> RunOptions,
+) -> Result<(), CandleError> {
+    if let [name] = names {
+        start_one_service(conn, run_options(name))?;
+        return Ok(());
+    }
+
+    let mut failed: Vec<&str> = Vec::new();
+    for name in names {
+        if let Err(e) = start_one_service(conn, run_options(name)) {
+            output::err(&format!("Error: {e}"));
+            failed.push(name);
+        }
+    }
+    if failed.is_empty() {
+        return Ok(());
+    }
+    Err(CandleError::Generic(format!(
+        "{} of {} services failed to start: {}",
+        failed.len(),
+        names.len(),
+        failed.join(", ")
+    )))
 }
 
 /// Start one or more services and return the started service names once each
@@ -65,7 +98,7 @@ pub fn handle_start_command(
                 shell: Some(shell.clone()),
                 root: opts.root.clone(),
                 enable_stdin: opts.enable_stdin,
-                check_start: opts.check_start,
+                if_running: IfRunning::Skip,
             },
         )?;
         return Ok(command_names);
@@ -73,19 +106,14 @@ pub fn handle_start_command(
 
     // Configured: start each resolved name sequentially. Transient flags are not
     // forwarded in this branch.
-    for name in &command_names {
-        start_one_service(
-            conn,
-            RunOptions {
-                command_name: name.clone(),
-                project_dir: opts.project_dir.clone(),
-                shell: None,
-                root: None,
-                enable_stdin: false,
-                check_start: opts.check_start,
-            },
-        )?;
-    }
+    start_each(conn, &command_names, |name| RunOptions {
+        command_name: name.to_string(),
+        project_dir: opts.project_dir.clone(),
+        shell: None,
+        root: None,
+        enable_stdin: false,
+        if_running: IfRunning::Skip,
+    })?;
 
     Ok(command_names)
 }

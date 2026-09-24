@@ -57,7 +57,8 @@ Fields for each service:
    against the project root and can't escape it.
 
 Remove a service with `candle remove-service <name>`. Editing the file by hand is
-fine too; changes take effect the next time a service is started or restarted.
+fine too; changes take effect the next time a service is launched. A service that is
+already running keeps its old command until you run `candle restart <name>`.
 
 ## 3. Start and check
 
@@ -71,8 +72,9 @@ What `candle start` does after launching depends on who runs it:
 Services only stop when you run `candle kill`.
 
 ```bash
-candle start --bg                                    # start every service, don't watch
+candle start --bg                                    # start every service that isn't running, don't watch
 candle wait-for-log api --message "listening on"     # block until api is ready
+candle restart api                                   # kill and relaunch it, picking up config changes
 candle ls                                            # status, command and directory of each
 candle logs api                                      # recent output
 candle list-ports                                    # which ports each service is listening on
@@ -83,12 +85,12 @@ candle kill                                          # stop every service (or: c
 of the service never counts as ready. It exits with an error if the message doesn't
 show up before the timeout (`--timeout <seconds>`).
 
-Three ways to launch, which differ when the service is already running:
+When the service is already running:
 
- - `candle start api`: replaces it (kills the running instance, then starts a new one).
- - `candle check-start api`: leaves it alone and only starts api if it's not running.
-   This is usually the right call in setup scripts and agent routines.
- - `candle restart api`: kills it and starts it again with the current `.candle.json`.
+ - `candle start api` leaves it alone and says so. This makes it safe to call from
+   setup scripts and agent routines.
+ - `candle restart api` kills it and starts it again with the current `.candle.json`.
+   `candle restart` with no names does this for every service, starting any that are stopped.
 
 ## How services run
 

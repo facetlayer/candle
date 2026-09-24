@@ -156,32 +156,41 @@ Parsing (`run_command_for_pids`): run via `std::process::Command` with stdin/std
 ## 6. DB lifecycle & reaping interaction (context, not in kill path)
 - Normal `kill` only sets `killed_at`. Final deletion is performed by either the per-service monitor (`candle --monitor`) on child exit, or by `cleanup_stale_processes()` (`rust/src/db/cleanup.rs`), which (a) deletes running rows whose `pid` and `log_collector_pid` are both dead, and (b) **deletes every row where `killed_at is not null`**. This two-phase (mark then reap) behavior is what makes `candle list` stop showing `RUNNING` immediately after kill (test `kill.test.ts:74` asserts `not.toContain('RUNNING')`).
 - This subsystem never kills `log_collector_pid`. Only the service tree rooted at `pid`.
-- `start` reuses this path: `start_one_service` calls `handle_kill_command(conn, project_dir, [name], quiet_failure = true, quiet = false)` to replace a running instance, then waits up to 2s for the old shell and monitor pids to exit (see [start-flow.md](start-flow.md)).
+- `start_one_service` reuses this path: it calls `handle_kill_command(conn, project_dir, [name], quiet_failure = true, quiet = false)` before launching. Under `IfRunning::Replace` (restart) that replaces the running instance; plain `start` (`IfRunning::Skip`) returns earlier when the service is running, so it never kills a live instance. It does not wait for the old monitor to finish writing; those late rows carry the old run id (see [start-flow.md](start-flow.md) §4.3).
 
 ## 7. `handle_restart` (`rust/src/commands/restart.rs`)
 
-Signature: `handle_restart(conn, project_dir, command_names) -> Result<Vec<String>, CandleError>`, returning the resolved list of restarted names. `cmd_restart` resolves the project with `configured_project_dir_or_exit`, calls `assert_valid_command_names` first, and after the handler either watches the new launches (`watch_started_services`, interactive mode) or prints the `Run 'candle logs ...' to see logs.` hint, then exits 0.
+Signature: `handle_restart(conn, project_dir, command_names, shell: Option<String>, root: Option<String>) -> Result<Vec<String>, CandleError>`, returning the resolved list of restarted names. `cmd_restart` resolves the project with `configured_project_dir_or_exit`, calls `assert_valid_command_names` first (skipped when `--shell` is given, since that names a transient that needn't be in the config), and after the handler either watches the new launches (`watch_started_services`, interactive mode) or prints the `Run 'candle logs ...' to see logs.` hint, then exits 0.
+
+`restart` is the command that relaunches: `start` leaves a running service alone (see [start-flow.md](start-flow.md) §4.1). A named service that isn't running is simply started.
 
 Flow:
-1. **If `command_names` empty**: load `find_running_processes_by_project_dir(project_dir)`. If none → `CandleError::UsageError("No running processes found in this project to restart")` (propagates; CLI prints to stderr, exit 1). Else `command_names` = the running rows' names, deduped in first-seen order.
-2. Wrapped in a closure so any failure can be reported uniformly (an error is returned as `Generic("Failed to restart: <message>")`, which the CLI prints to **stderr** before exiting 1):
+1. **Resolve names.** If `command_names` is empty, `all_project_services`: every service in `.candle.json` in file order, then any running transient (from `find_running_processes_by_project_dir`) not already listed. A missing/unreadable config contributes no names. Otherwise the given names.
+2. **Usage checks** (before any kill):
+   - No names → `UsageError("No services to restart: none are configured in .candle.json and none are running")`.
+   - `shell` set with other than exactly one name → `UsageError("Exactly one service name is required when using --shell")`.
+   - `root` without `shell` → `UsageError("--root only applies to transient services started with --shell.")`.
+3. Wrapped in a closure so any failure can be reported uniformly (an error is returned as `Generic("Failed to restart: <message>")`, which the CLI prints to **stderr** before exiting 1):
    a. **Snapshot phase** (before killing): for each name store the first row from `find_processes_by_command_name_and_project_dir(name, dir)`, if any. This captures `shell`/`root` before the kill marks/deletes rows.
-   b. `handle_kill_command(conn, project_dir, names, false, false)` — kills (no quiet flags, so it prints `[Killed ...]`).
-   c. **Restart phase**: for each name, decide command source:
+   b. `handle_kill_command(conn, project_dir, names, quiet_failure = true, quiet = false)` — prints `[Killed ...]` for running services, but stays silent for ones that aren't running (they're simply started).
+   c. **Restart phase**: `start_each(conn, names, ...)` (start-flow.md §3.1) with `IfRunning::Replace`, deciding each name's command source:
+      - `shell` given (`--shell`) → use `shell`/`root` as given (replaces a transient's command; also shadows a configured service, like `start --shell`).
       - `is_service_defined_in_config(project_dir, name)` = true (name found in `.candle.json` via `find_config_file` + `find_service_by_name`) → pass `shell=None, root=None` so `start_one_service` **reloads from config** (picks up edited `shell`/`root`).
-      - Otherwise (transient process not in config) → use captured `shell`/`root` from the snapshot map.
-      - Call `start_one_service(conn, RunOptions { command_name, project_dir, shell, root, enable_stdin: false, check_start: false })`.
+      - Otherwise (transient process not in config) → use captured `shell`/`root` from the snapshot.
+      - `enable_stdin: false` in every case.
 
-**Subtle:** restart = (mark-kill all) then (start each), sequentially. The snapshot MUST be taken before kill because kill may delete the row (stale/not-found paths), losing `shell`/`root`. `is_service_defined_in_config` swallows all errors → treats "no config" as "not defined" → falls back to stored command.
+      With several names, one failed start doesn't stop the rest; the resulting error is `Failed to restart: <N> of <M> services failed to start: <names>`, after each individual failure was printed to stderr.
+
+**Subtle:** restart = (mark-kill all) then (start each), sequentially. The snapshot MUST be taken before kill because kill may delete the row (stale/not-found paths), losing `shell`/`root`. `is_service_defined_in_config` swallows all errors → treats "no config" as "not defined" → falls back to stored command. Because `start_each` continues past failures, a broken service in a bare `restart` doesn't leave the services after it killed and not restarted.
 
 ## 8. CLI wiring (`rust/src/main.rs`)
-- Commands: `restart [name...]`, `kill [name...]` (alias `stop`), `kill-all`. `kill` and `restart` accept `--project-dir`; `restart` also takes `--watch` / `--bg` / `--exit-after-ms`.
+- Commands: `restart [name...]`, `kill [name...]` (alias `stop`), `kill-all`. `kill` and `restart` accept `--project-dir`; `restart` also takes `--watch` / `--bg` / `--exit-after-ms` and `--shell` / `--root` (transient replacement, §7).
 - Dispatch (after `open_db()` + `maybe_run_cleanup`):
   - `cmd_kill`: `project_dir_or_exit(scope)`; `assert_valid_command_names` unless `--project-dir` was explicit; `handle_kill_command(conn, project_dir, names, false, false)`. A DB error prints `candle: database error: <e>` and exits 1.
   - `cmd_kill_all`: `handle_kill_all(conn, false)` (no args).
   - `cmd_restart`: see §7.
-- `command_names` is the variadic positional list (`[name...]`). Empty list means "all".
-- Note: `quiet` / `quiet_failure` are plain `bool` parameters, **not** CLI flags; the CLI passes `false` for both (so kill output is visible). `start_one_service` passes `quiet_failure = true`.
+- `command_names` is the variadic positional list (`[name...]`). Empty list means "all" (for `restart`: every configured service plus running transients, §7).
+- Note: `quiet` / `quiet_failure` are plain `bool` parameters, **not** CLI flags; `cmd_kill` passes `false` for both (so kill output is visible). `start_one_service` and `handle_restart` pass `quiet_failure = true`.
 
 ## 9. Exact user-facing strings (test-load-bearing)
 - `[Killed '<name>' process with PID: <pid>]`  (stdout; tests match substring `Killed`)
@@ -191,7 +200,7 @@ Flow:
 - `No running processes found for service '<name>' in project '<projectDir>'`
 - `No running processes found in project '<projectDir>'`
 - `No running processes found` (kill-all)
-- `No running processes found in this project to restart` (UsageError, restart)
+- `No services to restart: none are configured in .candle.json and none are running` (UsageError, restart)
 - `Failed to restart: <message>` (stderr, exit 1)
 - `Warning: Could not kill process <pid>: <msg>` (stderr)
 - assert_valid_command_names failure: stderr `No service '<name>' configured for directory: <dir>`; non-zero exit.

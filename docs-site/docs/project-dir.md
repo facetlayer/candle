@@ -16,7 +16,7 @@ The path may be absolute or relative to your current directory.
 
 `--project-dir` is accepted by the commands that act on a single project:
 
-[start](commands/start) · [run](commands/run) · [check-start](commands/check-start) · [restart](commands/restart) · [kill](commands/kill) · [list](commands/list) · [ps](commands/ps) · [logs](commands/logs) · [watch](commands/watch) · [wait-for-log](commands/wait-for-log) · [clear-logs](commands/clear-logs) · [list-ports](commands/list-ports) · [open-browser](commands/open-browser)
+[start](commands/start) · [run](commands/run) · [restart](commands/restart) · [kill](commands/kill) · [list](commands/list) · [ps](commands/ps) · [logs](commands/logs) · [watch](commands/watch) · [wait-for-log](commands/wait-for-log) · [clear-logs](commands/clear-logs) · [list-ports](commands/list-ports) · [open-browser](commands/open-browser)
 
 It is not accepted by the system-wide commands — [list-all](commands/list-all), [list-ports-all](commands/list-ports-all), [kill-all](commands/kill-all), and [find-orphans](commands/find-orphans) — which already cover every project.
 

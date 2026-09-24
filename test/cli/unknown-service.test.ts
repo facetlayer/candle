@@ -13,7 +13,6 @@ const COMMANDS: string[][] = [
     ['restart', 'nope'],
     ['start', 'nope'],
     ['run', 'nope'],
-    ['check-start', 'nope'],
     ['logs', 'nope'],
     ['wait-for-log', 'nope', '--message', 'x', '--timeout', '1'],
     ['list-ports', 'nope'],

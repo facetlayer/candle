@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 pub fn canonical_command(token: &str) -> Option<&'static str> {
     let canonical = match token {
         "start" | "run" => "start",
-        "check-start" => "check-start",
         "restart" => "restart",
         "kill" | "stop" => "kill",
         "kill-all" => "kill-all",
@@ -51,14 +50,10 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
             ("exit-after-ms", true),
             ("project-dir", true),
         ],
-        "check-start" => &[
-            ("shell", true),
-            ("root", true),
-            ("enable-stdin", false),
-            ("project-dir", true),
-        ],
         "add-service" => &[("shell", true), ("root", true), ("enable-stdin", false)],
         "restart" => &[
+            ("shell", true),
+            ("root", true),
             ("bg", false),
             ("watch", false),
             ("exit-after-ms", true),

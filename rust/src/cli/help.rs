@@ -29,9 +29,8 @@ Usage: candle <command> [options]
 Process Management:
   list, ls [names...]       Show details for the services in this project
   ps, status [names...]     Compact status table for this project directory
-  start, run [names...]     Start process(es); watches logs when run interactively
-  check-start [names...]    Start process(es) only if not already running
-  restart [names...]        Restart running process(es)
+  start, run [names...]     Start process(es) that aren't already running
+  restart [names...]        Restart process(es), starting any that are stopped
   kill, stop [names...]     Kill running process(es)
 
 Port Detection:
@@ -80,13 +79,10 @@ Run 'candle <command> --help' for more information on a command."
 pub fn command_help(command: &str) -> String {
     match command {
         "start" | "run" => {
-            "candle start [name...]   Start process(es)\n\nWhen run interactively, start watches the new process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
-        }
-        "check-start" => {
-            "candle check-start [name...]   Start process(es) only if not already running\n\nOptions:\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
+            "candle start [name...]   Start process(es)\n\nWith no name, starts every service in .candle.json. A service that is\nalready running is left alone; use 'candle restart' to restart it.\n\nWhen run interactively, start watches the process's logs after launching;\npress Ctrl+C to stop watching (the process keeps running in the background).\nWhen run non-interactively (agents, scripts, pipes), start exits as soon as\nthe launch is confirmed.\n\nOptions:\n  --watch            Force interactive mode: watch logs after starting\n  --bg               Force non-interactive mode: exit once started\n  --shell <cmd>      Shell command for a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "restart" => {
-            "candle restart [name...]   Restart running process(es)\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
+            "candle restart [name...]   Restart process(es)\n\nKills each service and starts it again; a service that isn't running is\nsimply started. With no name, restarts every service in .candle.json (plus\nany running transient processes). Configured services pick up edits to\n.candle.json.\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted\n  --shell <cmd>      Replace the command of a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
         "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory\n\nOptions:\n  --project-dir <dir>  Kill process(es) in this project instead\n\nUnlike other commands, kill accepts a --project-dir that no longer exists or\nhas no config file, so processes from a deleted project can still be cleaned\nup. Use 'candle find-orphans' to find them.".to_string(),
         "kill-all" => "candle kill-all   Kill all running processes".to_string(),
