@@ -69,4 +69,32 @@ describe('CLI Version Command', () => {
             expect(versionFromCli).toBe(versionFromCargoToml());
         });
     });
+
+    describe('as an option value', () => {
+        it('a --version given as a --message value is searched for, not handled', async () => {
+            const result = await workspace.runCli(
+                ['wait-for-log', 'nope', '--message', '--version', '--timeout', '1'],
+                { ignoreExitCode: true },
+            );
+
+            expect(result.failed()).toBe(true);
+            expect(result.stdoutAsString()).not.toBe(versionFromCargoToml() + '\n');
+        });
+
+        it('a --help given as a --message value does not print help', async () => {
+            const result = await workspace.runCli(
+                ['wait-for-log', 'nope', '--message', '--help', '--timeout', '1'],
+                { ignoreExitCode: true },
+            );
+
+            expect(result.failed()).toBe(true);
+            expect(result.stdoutAsString()).not.toContain('wait-for-log');
+        });
+
+        it('--version after a command still prints the version', async () => {
+            const result = await workspace.runCli(['list', '--version']);
+
+            expect(result.stdoutAsString().trim()).toBe(versionFromCargoToml());
+        });
+    });
 });

@@ -64,6 +64,14 @@ Start multiple services:
 candle start api web
 ```
 
+In a terminal, `start` launches the services and then shows their output. Press Ctrl-C to
+stop watching; the services keep running until you `candle kill` them. From a script or a
+coding agent, `start` returns right after launching; add `--bg` to get that behavior in a
+terminal too.
+
+If a service is already running, `start` replaces it. Use `candle check-start` to start it
+only when it isn't running already.
+
 ## Viewing Logs
 
 View recent logs from a service:

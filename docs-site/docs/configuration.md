@@ -95,7 +95,7 @@ Maximum age of log entries in seconds. Logs older than this are deleted during c
 }
 ```
 
-Cleanup runs at most once every 10 minutes, as part of a normal Candle command. Evicted logs are gone for good; `candle logs` doesn't flag them. It prints `-- showing the last N lines; use --count to see more --` only when `--count` cut off lines from the latest run.
+Cleanup runs at most once every 10 minutes, triggered by normal Candle commands and by the monitor of any running service. These limits are cleanup targets, not hard caps: between cleanups a service keeps every line it prints, so a very chatty service can go well past `maxLogsPerService` (and use correspondingly more disk) until the next cleanup. Evicted logs are gone for good; `candle logs` doesn't flag them. It prints `-- showing the last N lines; use --count to see more --` only when `--count` cut off lines from the latest run.
 
 ## Log monitoring
 

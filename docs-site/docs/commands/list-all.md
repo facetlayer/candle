@@ -17,7 +17,9 @@ This is different from `candle list`, which only shows services in the current p
 Output is a table, in the same style as [ps](ps) but with the process's command and directory
 included — those are the only way to tell processes from different projects apart. The DIRECTORY
 column (and `workingDir` in JSON) is the directory the process runs in, the same one `candle list`
-shows: the project directory, or the service's root inside it.
+shows: the project directory, or the service's root inside it. In JSON, `projectDir` is the
+project the service belongs to; pass it as `--project-dir` to act on that service from anywhere,
+for example `candle kill api --project-dir <projectDir>`.
 
 ## Options
 

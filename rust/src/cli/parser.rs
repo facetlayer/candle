@@ -102,15 +102,58 @@ impl CommandArgs {
     }
 }
 
+/// Which meta flags (`--help`/`-h`, `--version`/`-v`) appear in a command's arguments.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct MetaFlags {
+    pub help: bool,
+    pub version: bool,
+}
+
+/// Find `--help` / `--version` among the tokens following a command, the way
+/// [`parse_command_args`] would read them: a token consumed as the value of a
+/// value-taking option (`--message --version`) is a value, not a flag, and nothing
+/// after a `--` terminator counts. Unknown flags are skipped rather than rejected,
+/// so `candle start --bogus --help` still shows help.
+pub fn scan_meta_flags(command: &str, tokens: &[String]) -> MetaFlags {
+    let spec = option_spec(command);
+    let mut out = MetaFlags::default();
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i].as_str();
+        match tok {
+            "--" => break,
+            "--help" | "-h" => out.help = true,
+            "--version" | "-v" => out.version = true,
+            _ => {
+                if let Some(name) = tok.strip_prefix("--") {
+                    let takes_value = !name.contains('=')
+                        && spec.iter().any(|(flag, takes)| *flag == name && *takes);
+                    if takes_value {
+                        i += 1;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 /// Parse the tokens following a command, enforcing the command's option spec. Returns the
-/// `Unknown argument: <flag>` error string on an unrecognized flag.
+/// `Unknown argument: <flag>` error string on an unrecognized flag, and rejects an inline value
+/// on a switch (`--force=false`) rather than silently treating it as set. Everything after a
+/// `--` terminator is positional.
 pub fn parse_command_args(command: &str, tokens: &[String]) -> Result<CommandArgs, String> {
     let spec = option_spec(command);
     let mut out = CommandArgs::default();
     let mut i = 0;
     while i < tokens.len() {
         let tok = &tokens[i];
-        if tok == "--help" || tok == "-h" {
+        if tok == "--" {
+            out.positionals.extend(tokens[i + 1..].iter().cloned());
+            break;
+        }
+        if tok == "--help" || tok == "-h" || tok == "--version" || tok == "-v" {
             // Handled by the caller before reaching here, but tolerate it.
             i += 1;
             continue;
@@ -132,6 +175,11 @@ pub fn parse_command_args(command: &str, tokens: &[String]) -> Result<CommandArg
                             String::new()
                         };
                         out.values.insert((*flag).to_string(), value);
+                    } else if inline_value.is_some() {
+                        return Err(format!(
+                            "Option --{flag} does not take a value (got {tok}). \
+                             Pass --{flag} to enable it, or leave it out."
+                        ));
                     } else {
                         out.bools.insert((*flag).to_string());
                     }
@@ -202,5 +250,42 @@ mod tests {
             .unwrap();
         assert!(args.has("enable-stdin"));
         assert_eq!(args.positionals, vec!["svc"]);
+    }
+
+    fn toks(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn boolean_flag_rejects_inline_value() {
+        for tok in ["--force=false", "--force=true", "--force="] {
+            let err = parse_command_args("erase-database", &toks(&[tok])).unwrap_err();
+            assert!(err.contains("does not take a value"), "{tok}: {err}");
+        }
+        let err = parse_command_args("list", &toks(&["--json=false"])).unwrap_err();
+        assert!(err.starts_with("Option --json does not take a value"));
+    }
+
+    #[test]
+    fn double_dash_ends_options() {
+        let args = parse_command_args("start", &toks(&["--bg", "--", "-svc", "--json"])).unwrap();
+        assert!(args.has("bg"));
+        assert_eq!(args.positionals, vec!["-svc", "--json"]);
+    }
+
+    #[test]
+    fn meta_flags_skip_option_values() {
+        let meta = scan_meta_flags("wait-for-log", &toks(&["api", "--message", "--version"]));
+        assert_eq!(meta, MetaFlags::default());
+        let meta = scan_meta_flags("wait-for-log", &toks(&["api", "--message", "--help"]));
+        assert_eq!(meta, MetaFlags::default());
+        let meta = scan_meta_flags("wait-for-log", &toks(&["api", "--message=x", "--help"]));
+        assert!(meta.help);
+        let meta = scan_meta_flags("start", &toks(&["api", "--bogus", "-h"]));
+        assert!(meta.help);
+        let meta = scan_meta_flags("list", &toks(&["--version"]));
+        assert!(meta.version);
+        let meta = scan_meta_flags("start", &toks(&["--", "--help"]));
+        assert_eq!(meta, MetaFlags::default());
     }
 }

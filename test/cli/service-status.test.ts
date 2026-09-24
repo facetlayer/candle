@@ -11,6 +11,7 @@ interface ListRow {
     serviceName: string;
     command: string;
     workingDir: string;
+    projectDir: string;
     uptime: string;
     pid: number | null;
     status: string;
@@ -163,7 +164,7 @@ describe('service status and directories', () => {
             expect(idle.pid).toBeNull();
             expect(idle.configChanged).toBe(false);
             expect(Object.keys(idle).sort()).toEqual(
-                ['command', 'configChanged', 'exitCode', 'pid', 'serviceName', 'status', 'uptime', 'workingDir'],
+                ['command', 'configChanged', 'exitCode', 'pid', 'projectDir', 'serviceName', 'status', 'uptime', 'workingDir'],
             );
         });
 
@@ -176,7 +177,7 @@ describe('service status and directories', () => {
                 expect(idle.configChanged).toBe(false);
                 expect(idle.exitCode).toBeNull();
                 expect(Object.keys(idle).sort()).toEqual(
-                    ['command', 'configChanged', 'exitCode', 'pid', 'serviceName', 'status', 'uptime', 'workingDir'],
+                    ['command', 'configChanged', 'exitCode', 'pid', 'projectDir', 'serviceName', 'status', 'uptime', 'workingDir'],
                 );
             } finally {
                 await workspace.runCli(['kill', 'idle']);
@@ -197,7 +198,9 @@ describe('service status and directories', () => {
         });
 
         it('list shows a configured root service in its root directory', async () => {
-            expect(jsonRowFor(await listJson(['list']), 'rooted').workingDir).toBe(subDir);
+            const row = jsonRowFor(await listJson(['list']), 'rooted');
+            expect(row.workingDir).toBe(subDir);
+            expect(row.projectDir).toBe(workspace.dbDir);
         });
 
         it('list shows a transient service started with --root in that directory', async () => {
@@ -210,6 +213,9 @@ describe('service status and directories', () => {
             const rows = (await listJson(['list-all'])).filter(r => r.workingDir.startsWith(workspace.dbDir));
             expect(jsonRowFor(rows, 'rooted').workingDir).toBe(subDir);
             expect(jsonRowFor(rows, 'tr').workingDir).toBe(subDir);
+            // projectDir is the project, not the root, so it works as --project-dir.
+            expect(jsonRowFor(rows, 'rooted').projectDir).toBe(workspace.dbDir);
+            expect(jsonRowFor(rows, 'tr').projectDir).toBe(workspace.dbDir);
 
             const table = (await workspace.runCli(['list-all'])).stdoutAsString();
             const rootedRow = table.split('\n').find(line => line.startsWith('rooted ') && line.includes(workspace.dbDir));

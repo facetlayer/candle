@@ -146,7 +146,10 @@ say "==> Downloading $ARCHIVE"
 curl -fsSL "$BASE_URL/$ARCHIVE" -o "$TMP_DIR/$ARCHIVE" \
   || err "download failed. Is there a release named '$TAG' with an asset for $TARGET?"
 
-# Verify the checksum when a SHA256SUMS asset and a local sha256 tool are both available.
+# Verify the archive against the release's SHA256SUMS. Every release publishes
+# that file, so when it's present the archive must match exactly one entry in it.
+# When the file or a sha256 tool is unavailable, install anyway but say plainly
+# that nothing was verified.
 if curl -fsSL "$BASE_URL/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" 2>/dev/null; then
   if command -v shasum >/dev/null 2>&1; then
     sha_cmd="shasum -a 256"
@@ -156,13 +159,25 @@ if curl -fsSL "$BASE_URL/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" 2>/dev/null; then
     sha_cmd=""
   fi
   if [ -n "$sha_cmd" ]; then
-    expected="$(grep " $ARCHIVE\$" "$TMP_DIR/SHA256SUMS" | awk '{print $1}')"
+    # Entries look like "<hash>  <file>" (or "<hash> *<file>" in binary mode).
+    matches="$(awk -v f="$ARCHIVE" '$2 == f || $2 == "*" f { print $1 }' "$TMP_DIR/SHA256SUMS")"
+    count="$(printf '%s' "$matches" | grep -c . || true)"
+    [ "$count" -eq 1 ] \
+      || err "SHA256SUMS for $TAG has $count entries for $ARCHIVE (expected exactly 1); refusing to install an unverified binary"
+    expected="$matches"
+    printf '%s' "$expected" | grep -Eq '^[0-9a-fA-F]{64}$' \
+      || err "SHA256SUMS entry for $ARCHIVE is not a valid SHA-256 hash: $expected"
     actual="$($sha_cmd "$TMP_DIR/$ARCHIVE" | awk '{print $1}')"
-    if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
-      err "checksum mismatch for $ARCHIVE (expected $expected, got $actual)"
-    fi
+    expected="$(printf '%s' "$expected" | tr 'A-F' 'a-f')"
+    actual="$(printf '%s' "$actual" | tr 'A-F' 'a-f')"
+    [ "$expected" = "$actual" ] \
+      || err "checksum mismatch for $ARCHIVE (expected $expected, got $actual)"
     say "==> Checksum verified"
+  else
+    say "warning: no shasum or sha256sum found; the download was NOT checksum-verified" >&2
   fi
+else
+  say "warning: could not download SHA256SUMS for $TAG; the download was NOT checksum-verified" >&2
 fi
 
 tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR"

@@ -13,7 +13,10 @@ curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh |
 ```
 
 This downloads the latest [GitHub Release](https://github.com/facetlayer/candle/releases)
-for your platform, verifies its SHA-256 checksum (when `shasum` or `sha256sum` is available), and installs into `~/.local/bin`.
+for your platform, checks it against the release's `SHA256SUMS`, and installs into `~/.local/bin`.
+The install fails if the checksum doesn't match or `SHA256SUMS` has no entry for the archive. If
+`SHA256SUMS` can't be downloaded, or neither `shasum` nor `sha256sum` is installed, the installer
+prints a warning that the download was not verified and continues.
 No Rust toolchain required.
 
 If `~/.local/bin` is not on your `PATH`, the installer tells you what to add to your

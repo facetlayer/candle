@@ -1,3 +1,11 @@
+# Unreleased
+ - Installer: fail when `SHA256SUMS` has no (or more than one) entry for the archive, instead of printing "Checksum verified" without checking. Warn visibly when the checksum can't be verified at all.
+ - Switches like `--json`, `--bg` and `--force` now reject an inline value (`--force=false` used to enable force).
+ - `--version` / `--help` given as an option value (e.g. `wait-for-log api --message --version`) is treated as the value, not handled as a flag.
+ - `--` ends option parsing; everything after it is positional.
+ - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
+ - Docs: `project-setup` explains terminal vs. background `start`, start/check-start/restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
+
 
 # 0.15.0 (2026-09-23)
  - Lots of bug fixes and improvements.

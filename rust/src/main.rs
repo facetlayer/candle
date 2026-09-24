@@ -12,7 +12,7 @@ use std::process::exit;
 
 use candle::cli::help;
 use candle::cli::monitor_mode::run_monitor_mode;
-use candle::cli::parser::{canonical_command, parse_command_args, CommandArgs};
+use candle::cli::parser::{canonical_command, parse_command_args, scan_meta_flags, CommandArgs};
 use candle::commands::clear_logs::handle_clear_logs_command;
 use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list::{
@@ -52,16 +52,11 @@ fn main() {
 
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
-    // --monitor short-circuits everything: this process becomes a service monitor
-    // and never returns to the CLI path.
-    if argv.iter().any(|a| a == "--monitor") {
+    // `candle --monitor` makes this process a service monitor; it never returns to
+    // the CLI path. Only the leading position counts, so a literal `--monitor`
+    // elsewhere (say, a `--message` value) can't hijack a normal command.
+    if argv.first().map(String::as_str) == Some("--monitor") {
         run_monitor_mode(&argv);
-    }
-
-    // --version / -v short-circuits everything.
-    if argv.iter().any(|a| a == "--version" || a == "-v") {
-        println!("{}", help::version());
-        return;
     }
 
     // No arguments at all → grouped help on stdout.
@@ -70,12 +65,28 @@ fn main() {
         return;
     }
 
-    let help_flag = argv.iter().any(|a| a == "--help" || a == "-h");
-    let command_token = argv.iter().find(|a| !a.starts_with('-')).cloned();
+    // The command is the first non-flag token. Flags before it are global; flags
+    // after it are scanned with the command's option spec, so a `--version` or
+    // `--help` given as an option value (`--message --version`) stays a value.
+    let cmd_index = argv.iter().position(|a| !a.starts_with('-'));
+    let (leading, rest) = match cmd_index {
+        Some(i) => (&argv[..i], &argv[i + 1..]),
+        None => (&argv[..], &argv[argv.len()..]),
+    };
+    let command_token = cmd_index.map(|i| argv[i].clone());
+    let known_command = command_token.as_deref().and_then(canonical_command);
+    let meta = scan_meta_flags(known_command.unwrap_or(""), rest);
+    let leading_has = |names: [&str; 2]| leading.iter().any(|a| names.contains(&a.as_str()));
+
+    // --version / -v short-circuits everything else.
+    if meta.version || leading_has(["--version", "-v"]) {
+        println!("{}", help::version());
+        return;
+    }
 
     // --help / -h → grouped help, or command-specific help when a command is named.
-    if help_flag {
-        match command_token.as_deref().and_then(canonical_command) {
+    if meta.help || leading_has(["--help", "-h"]) {
+        match known_command {
             Some(cmd) => println!("{}", help::command_help(cmd)),
             None => println!("{}", help::grouped_help()),
         }
@@ -91,7 +102,7 @@ fn main() {
         }
     };
 
-    let canonical = match canonical_command(&command_token) {
+    let canonical = match known_command {
         Some(c) => c,
         None => {
             fatal(format!(
@@ -99,9 +110,6 @@ fn main() {
             ));
         }
     };
-
-    let cmd_index = argv.iter().position(|a| a == &command_token).unwrap();
-    let rest = &argv[cmd_index + 1..];
 
     if canonical == "help" {
         // `candle help <command>` is the same as `candle <command> --help`.

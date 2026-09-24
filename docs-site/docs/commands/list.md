@@ -118,6 +118,7 @@ service's state:
 | `serviceName` | The service name |
 | `command` | The service's shell command |
 | `workingDir` | The directory the service runs in |
+| `projectDir` | The project directory the service belongs to (where its `.candle.json` is). Pass this as `--project-dir` to act on the service |
 | `uptime` | Uptime, or `"-"` when not running |
 | `pid` | The process ID, or `null` when not running |
 | `status` | `RUNNING`, `not running`, `EXITED (<code>)`, or `FAILED` |

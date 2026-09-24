@@ -32,6 +32,11 @@ pub struct ListProcess {
     pub command: String,
     #[serde(rename = "workingDir")]
     pub working_dir: String,
+    /// The project directory the service belongs to (where its `.candle.json`
+    /// lives). Differs from `working_dir` when the service has a `root`; this is
+    /// the value to pass as `--project-dir` to target the service.
+    #[serde(rename = "projectDir")]
+    pub project_dir: String,
     pub uptime: String,
     /// The service's PID, or `None` (JSON `null`) when it is not running.
     pub pid: Option<i64>,
@@ -131,6 +136,7 @@ fn running_row(
     service_name: &str,
     command: &str,
     working_dir: &str,
+    project_dir: &str,
     start_time: i64,
     pid: i64,
     config_changed: bool,
@@ -139,6 +145,7 @@ fn running_row(
         service_name: service_name.to_string(),
         command: command.to_string(),
         working_dir: working_dir.to_string(),
+        project_dir: project_dir.to_string(),
         uptime: format_uptime(now_millis() - start_time * 1000),
         pid: Some(pid),
         status: STATUS_RUNNING.to_string(),
@@ -240,6 +247,7 @@ pub fn handle_list(
                     &resolve_shell(&entry, None),
                     // The directory the service runs in, same as `list` reports.
                     &resolve_launch_dir(&entry.project_dir, entry.root.as_deref()),
+                    &entry.project_dir,
                     entry.start_time,
                     entry.pid,
                     // No project context for drift detection in list-all.
@@ -275,6 +283,7 @@ pub fn handle_list(
                     &project_dir,
                     entry.root.as_deref().or(service.root.as_deref()),
                 ),
+                &project_dir,
                 entry.start_time,
                 entry.pid,
                 has_config_drift(entry, Some(service)),
@@ -289,6 +298,7 @@ pub fn handle_list(
                     service_name: service.name.clone(),
                     command: service.shell.clone(),
                     working_dir: resolve_launch_dir(&project_dir, service.root.as_deref()),
+                    project_dir: project_dir.clone(),
                     uptime: "-".to_string(),
                     pid: None,
                     status,
@@ -309,6 +319,7 @@ pub fn handle_list(
             &entry.command_name,
             &resolve_shell(entry, config_service),
             &resolve_launch_dir(&project_dir, entry.root.as_deref()),
+            &project_dir,
             entry.start_time,
             entry.pid,
             has_config_drift(entry, config_service),
@@ -511,6 +522,7 @@ mod tests {
                 service_name: "echo".to_string(),
                 command: "echo".to_string(),
                 working_dir: "/proj".to_string(),
+                project_dir: "/proj".to_string(),
                 uptime: "5s".to_string(),
                 pid: Some(42),
                 status: "RUNNING".to_string(),
@@ -547,6 +559,7 @@ mod tests {
                     service_name: "web".to_string(),
                     command: "npm run dev".to_string(),
                     working_dir: "/proj/web".to_string(),
+                    project_dir: "/proj".to_string(),
                     uptime: "3m 5s".to_string(),
                     pid: Some(12345),
                     status: STATUS_RUNNING.to_string(),
@@ -557,6 +570,7 @@ mod tests {
                     service_name: "api".to_string(),
                     command: "npm run api".to_string(),
                     working_dir: "/proj".to_string(),
+                    project_dir: "/proj".to_string(),
                     uptime: "-".to_string(),
                     pid: None,
                     status: STATUS_NOT_RUNNING.to_string(),
@@ -687,6 +701,7 @@ mod tests {
             service_name: "echo".to_string(),
             command: "echo".to_string(),
             working_dir: "/proj".to_string(),
+            project_dir: "/proj".to_string(),
             uptime: "5s".to_string(),
             pid: Some(42),
             status: "RUNNING".to_string(),
@@ -696,7 +711,7 @@ mod tests {
         let json = serde_json::to_string(&running).unwrap();
         assert_eq!(
             json,
-            r#"{"serviceName":"echo","command":"echo","workingDir":"/proj","uptime":"5s","pid":42,"status":"RUNNING","configChanged":false,"exitCode":null}"#
+            r#"{"serviceName":"echo","command":"echo","workingDir":"/proj","projectDir":"/proj","uptime":"5s","pid":42,"status":"RUNNING","configChanged":false,"exitCode":null}"#
         );
 
         // Not-running row: same keys, pid null.
@@ -704,6 +719,7 @@ mod tests {
             service_name: "web".to_string(),
             command: "web".to_string(),
             working_dir: "/proj".to_string(),
+            project_dir: "/proj".to_string(),
             uptime: "-".to_string(),
             pid: None,
             status: "not running".to_string(),
@@ -713,7 +729,7 @@ mod tests {
         let json = serde_json::to_string(&stopped).unwrap();
         assert_eq!(
             json,
-            r#"{"serviceName":"web","command":"web","workingDir":"/proj","uptime":"-","pid":null,"status":"not running","configChanged":false,"exitCode":null}"#
+            r#"{"serviceName":"web","command":"web","workingDir":"/proj","projectDir":"/proj","uptime":"-","pid":null,"status":"not running","configChanged":false,"exitCode":null}"#
         );
 
         // Crashed row: status and exitCode carry the code.
@@ -812,6 +828,7 @@ mod tests {
             service_name: "web".to_string(),
             command: "web".to_string(),
             working_dir: "/proj".to_string(),
+            project_dir: "/proj".to_string(),
             uptime: "-".to_string(),
             pid: None,
             status: STATUS_FAILED.to_string(),

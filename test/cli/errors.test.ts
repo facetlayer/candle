@@ -255,4 +255,38 @@ describe('CLI Error Handling', () => {
         });
     });
 
+
+    describe('values on switches', () => {
+        it('rejects --json=false instead of treating it as --json', async () => {
+            const result = await workspace.runCli(['list', '--json=false'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('Option --json does not take a value');
+            expect(result.stdoutAsString()).toBe('');
+        });
+
+        it('rejects erase-database --force=false and leaves running services alone', async () => {
+            await workspace.runCli(['start', 'echo']);
+            try {
+                const result = await workspace.runCli(['erase-database', '--force=false'], { ignoreExitCode: true });
+
+                expect(result.failed()).toBe(true);
+                expect(result.stderrAsString()).toContain('Option --force does not take a value');
+                const ps = (await workspace.runCli(['ps'])).stdoutAsString();
+                expect(ps).toMatch(/echo\s.*RUNNING/);
+            } finally {
+                await workspace.runCli(['kill', 'echo']);
+            }
+        });
+    });
+
+    describe('-- ends options', () => {
+        it('treats everything after -- as a service name', async () => {
+            const result = await workspace.runCli(['kill', '--', '--json'], { ignoreExitCode: true });
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).not.toContain('Unknown argument');
+            expect(result.stderrAsString()).toContain('--json');
+        });
+    });
 });
