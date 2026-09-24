@@ -12,6 +12,12 @@ candle logs --project-dir ~/work/api web
 
 The path may be absolute or relative to your current directory.
 
+The option can also go before the command, like `git -C`:
+
+```bash
+candle --project-dir ~/work/api ps
+```
+
 ## Supported commands
 
 `--project-dir` is accepted by the commands that act on a single project:

@@ -97,6 +97,41 @@ impl CommandArgs {
     }
 }
 
+/// Options that take a value and may appear before the command
+/// (`candle --project-dir <dir> ps`).
+const LEADING_VALUE_OPTIONS: [&str; 1] = ["project-dir"];
+
+/// Split `argv` into the command's index and the options given before it.
+///
+/// The command is the first token that is neither a flag nor the value of a
+/// leading value-taking option, so the path in `candle --project-dir ~/app ps`
+/// is not mistaken for the command. The leading options are returned without
+/// the `--` terminator; the caller hands them to the command's own parser, so
+/// `candle --json ps` means `candle ps --json` and a flag the command doesn't
+/// take is rejected the same way in either position.
+pub fn split_leading_options(argv: &[String]) -> (Option<usize>, Vec<String>) {
+    let mut leading = Vec::new();
+    let mut i = 0;
+    while i < argv.len() {
+        let tok = argv[i].as_str();
+        if !tok.starts_with('-') {
+            return (Some(i), leading);
+        }
+        if tok != "--" {
+            leading.push(tok.to_string());
+        }
+        let takes_value = tok
+            .strip_prefix("--")
+            .is_some_and(|name| LEADING_VALUE_OPTIONS.contains(&name));
+        if takes_value && i + 1 < argv.len() {
+            i += 1;
+            leading.push(argv[i].clone());
+        }
+        i += 1;
+    }
+    (None, leading)
+}
+
 /// Which meta flags (`--help`/`-h`, `--version`/`-v`) appear in a command's arguments.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct MetaFlags {
@@ -266,6 +301,31 @@ mod tests {
         let args = parse_command_args("start", &toks(&["--bg", "--", "-svc", "--json"])).unwrap();
         assert!(args.has("bg"));
         assert_eq!(args.positionals, vec!["-svc", "--json"]);
+    }
+
+    #[test]
+    fn leading_project_dir_value_is_not_the_command() {
+        let (cmd, leading) = split_leading_options(&toks(&["--project-dir", "app", "ps", "web"]));
+        assert_eq!(cmd, Some(2));
+        assert_eq!(leading, toks(&["--project-dir", "app"]));
+
+        let (cmd, leading) = split_leading_options(&toks(&["--project-dir=app", "ps"]));
+        assert_eq!(cmd, Some(1));
+        assert_eq!(leading, toks(&["--project-dir=app"]));
+    }
+
+    #[test]
+    fn leading_switches_are_kept_and_terminator_dropped() {
+        let (cmd, leading) = split_leading_options(&toks(&["--json", "--", "ps"]));
+        assert_eq!(cmd, Some(2));
+        assert_eq!(leading, toks(&["--json"]));
+    }
+
+    #[test]
+    fn no_command_after_leading_options() {
+        let (cmd, leading) = split_leading_options(&toks(&["--project-dir"]));
+        assert_eq!(cmd, None);
+        assert_eq!(leading, toks(&["--project-dir"]));
     }
 
     #[test]

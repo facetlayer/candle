@@ -12,7 +12,9 @@ use std::process::exit;
 
 use candle::cli::help;
 use candle::cli::monitor_mode::run_monitor_mode;
-use candle::cli::parser::{canonical_command, parse_command_args, scan_meta_flags, CommandArgs};
+use candle::cli::parser::{
+    canonical_command, parse_command_args, scan_meta_flags, split_leading_options, CommandArgs,
+};
 use candle::commands::clear_logs::handle_clear_logs_command;
 use candle::commands::find_orphans::{format_find_orphans, handle_find_orphans};
 use candle::commands::list::{
@@ -65,27 +67,31 @@ fn main() {
         return;
     }
 
-    // The command is the first non-flag token. Flags before it are global; flags
-    // after it are scanned with the command's option spec, so a `--version` or
-    // `--help` given as an option value (`--message --version`) stays a value.
-    let cmd_index = argv.iter().position(|a| !a.starts_with('-'));
-    let (leading, rest) = match cmd_index {
-        Some(i) => (&argv[..i], &argv[i + 1..]),
-        None => (&argv[..], &argv[argv.len()..]),
+    // The command is the first token that isn't an option (or a leading option's
+    // value). Options before it belong to the command, so `candle --project-dir
+    // <dir> ps` is `candle ps --project-dir <dir>`. The combined tokens are
+    // scanned with the command's option spec, so a `--version` or `--help` given
+    // as an option value (`--message --version`) stays a value.
+    let (cmd_index, leading) = split_leading_options(&argv);
+    let rest: Vec<String> = match cmd_index {
+        Some(i) => leading
+            .into_iter()
+            .chain(argv[i + 1..].iter().cloned())
+            .collect(),
+        None => leading,
     };
     let command_token = cmd_index.map(|i| argv[i].clone());
     let known_command = command_token.as_deref().and_then(canonical_command);
-    let meta = scan_meta_flags(known_command.unwrap_or(""), rest);
-    let leading_has = |names: [&str; 2]| leading.iter().any(|a| names.contains(&a.as_str()));
+    let meta = scan_meta_flags(known_command.unwrap_or(""), &rest);
 
     // --version / -v short-circuits everything else.
-    if meta.version || leading_has(["--version", "-v"]) {
+    if meta.version {
         println!("{}", help::version());
         return;
     }
 
     // --help / -h → grouped help, or command-specific help when a command is named.
-    if meta.help || leading_has(["--help", "-h"]) {
+    if meta.help {
         match known_command {
             Some(cmd) => println!("{}", help::command_help(cmd)),
             None => println!("{}", help::grouped_help()),
@@ -133,7 +139,7 @@ fn main() {
         run_mcp();
     }
 
-    let args = match parse_command_args(canonical, rest) {
+    let args = match parse_command_args(canonical, &rest) {
         Ok(a) => a,
         Err(msg) => fatal(msg),
     };

@@ -11,6 +11,7 @@
  - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
  - Docs: `project-setup` explains terminal vs. background `start`, start vs. restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
  - `candle get-doc` no longer prints a `(File source: ...)` line after each doc.
+ - `--project-dir` (and other options) can go before the command: `candle --project-dir ~/app ps`. A leading option the command doesn't take is now an error instead of being silently ignored.
  - Fix: `find-orphans` no longer reports running transient processes (started with `--shell`) as orphaned because they aren't in `.candle.json`.
 
 

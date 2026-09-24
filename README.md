@@ -439,6 +439,8 @@ the project, and the current directory is ignored. The path may be relative.
     candle ps --project-dir ~/work/api
     candle start --project-dir ~/work/api web
 
+The option can also go before the command, like `git -C`: `candle --project-dir ~/work/api ps`.
+
 Accepted by the commands that act on a single project: `start`, `run`, `restart`,
 `kill`, `list`, `ps`, `logs`, `watch`, `wait-for-log`, `clear-logs`, `list-ports`, and
 `open-browser`. The system-wide commands (`list-all`, `list-ports-all`, `kill-all`,
