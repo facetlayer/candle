@@ -2,9 +2,13 @@
 
 Candle is a process manager designed for local development, worktrees, and AI agents.
 
-Other process managers (like `pm2`) are built to run on production backends, but they
-can be overcomplicated for local development. Candle aims to be your favorite process
-manager for running services locally during development.
+Compared to other existing tools out there:
+
+There are production grade tools (like `pm2`, `systemd`, and others) which can be overcomplicated for
+local development. Candle aims to be simpler.
+
+There are also tools like `foreman` which are designed for local development, but they don't run processes
+in the background, so processes can't be inspected by multiple sessions.
 
 ## Features ##
 
@@ -18,6 +22,9 @@ the interface simple.
 
 This design fits naturally with worktrees - each worktree is already a separate directory,
 so Candle will launch separate services for separate worktrees.
+
+Note that when using worktrees, you'll need to come up with unique port assignments.
+(Candle doesn't handle port assignment)
 
 ### One process per instance ###
 
