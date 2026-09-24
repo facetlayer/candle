@@ -20,6 +20,8 @@ A running service is orphaned when any of these is true:
 - **The config file is gone** — the directory is still there, but no longer contains a `.candle.json`.
 - **The service is no longer in the config** — the config file is there, but the service was removed from it.
 
+A [transient service](start#transient-services) (started with `--shell`) was never in the config, so only the first two apply to it.
+
 Only live processes are reported. Entries for processes that have already exited are ordinary stale bookkeeping, which Candle clears on its own.
 
 A config file that exists but cannot be parsed is not treated as orphaning, so a JSON typo never causes a healthy service to be reported.

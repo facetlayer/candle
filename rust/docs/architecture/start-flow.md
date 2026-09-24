@@ -182,13 +182,13 @@ struct MonitorLaunchInfo {
 }
 ```
 
-This JSON shape (camelCase keys: `commandName`, `projectDir`, `shell`, `root`, `enableStdin`, `databasePath`, `runId`) is the wire contract over stdin. `run_id` is the id of the `process_start_initiated` row `start` wrote; the monitor stamps it on every row it saves. It defaults to `None` (launch info from an older candle), in which case the DB trigger assigns the monitor's rows to a run by position.
+This JSON shape (camelCase keys: `commandName`, `projectDir`, `shell`, `root`, `enableStdin`, `databasePath`, `runId`, `transient`) is the wire contract over stdin. `transient` is true when `start` got a `--shell` (a transient process, including a transient's restart); the monitor copies it onto the `processes` row. It defaults to false. `run_id` is the id of the `process_start_initiated` row `start` wrote; the monitor stamps it on every row it saves. It defaults to `None` (launch info from an older candle), in which case the DB trigger assigns the monitor's rows to a run by position.
 
 ## 7. Monitor mode: `candle --monitor` (`rust/src/cli/monitor_mode.rs`, `rust/src/monitor/{launch_info,run}.rs`)
 
 ### 7.1 Reading launch info
 - If no flags beyond `--monitor` are passed (the production path, since the launcher passes none) → read launch info as JSON from stdin.
-- Else parse flags (`--flag value` or `--flag=value`): `--command-name` (required), `--project-dir` (required), `--shell` (required), `--root`, `--enable-stdin` (bool, default false), `--database-path`, `--run-id` (integer; a non-integer prints an error and exits 1). `project-dir` is resolved to an absolute path; `database-path` defaults to `<state_dir>/candle.db`. An unknown flag or missing required flag prints an error and exits 1.
+- Else parse flags (`--flag value` or `--flag=value`): `--command-name` (required), `--project-dir` (required), `--shell` (required), `--root`, `--enable-stdin` (bool, default false), `--transient` (bool, default false), `--database-path`, `--run-id` (integer; a non-integer prints an error and exits 1). `project-dir` is resolved to an absolute path; `database-path` defaults to `<state_dir>/candle.db`. An unknown flag or missing required flag prints an error and exits 1.
 
 Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF** and parses the trimmed text as one JSON object; a read or parse error prints `Error: failed to ... launch info from stdin` and exits 1. Because it waits for EOF, the parent must close stdin.
 

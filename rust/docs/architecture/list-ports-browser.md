@@ -22,7 +22,8 @@ create table processes(
   killed_at integer,                        -- NULL = still running
   shell text,
   root text,
-  run_id integer                            -- the launch's run (see logs.md)
+  run_id integer,                           -- the launch's run (see logs.md)
+  transient integer                         -- 1 = started with --shell
 )
 ```
 `ProcessEntry` (`rust/src/db/process_table.rs`) maps 1:1 to these columns. `start_time` and `created_at`/`killed_at` are **unix seconds** (the code multiplies `start_time * 1000` to get ms). `killed_at` and `root` are nullable.

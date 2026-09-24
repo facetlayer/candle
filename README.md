@@ -392,8 +392,9 @@ Kill all processes (across the entire system) that were launched by Candle.
 ### `candle find-orphans`
 
 List running services whose project no longer accounts for them: the project directory was
-deleted, its config file was removed, or the service was dropped from the config. Scans every
-project on the system.
+deleted, its config file was removed, or the service was dropped from the config. Transient
+processes (started with `--shell`) are never in the config, so only the first two apply to them.
+Scans every project on the system.
 
 Supports `--json`.
 

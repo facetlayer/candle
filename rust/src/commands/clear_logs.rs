@@ -152,6 +152,7 @@ mod tests {
                 shell: None,
                 root: None,
                 run_id: None,
+                transient: false,
             },
         )
         .unwrap();

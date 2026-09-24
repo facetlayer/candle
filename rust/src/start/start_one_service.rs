@@ -240,6 +240,7 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         enable_stdin: service.enable_stdin.unwrap_or(false),
         database_path: candle_db_path(),
         run_id: Some(run_id),
+        transient: opts.shell.is_some(),
     };
     launch_monitor(&info)
         .map_err(|e| CandleError::Generic(format!("Failed to launch monitor process: {e}")))?;

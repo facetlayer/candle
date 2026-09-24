@@ -51,7 +51,8 @@ create table processes(
     killed_at integer,                     -- nullable; NULL = still "running"
     shell text,                            -- nullable
     root text,                             -- nullable
-    run_id integer                         -- nullable
+    run_id integer,                        -- nullable
+    transient integer                      -- nullable boolean
 )
 ```
 | column | type | nullable | notes |
@@ -67,6 +68,7 @@ create table processes(
 | shell | TEXT | yes | |
 | root | TEXT | yes | |
 | run_id | INTEGER | yes | the run this process belongs to (see `process_output.run_id`); set by the monitor |
+| transient | INTEGER | yes | 1 when started with `--shell` (a transient process) rather than from `.candle.json`; set by the monitor from `MonitorLaunchInfo.transient`. NULL (rows from an older candle) reads as false. Used by `find-orphans` |
 
 ### Table `process_output` (logs)
 ```sql

@@ -101,14 +101,17 @@ parser rejects it as `Unknown argument` — because they are already system-wide
 ## 4c. find-orphans (`commands/find_orphans.rs`)
 
 A system-wide diagnostic in the same family as `kill-all`: it reports every *live* tracked
-process whose project no longer accounts for it. `classify(project_dir, service_name)` returns the
+process whose project no longer accounts for it. `classify(project_dir, service_name, transient)` returns the
 first applicable `OrphanReason`:
 
 | Reason | Condition |
 |---|---|
 | `MissingProjectDir` | `project_dir` is not a directory |
 | `MissingConfigFile` | no name in `CONFIG_FILENAMES` exists **in that directory** (ancestors deliberately don't count — an ancestor's config describes a different project) |
-| `ServiceNotInConfig` | the config parses but has no service by that name |
+| `ServiceNotInConfig` | the config parses but has no service by that name, and the row is not `transient` |
+
+A transient process (row `transient = 1`, started with `--shell`) is never in the config, so it is
+only orphaned by the first two reasons.
 
 A config file that exists but fails to parse yields `None` (not an orphan): it almost certainly still
 lists the service, and reporting it would invite killing a healthy process over a JSON typo.

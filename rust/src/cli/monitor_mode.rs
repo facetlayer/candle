@@ -66,6 +66,7 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
     let mut root = None;
     let mut database_path = None;
     let mut enable_stdin = false;
+    let mut transient = false;
     let mut run_id = None;
     let mut saw_flag = false;
 
@@ -112,6 +113,10 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
                 enable_stdin = true;
                 saw_flag = true;
             }
+            "--transient" => {
+                transient = true;
+                saw_flag = true;
+            }
             other => {
                 eprintln!("Error: unrecognized option for --monitor: {other}");
                 exit(1);
@@ -148,5 +153,6 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
             .map(PathBuf::from)
             .unwrap_or_else(candle_db_path),
         run_id,
+        transient,
     })
 }

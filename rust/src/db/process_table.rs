@@ -22,6 +22,9 @@ pub struct ProcessEntry {
     /// The run this process belongs to: see `run_id` on
     /// [`ProcessLog`](crate::logs::process_logs::ProcessLog).
     pub run_id: Option<i64>,
+    /// Started with `--shell` rather than from `.candle.json`. Rows written
+    /// by an older candle read as `false`.
+    pub transient: bool,
 }
 
 /// Input for [`create_process_entry`].
@@ -34,6 +37,7 @@ pub struct CreateProcessEntry {
     pub shell: Option<String>,
     pub root: Option<String>,
     pub run_id: Option<i64>,
+    pub transient: bool,
 }
 
 fn now_unix_seconds() -> i64 {
@@ -56,10 +60,11 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessEntry> {
         shell: row.get(8)?,
         root: row.get(9)?,
         run_id: row.get(10)?,
+        transient: row.get::<_, Option<bool>>(11)?.unwrap_or(false),
     })
 }
 
-const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id";
+const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id, transient";
 
 /// Insert a new process row. Sets `start_time` to the current unix seconds and
 /// leaves `created_at`/`killed_at` to default/NULL. Returns the new row id.
@@ -68,8 +73,8 @@ pub fn create_process_entry(
     entry: &CreateProcessEntry,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root, run_id) \
-         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root, run_id, transient) \
+         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             entry.command_name,
             entry.project_dir,
@@ -79,6 +84,7 @@ pub fn create_process_entry(
             entry.shell,
             entry.root,
             entry.run_id,
+            entry.transient,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -232,6 +238,7 @@ mod tests {
             shell: Some("npm run dev".to_string()),
             root: None,
             run_id: None,
+            transient: false,
         }
     }
 

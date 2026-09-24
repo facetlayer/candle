@@ -73,7 +73,7 @@ These are the contracts the acceptance suite depends on. They are byte-level and
 - **SQLite schema is fixed.** Four tables (`processes`, `process_output`, `process_last_cleanup`,
   `stdin_messages`) with `default (strftime('%s','now'))` timestamps, autoincrement ids, a fixed column
   order, six indexes — notably `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)` —
-  a trailing nullable `run_id` column on `processes` and `process_output`, and the `process_output_assign_run`
+  a nullable `run_id` column on `processes` and `process_output` (followed by a nullable `transient` on `processes`), and the `process_output_assign_run`
   trigger. Migration creates missing tables and rebuilds a table that lacks a column (backfilling `run_id`).
   Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).

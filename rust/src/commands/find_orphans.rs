@@ -68,7 +68,11 @@ pub struct FindOrphansOutput {
 /// that exists but cannot be read or parsed is *not* treated as orphaning: the
 /// service is very likely still configured, and reporting it as an orphan would
 /// invite killing a healthy process over a typo in the JSON.
-fn classify(project_dir: &str, service_name: &str) -> Option<OrphanReason> {
+///
+/// A transient process (started with `--shell`) was never in the config, so its
+/// absence from it proves nothing; only a missing directory or config file
+/// orphans one.
+fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<OrphanReason> {
     let dir = Path::new(project_dir);
     if !dir.is_dir() {
         return Some(OrphanReason::MissingProjectDir);
@@ -84,6 +88,10 @@ fn classify(project_dir: &str, service_name: &str) -> Option<OrphanReason> {
     let Some(config_path) = config_path else {
         return Some(OrphanReason::MissingConfigFile);
     };
+
+    if transient {
+        return None;
+    }
 
     // A config that will not parse is left alone — see the doc comment.
     let config = read_config_file(&config_path).ok()?;
@@ -105,11 +113,13 @@ pub fn handle_find_orphans(conn: &Connection) -> Result<FindOrphansOutput, Candl
     let orphans = alive
         .into_iter()
         .filter_map(|entry| {
-            classify(&entry.project_dir, &entry.command_name).map(|reason| OrphanedProcess {
-                service_name: entry.command_name,
-                project_dir: entry.project_dir,
-                pid: entry.pid,
-                reason,
+            classify(&entry.project_dir, &entry.command_name, entry.transient).map(|reason| {
+                OrphanedProcess {
+                    service_name: entry.command_name,
+                    project_dir: entry.project_dir,
+                    pid: entry.pid,
+                    reason,
+                }
             })
         })
         .collect();
@@ -159,14 +169,14 @@ mod tests {
 
     #[test]
     fn missing_project_dir_is_an_orphan() {
-        let reason = classify("/definitely/not/a/real/directory", "svc");
+        let reason = classify("/definitely/not/a/real/directory", "svc", false);
         assert_eq!(reason, Some(OrphanReason::MissingProjectDir));
     }
 
     #[test]
     fn directory_without_config_is_an_orphan() {
         let dir = TempDir::new();
-        let reason = classify(&dir.path().display().to_string(), "svc");
+        let reason = classify(&dir.path().display().to_string(), "svc", false);
         assert_eq!(reason, Some(OrphanReason::MissingConfigFile));
     }
 
@@ -175,8 +185,34 @@ mod tests {
         let dir = TempDir::new();
         write_config(dir.path(), r#"{"name": "other", "shell": "true"}"#);
 
-        let reason = classify(&dir.path().display().to_string(), "svc");
+        let reason = classify(&dir.path().display().to_string(), "svc", false);
         assert_eq!(reason, Some(OrphanReason::ServiceNotInConfig));
+    }
+
+    #[test]
+    fn transient_process_missing_from_config_is_not_an_orphan() {
+        // Transient processes are never in the config; that is not a sign the
+        // project has forgotten them.
+        let dir = TempDir::new();
+        write_config(dir.path(), r#"{"name": "other", "shell": "true"}"#);
+
+        assert_eq!(
+            classify(&dir.path().display().to_string(), "svc", true),
+            None
+        );
+    }
+
+    #[test]
+    fn transient_process_without_its_project_is_an_orphan() {
+        let dir = TempDir::new();
+        assert_eq!(
+            classify(&dir.path().display().to_string(), "svc", true),
+            Some(OrphanReason::MissingConfigFile)
+        );
+        assert_eq!(
+            classify("/definitely/not/a/real/directory", "svc", true),
+            Some(OrphanReason::MissingProjectDir)
+        );
     }
 
     #[test]
@@ -184,7 +220,10 @@ mod tests {
         let dir = TempDir::new();
         write_config(dir.path(), r#"{"name": "svc", "shell": "true"}"#);
 
-        assert_eq!(classify(&dir.path().display().to_string(), "svc"), None);
+        assert_eq!(
+            classify(&dir.path().display().to_string(), "svc", false),
+            None
+        );
     }
 
     #[test]
@@ -197,7 +236,7 @@ mod tests {
         std::fs::create_dir_all(&child).unwrap();
 
         assert_eq!(
-            classify(&child.display().to_string(), "svc"),
+            classify(&child.display().to_string(), "svc", false),
             Some(OrphanReason::MissingConfigFile)
         );
     }
@@ -209,7 +248,10 @@ mod tests {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{ not json").unwrap();
 
-        assert_eq!(classify(&dir.path().display().to_string(), "svc"), None);
+        assert_eq!(
+            classify(&dir.path().display().to_string(), "svc", false),
+            None
+        );
     }
 
     #[test]

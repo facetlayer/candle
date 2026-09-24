@@ -197,6 +197,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         enable_stdin,
         database_path,
         run_id,
+        transient,
     } = launch_info;
 
     debug_log(&format!(
@@ -273,6 +274,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             shell: Some(shell.clone()),
             root: root.clone(),
             run_id,
+            transient,
         },
     );
 
@@ -636,6 +638,7 @@ mod tests {
                 shell: None,
                 root: None,
                 run_id: None,
+                transient: false,
             },
         )
         .unwrap();

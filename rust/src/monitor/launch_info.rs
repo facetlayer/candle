@@ -26,4 +26,9 @@ pub struct MonitorLaunchInfo {
     /// assigns by position.
     #[serde(default)]
     pub run_id: Option<i64>,
+    /// Started with `--shell` rather than from `.candle.json`. Recorded on the
+    /// process row so `find-orphans` doesn't mistake it for a service that was
+    /// removed from the config.
+    #[serde(default)]
+    pub transient: bool,
 }
