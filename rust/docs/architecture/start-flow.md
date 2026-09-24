@@ -152,6 +152,8 @@ output::out(&format!("[With root directory: {launch_dir}]"));
 
 `resolve_launch_dir` (`rust/src/dirs.rs`, shared with `list`): an absolute `root` replaces `project_dir`, a relative one is joined onto it, an empty/absent one means `project_dir`; the result is lexically normalized (`./sub` → `<project>/sub`).
 
+If the run this launch replaced ended badly — `commands::list::latest_run`, read before step 4 records the new run, is `Exited(code)` or `Failed` — a third line follows: `[The previous run exited with code <code>; see 'candle logs <name> --previous']` (or `[The previous run failed; see …]`). A running service being restarted, or one that stopped cleanly, gets no third line.
+
 These exact strings are test-observable. Returns `{ project_dir, service_name }`.
 
 ## 5. `launch_monitor` (`rust/src/start/launch.rs`)

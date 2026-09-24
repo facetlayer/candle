@@ -39,6 +39,7 @@ use candle::db::get_database;
 use candle::doc_files::{self, DocLookupError};
 use candle::errors::{error_line, CandleError};
 use candle::kill::{handle_kill_all, handle_kill_command};
+use candle::logs::process_logs::RunScope;
 use candle::project_scope::ProjectScope;
 use candle::start::{handle_start_command, StartCommandOptions};
 use rusqlite::Connection;
@@ -523,6 +524,12 @@ fn cmd_logs(args: &CommandArgs) {
         fatal(format!("--count must be at least 1, got {limit}"));
     }
     let start_at_id: Option<i64> = numeric_flag(args, "start-at");
+    let runs = match (args.has("previous"), args.has("all-runs")) {
+        (true, true) => fatal("Cannot use --previous and --all-runs together".to_string()),
+        (true, false) => RunScope::Previous,
+        (false, true) => RunScope::All,
+        (false, false) => RunScope::Latest,
+    };
 
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -532,6 +539,7 @@ fn cmd_logs(args: &CommandArgs) {
     let options = LogsCommandOptions {
         start_at_id,
         json: args.has("json"),
+        runs,
         ..LogsCommandOptions::cli(limit)
     };
     handle_logs_command(&conn, &project_dir, &args.positionals, &options);

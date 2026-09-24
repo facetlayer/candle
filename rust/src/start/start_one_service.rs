@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
+use crate::commands::list::{format_entry_uptime, has_config_drift, latest_run, LatestRun};
 use crate::config::model::ServiceConfig;
-use crate::commands::list::{format_entry_uptime, has_config_drift};
 use crate::config::{get_service_config_by_name, is_valid_root_path};
 use crate::db::process_table::ProcessEntry;
 use crate::dirs::candle_db_path;
@@ -215,6 +215,11 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         )));
     }
 
+    // How the run being replaced ended, read before this launch becomes the
+    // latest run. After a crash, `logs` will only show the new run, so the
+    // banner points at `logs --previous`.
+    let previous_run = latest_run(conn, &opts.project_dir, &service.name)?;
+
     // 3. Kill any existing instance (restart, or a `start` racing a process
     //    that is shutting down). quiet_failure suppresses
     //    "no running processes" noise. The kill waits for the old process tree;
@@ -299,6 +304,17 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         service.name, service.shell
     ));
     output::out(&format!("[With root directory: {launch_dir}]"));
+    let previous_outcome = match previous_run {
+        LatestRun::Exited(code) => Some(format!("exited with code {code}")),
+        LatestRun::Failed => Some("failed".to_string()),
+        LatestRun::Unremarkable => None,
+    };
+    if let Some(outcome) = previous_outcome {
+        output::out(&format!(
+            "[The previous run {outcome}; see 'candle logs {} --previous']",
+            service.name
+        ));
+    }
 
     Ok(StartResult {
         project_dir: opts.project_dir,

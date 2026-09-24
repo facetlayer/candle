@@ -19,7 +19,9 @@ of the nearest `.candle.json` file).
  - Start a service in the background: `candle start <service-name>`. If it's
    already running, this leaves it alone, so it's safe to run just to make sure a
    service is up.
- - Browse logs: `candle logs` or `candle logs <service-name>`
+ - Browse logs: `candle logs` or `candle logs <service-name>`. This shows the latest run;
+   if a service crashed and you started it again, `candle logs <service-name> --previous`
+   shows the crashed run.
  - Configure a new service: `candle add-service <service-name> --shell <shell>`
  - Kill a service: `candle kill <service-name>`
  - Restart a service (for example, to pick up code or config changes): `candle restart <service-name>`

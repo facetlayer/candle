@@ -75,6 +75,7 @@ In `rust/src/logs/process_logs.rs`:
 - `min_log_id: Option<i64>`: only rows with `id >= min_log_id`
 - `log_types: Vec<i64>`: only rows of these types; empty ⇒ every type
 - `latest_launch_only: bool`: only rows from each command's latest run (highest `run_id`)
+- `previous_launch_only: bool`: only rows from each command's run before the latest (the highest `run_id` below the highest); a command with one run matches nothing
 - `run_id: Option<i64>`: only rows from this run
 
 Insert (`save_run_log(conn, run_id, command_name, project_dir, log_type, content)`; `save_process_log` is the same with `run_id = NULL`):
@@ -105,6 +106,7 @@ Then appended in this fixed order:
 - if `log_types` is non-empty: `' and po.log_type in (?, ...)'`
 - if `run_id` is set: `' and po.run_id = ?'`
 - if `latest_launch_only`: `' and po.run_id is (select max(p2.run_id) from process_output p2 where p2.project_dir = po.project_dir and p2.command_name = po.command_name)'` (no params). `is` rather than `=` so a command that has never been launched (every `run_id` NULL) keeps its rows.
+- if `previous_launch_only`: `' and po.run_id = (select max(p2.run_id) from process_output p2 where <same command> and p2.run_id < (select max(p3.run_id) from process_output p3 where <same command>))'` (no params). `=` so a command with a single run keeps nothing. (A `select distinct … order by run_id desc limit 1 offset 1` subquery returned the latest run's rows for a single-run command under the bundled SQLite, so don't use that form.)
 - always: `' order by po.timestamp desc, po.id desc'` (**most recent first**)
 - if `limit` is set: `' limit ?'`
 
@@ -128,7 +130,7 @@ Subtle: query fetches newest-N (DESC + limit) then reverses, so you always get t
 
 ### get_log_tail (used by `candle logs`)
 
-`get_log_tail(conn, options, limit) -> LogTail { logs, truncated }` backs `logs --count`, `wait-for-log`'s recent-logs dump, and MCP `GetLogs`. It is `get_process_logs_with_eviction_info` with `limit: Some(limit)`, `log_types` = the printable types (`stdout 1`, `stderr 2`, `process_start_failed 4`, `process_exited 6`) and `latest_launch_only: true`; `logs` = the result's rows (chronological), `truncated` = `logs_were_evicted`. So the limit counts only the lines `logs` will actually print from each command's latest run. Counting marker rows or a previous run's rows made `--count N` print fewer than N lines. No filter pass is needed afterwards.
+`get_log_tail(conn, options, limit) -> LogTail { logs, truncated }` is `get_log_tail_of(conn, options, limit, RunScope::Latest)`. `get_log_tail_of` takes a `RunScope` (`Latest` | `Previous` | `All`), which sets `latest_launch_only` / `previous_launch_only` (neither for `All`); `logs --previous` / `--all-runs` use it. `get_log_tail` backs `logs --count`, `wait-for-log`'s recent-logs dump, and MCP `GetLogs`. It is `get_process_logs_with_eviction_info` with `limit: Some(limit)`, `log_types` = the printable types (`stdout 1`, `stderr 2`, `process_start_failed 4`, `process_exited 6`) and `latest_launch_only: true`; `logs` = the result's rows (chronological), `truncated` = `logs_were_evicted`. So the limit counts only the lines `logs` will actually print from each command's latest run. Counting marker rows or a previous run's rows made `--count N` print fewer than N lines. No filter pass is needed afterwards.
 
 ## 7. LatestRunFilter
 
@@ -194,16 +196,16 @@ The debug file logger is separate from console output: `debug::debug_log(msg)` i
 
 `rust/src/commands/logs.rs`.
 
-`handle_logs_command(conn, project_dir, command_names, &LogsCommandOptions { limit, start_at_id, json, more_hint })`:
+`handle_logs_command(conn, project_dir, command_names, &LogsCommandOptions { limit, start_at_id, json, runs, more_hint })`:
 1. `is_blended_mode = command_names.len() != 1` (so 0 names ⇒ blended too).
-2. Fetch: in single mode, one `get_log_tail(conn, { project_dir, command_names, after_log_id: start_at_id }, limit)` (§6). In blended mode the limit applies **per service**: the names (or, with none given, `command_names_with_logs(project_dir, start_at_id)`) are fetched one `get_log_tail` each, and the results are merged in `id` order. A DB error yields an empty tail.
-   (`fetch_latest_run_tail`; the tail is already restricted to the latest run, so there is no filter pass.)
-3. With `json`: print a pretty JSON array of `{ id, service, type, content, timestamp }` for the printable rows (`type` is `stdout`, `stderr`, `start_failed` or `exited`; launch markers are skipped) and return. No hint; an empty result is `[]`.
-4. If empty: print exactly `No logs found for service '<name>' in project '<project_dir>'.` (when exactly 1 name) else `No logs found for services in project '<project_dir>'.` Return.
+2. Fetch: in single mode, one `get_log_tail_of(conn, { project_dir, command_names, after_log_id: start_at_id }, limit, runs)` (§6). In blended mode the limit applies **per service**: the names (or, with none given, `command_names_with_logs(project_dir, start_at_id)`) are fetched one `get_log_tail_of` each, and the results are merged in `id` order. A DB error yields an empty tail.
+   (`fetch_tail`; the tail is already restricted to the selected runs, so there is no filter pass.)
+3. With `json`: print a pretty JSON array of `{ id, service, type, content, timestamp, run }` (`run` = the row's `run_id`) for the printable rows (`type` is `stdout`, `stderr`, `start_failed` or `exited`; launch markers are skipped) and return. No hint; an empty result is `[]`.
+4. If empty: print exactly `No logs found for service '<name>' in project '<project_dir>'.` (when exactly 1 name) else `No logs found for services in project '<project_dir>'.` With `RunScope::Previous` the lines start `No logs from a previous run found for …` instead. Return.
 5. If any tail was `truncated`: single mode prints `-- showing the last <N> lines; <more_hint> --`; blended mode prints `-- showing the last <N> lines per service (<truncated names> had more); <more_hint> --` (`the last line` when `N == 1`). A previous run's hidden lines never trigger it. The CLI's `more_hint` is `use --count to see more`; MCP `GetLogs` passes ``pass a larger `limit` to see more``.
-6. For each log: `console_log_row(log, { format: Pretty, enable_app_name_prefix: is_blended_mode })`.
+6. For each log: `console_log_row(log, { format: Pretty, enable_app_name_prefix: is_blended_mode })`. With `RunScope::All`, a row whose `run_id` differs from the previous row of the same service is preceded by `-- new run --` (`[<service>] -- new run --` in blended mode); the first run shown has no marker.
 
-CLI flags map to: `--count` (limit, default 100), `--start-at` (id), `--json`. `cmd_logs` in `main.rs` parses them (a `--count` below 1 or a non-numeric value is a fatal usage error), runs `maybe_run_cleanup`, then validates names with `assert_known_service_names_in_scope`: a name is accepted if it has stored logs or a process row in the project, or is configured; anything else is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
+CLI flags map to: `--count` (limit, default 100), `--previous` / `--all-runs` (`runs`; both together is the fatal usage error `Cannot use --previous and --all-runs together`), `--start-at` (id), `--json`. MCP `GetLogs` maps `previous` / `allRuns` the same way (both → `Cannot use previous and allRuns together`). `cmd_logs` in `main.rs` parses them (a `--count` below 1 or a non-numeric value is a fatal usage error), runs `maybe_run_cleanup`, then validates names with `assert_known_service_names_in_scope`: a name is accepted if it has stored logs or a process row in the project, or is configured; anything else is `No service '<name>' configured for directory: <dir>` on stderr, exit 1.
 
 ## 12. clear-logs command
 

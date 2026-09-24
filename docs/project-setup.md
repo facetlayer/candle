@@ -104,7 +104,9 @@ When the service is already running:
    `wait-for-log` to wait for one before starting another.
  - Candle doesn't restart a service when it crashes, and doesn't restart services
    after a reboot. `candle ls` shows a crashed service as `EXITED (<code>)`, and
-   `candle logs` keeps its output.
+   `candle logs` keeps its output. Once you start it again, `candle logs` shows the
+   new run; the crash output is still there with `candle logs <name> --previous`
+   (or every run with `--all-runs`).
  - Each project (and each Git worktree) has its own services, but ports are still
    shared by the whole machine. If two worktrees both run a server on port 3000,
    the second one fails with "address in use". Give each checkout its own port, for

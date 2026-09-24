@@ -39,6 +39,9 @@ pub struct LogSearchOptions {
     pub log_types: Vec<i64>,
     /// Only rows from each command's latest run (the highest `run_id`).
     pub latest_launch_only: bool,
+    /// Only rows from each command's run before the latest (the second-highest
+    /// `run_id`). A command with fewer than two runs matches nothing.
+    pub previous_launch_only: bool,
     /// Only rows from this run.
     pub run_id: Option<i64>,
 }
@@ -149,6 +152,10 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
         push_latest_launch_filter(&mut sql);
     }
 
+    if options.previous_launch_only {
+        push_previous_launch_filter(&mut sql);
+    }
+
     sql.push_str(" order by po.timestamp desc, po.id desc");
 
     if let Some(limit) = options.limit {
@@ -186,6 +193,18 @@ fn push_latest_launch_filter(sql: &mut String) {
     sql.push_str(
         " and po.run_id is (select max(p2.run_id) from process_output p2 \
          where p2.project_dir = po.project_dir and p2.command_name = po.command_name)",
+    );
+}
+
+/// Keep only rows from the run before the row's command's latest one: the
+/// highest `run_id` below the highest. `=` rather than `is`, so a command with a
+/// single run (the subquery is null) keeps nothing.
+fn push_previous_launch_filter(sql: &mut String) {
+    sql.push_str(
+        " and po.run_id = (select max(p2.run_id) from process_output p2 \
+         where p2.project_dir = po.project_dir and p2.command_name = po.command_name \
+         and p2.run_id < (select max(p3.run_id) from process_output p3 \
+         where p3.project_dir = po.project_dir and p3.command_name = po.command_name))",
     );
 }
 
@@ -282,13 +301,26 @@ fn printable_log_types() -> Vec<i64> {
     ]
 }
 
+/// Which runs of a command [`get_log_tail_of`] reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RunScope {
+    /// The latest run only (the default for `candle logs`).
+    #[default]
+    Latest,
+    /// The run before the latest (`logs --previous`), e.g. the one that crashed
+    /// before the service was started again.
+    Previous,
+    /// Every stored run, oldest first (`logs --all-runs`).
+    All,
+}
+
 /// Result of [`get_log_tail`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LogTail {
     /// Chronological rows: the newest `limit` printable rows of each command's
-    /// latest run.
+    /// selected runs (the latest run, for [`get_log_tail`]).
     pub logs: Vec<ProcessLog>,
-    /// Whether printable rows from the latest run were left out by `limit`.
+    /// Whether printable rows from the selected runs were left out by `limit`.
     pub truncated: bool,
 }
 
@@ -303,12 +335,23 @@ pub fn get_log_tail(
     options: &LogSearchOptions,
     limit: i64,
 ) -> rusqlite::Result<LogTail> {
+    get_log_tail_of(conn, options, limit, RunScope::Latest)
+}
+
+/// [`get_log_tail`] over the runs `runs` selects instead of only the latest.
+pub fn get_log_tail_of(
+    conn: &Connection,
+    options: &LogSearchOptions,
+    limit: i64,
+    runs: RunScope,
+) -> rusqlite::Result<LogTail> {
     let result = get_process_logs_with_eviction_info(
         conn,
         &LogSearchOptions {
             limit: Some(limit),
             log_types: printable_log_types(),
-            latest_launch_only: true,
+            latest_launch_only: runs == RunScope::Latest,
+            previous_launch_only: runs == RunScope::Previous,
             ..options.clone()
         },
     )?;

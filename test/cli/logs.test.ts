@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { TestWorkspace } from './utils';
 
 const workspace = new TestWorkspace('cli-logs');
@@ -6,484 +6,662 @@ const workspace = new TestWorkspace('cli-logs');
 afterAll(() => workspace.cleanup());
 
 describe('basic logs functionality', () => {
-    it('should show logs for a running service', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should show logs for a running service', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString()).toContain('Echo server started');
-    });
+    expect(result.stdoutAsString()).toContain('Echo server started');
+  });
 
-    it('should show logs for specified service', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should show logs for specified service', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 
-    it('should exit quickly after fetching logs', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should exit quickly after fetching logs', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const startTime = Date.now();
-        await workspace.runCli(['logs', 'echo']);
-        const elapsed = Date.now() - startTime;
+    const startTime = Date.now();
+    await workspace.runCli(['logs', 'echo']);
+    const elapsed = Date.now() - startTime;
 
-        expect(elapsed).toBeLessThan(5000);
-    });
+    expect(elapsed).toBeLessThan(5000);
+  });
 });
 
 describe('logs for transient processes', () => {
-    it('should show logs for transient process', async () => {
-        await workspace.runCli(['start', 'my-transient', '--shell', `node ../../sampleServers/echoServer.js`]);
-        await workspace.runCli(['wait-for-log', 'my-transient', '--message', 'Echo server started']);
+  it('should show logs for transient process', async () => {
+    await workspace.runCli([
+      'start',
+      'my-transient',
+      '--shell',
+      `node ../../sampleServers/echoServer.js`,
+    ]);
+    await workspace.runCli(['wait-for-log', 'my-transient', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'my-transient']);
+    const result = await workspace.runCli(['logs', 'my-transient']);
 
-        expect(result.stdoutAsString()).toContain('Echo server started');
-    });
+    expect(result.stdoutAsString()).toContain('Echo server started');
+  });
 });
 
 describe('logs content', () => {
-    it('should capture stdout from process', async () => {
-        await workspace.runCli(['start', 'echo']);
-        // Wait for some output
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+  it('should capture stdout from process', async () => {
+    await workspace.runCli(['start', 'echo']);
+    // Wait for some output
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 
-    it('should capture stderr from process', async () => {
-        await workspace.runCli(['start', 'echo']);
-        // Echo server outputs to stderr too
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+  it('should capture stderr from process', async () => {
+    await workspace.runCli(['start', 'echo']);
+    // Echo server outputs to stderr too
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 });
 
 describe('logs for non-running service', () => {
-    it('should show historical logs after service stopped', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should show historical logs after service stopped', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        // Kill the service
-        await workspace.runCli(['kill', 'echo']);
-        // Small delay for cleanup
-        await new Promise((resolve) => setTimeout(resolve, 500));
+    // Kill the service
+    await workspace.runCli(['kill', 'echo']);
+    // Small delay for cleanup
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Should still have logs
-        const result = await workspace.runCli(['logs', 'echo']);
+    // Should still have logs
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString()).toContain('Echo server started');
-    });
+    expect(result.stdoutAsString()).toContain('Echo server started');
+  });
 });
 
 describe('logs for unknown service', () => {
-    it('should error for a service that is not configured', async () => {
-        const result = await workspace.runCli(['logs', 'nonexistent-service'], { ignoreExitCode: true });
-
-        expect(result.failed()).toBe(true);
-        expect(result.stderrAsString()).toContain("No service 'nonexistent-service' configured");
+  it('should error for a service that is not configured', async () => {
+    const result = await workspace.runCli(['logs', 'nonexistent-service'], {
+      ignoreExitCode: true,
     });
 
-    it('should say "service" when a configured service has no logs yet', async () => {
-        await workspace.runCli(['clear-logs', 'quick-exit']);
-        const result = await workspace.runCli(['logs', 'quick-exit']);
+    expect(result.failed()).toBe(true);
+    expect(result.stderrAsString()).toContain("No service 'nonexistent-service' configured");
+  });
 
-        expect(result.stdoutAsString()).toContain("No logs found for service 'quick-exit'");
-        expect(result.stdoutAsString()).not.toContain('command');
-    });
+  it('should say "service" when a configured service has no logs yet', async () => {
+    await workspace.runCli(['clear-logs', 'quick-exit']);
+    const result = await workspace.runCli(['logs', 'quick-exit']);
+
+    expect(result.stdoutAsString()).toContain("No logs found for service 'quick-exit'");
+    expect(result.stdoutAsString()).not.toContain('command');
+  });
 });
 
 describe('logs without name', () => {
-    it('should handle logs without service name', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should handle logs without service name', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        // Logs without a service name shows logs for all running services
-        const result = await workspace.runCli(['logs']);
+    // Logs without a service name shows logs for all running services
+    const result = await workspace.runCli(['logs']);
 
-        expect(result.stdoutAsString()).toContain('Echo server started');
-    });
+    expect(result.stdoutAsString()).toContain('Echo server started');
+  });
 });
 
 describe('logs output format', () => {
-    it('should output logs to stdout', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should output logs to stdout', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 
-    it('should have minimal command errors on success', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should have minimal command errors on success', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 });
 
 describe('logs accumulation', () => {
-    it('should show multiple log entries', async () => {
-        await workspace.runCli(['start', 'echo']);
-        // Wait for multiple outputs
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+  it('should show multiple log entries', async () => {
+    await workspace.runCli(['start', 'echo']);
+    // Wait for multiple outputs
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-        const result = await workspace.runCli(['logs', 'echo']);
+    const result = await workspace.runCli(['logs', 'echo']);
 
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-        const lines = result.stdoutAsString().trim().split('\n');
-        expect(lines.length).toBeGreaterThan(1);
-    });
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+    const lines = result.stdoutAsString().trim().split('\n');
+    expect(lines.length).toBeGreaterThan(1);
+  });
 });
 
 describe('multiple launches - only show most recent', () => {
-    it('should only show logs from the most recent launch', async () => {
-        // Run service 3 times, with the 3rd still running when we check logs
-        // (transient processes can only be looked up while running)
-        // Use longer delays to ensure process is still running when we wait-for-log
+  it('should only show logs from the most recent launch', async () => {
+    // Run service 3 times, with the 3rd still running when we check logs
+    // (transient processes can only be looked up while running)
+    // Use longer delays to ensure process is still running when we wait-for-log
 
-        // Run 1 - runs long enough to wait for log, then we kill it
-        await workspace.runCli([
-            'start', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_ONE_MARKER 3000'
-        ]);
-        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_ONE_MARKER']);
-        await workspace.runCli(['kill', 'multi-launch-test']);
+    // Run 1 - runs long enough to wait for log, then we kill it
+    await workspace.runCli([
+      'start',
+      'multi-launch-test',
+      '--shell',
+      'node ../../sampleServers/markerServer.js RUN_ONE_MARKER 3000',
+    ]);
+    await workspace.runCli([
+      'wait-for-log',
+      'multi-launch-test',
+      '--message',
+      'MARKER=RUN_ONE_MARKER',
+    ]);
+    await workspace.runCli(['kill', 'multi-launch-test']);
 
-        // Run 2 - runs long enough to wait for log, then we kill it
-        await workspace.runCli([
-            'start', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_TWO_MARKER 3000'
-        ]);
-        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_TWO_MARKER']);
-        await workspace.runCli(['kill', 'multi-launch-test']);
+    // Run 2 - runs long enough to wait for log, then we kill it
+    await workspace.runCli([
+      'start',
+      'multi-launch-test',
+      '--shell',
+      'node ../../sampleServers/markerServer.js RUN_TWO_MARKER 3000',
+    ]);
+    await workspace.runCli([
+      'wait-for-log',
+      'multi-launch-test',
+      '--message',
+      'MARKER=RUN_TWO_MARKER',
+    ]);
+    await workspace.runCli(['kill', 'multi-launch-test']);
 
-        // Run 3 - stays running while we check logs
-        await workspace.runCli([
-            'start', 'multi-launch-test',
-            '--shell', 'node ../../sampleServers/markerServer.js RUN_THREE_MARKER 10000'
-        ]);
+    // Run 3 - stays running while we check logs
+    await workspace.runCli([
+      'start',
+      'multi-launch-test',
+      '--shell',
+      'node ../../sampleServers/markerServer.js RUN_THREE_MARKER 10000',
+    ]);
 
-        // Wait for it to start
-        await workspace.runCli(['wait-for-log', 'multi-launch-test', '--message', 'MARKER=RUN_THREE_MARKER']);
+    // Wait for it to start
+    await workspace.runCli([
+      'wait-for-log',
+      'multi-launch-test',
+      '--message',
+      'MARKER=RUN_THREE_MARKER',
+    ]);
 
-        // Now get logs - should only see the most recent run (run 3)
-        const logsResult = await workspace.runCli(['logs', 'multi-launch-test']);
-        const output = logsResult.stdoutAsString();
+    // Now get logs - should only see the most recent run (run 3)
+    const logsResult = await workspace.runCli(['logs', 'multi-launch-test']);
+    const output = logsResult.stdoutAsString();
 
-        // Should contain the marker from run 3
-        expect(output).toContain('MARKER=RUN_THREE_MARKER');
+    // Should contain the marker from run 3
+    expect(output).toContain('MARKER=RUN_THREE_MARKER');
 
-        // Should NOT contain markers from previous runs
-        expect(output).not.toContain('MARKER=RUN_ONE_MARKER');
-        expect(output).not.toContain('MARKER=RUN_TWO_MARKER');
-    });
+    // Should NOT contain markers from previous runs
+    expect(output).not.toContain('MARKER=RUN_ONE_MARKER');
+    expect(output).not.toContain('MARKER=RUN_TWO_MARKER');
+  });
 
-    it('should show most recent launch for currently running process', async () => {
-        // Run the service twice, second time stays running
-        await workspace.runCli([
-            'start', 'multi-launch-running',
-            '--shell', 'node ../../sampleServers/markerServer.js FIRST_RUN_MARKER 3000'
-        ]);
-        await workspace.runCli(['wait-for-log', 'multi-launch-running', '--message', 'MARKER=FIRST_RUN_MARKER']);
-        await workspace.runCli(['kill', 'multi-launch-running']);
+  it('should show most recent launch for currently running process', async () => {
+    // Run the service twice, second time stays running
+    await workspace.runCli([
+      'start',
+      'multi-launch-running',
+      '--shell',
+      'node ../../sampleServers/markerServer.js FIRST_RUN_MARKER 3000',
+    ]);
+    await workspace.runCli([
+      'wait-for-log',
+      'multi-launch-running',
+      '--message',
+      'MARKER=FIRST_RUN_MARKER',
+    ]);
+    await workspace.runCli(['kill', 'multi-launch-running']);
 
-        // Start second run that stays running longer
-        await workspace.runCli([
-            'start', 'multi-launch-running',
-            '--shell', 'node ../../sampleServers/markerServer.js SECOND_RUN_MARKER 10000'
-        ]);
+    // Start second run that stays running longer
+    await workspace.runCli([
+      'start',
+      'multi-launch-running',
+      '--shell',
+      'node ../../sampleServers/markerServer.js SECOND_RUN_MARKER 10000',
+    ]);
 
-        // Wait for it to start
-        await workspace.runCli(['wait-for-log', 'multi-launch-running', '--message', 'MARKER=SECOND_RUN_MARKER']);
+    // Wait for it to start
+    await workspace.runCli([
+      'wait-for-log',
+      'multi-launch-running',
+      '--message',
+      'MARKER=SECOND_RUN_MARKER',
+    ]);
 
-        // Get logs - should only see the current run
-        const logsResult = await workspace.runCli(['logs', 'multi-launch-running']);
-        const output = logsResult.stdoutAsString();
+    // Get logs - should only see the current run
+    const logsResult = await workspace.runCli(['logs', 'multi-launch-running']);
+    const output = logsResult.stdoutAsString();
 
-        // Should contain the marker from current run
-        expect(output).toContain('MARKER=SECOND_RUN_MARKER');
+    // Should contain the marker from current run
+    expect(output).toContain('MARKER=SECOND_RUN_MARKER');
 
-        // Should NOT contain marker from previous run
-        expect(output).not.toContain('MARKER=FIRST_RUN_MARKER');
-    });
+    // Should NOT contain marker from previous run
+    expect(output).not.toContain('MARKER=FIRST_RUN_MARKER');
+  });
 });
 
 describe('process exit logging', () => {
-    it('should log output from quick-exit config service', async () => {
-        // Start the quick-exit config service (exits immediately with code 0)
-        await workspace.runCli(['start', 'quick-exit']);
+  it('should log output from quick-exit config service', async () => {
+    // Start the quick-exit config service (exits immediately with code 0)
+    await workspace.runCli(['start', 'quick-exit']);
 
-        // Wait briefly for the process to run and exit
-        await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait briefly for the process to run and exit
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Check logs for the service (config services can be looked up after exit)
-        const logsResult = await workspace.runCli(['logs', 'quick-exit']);
-        const output = logsResult.stdoutAsString();
+    // Check logs for the service (config services can be looked up after exit)
+    const logsResult = await workspace.runCli(['logs', 'quick-exit']);
+    const output = logsResult.stdoutAsString();
 
-        expect(output).toContain('Quick exit server');
-    });
+    expect(output).toContain('Quick exit server');
+  });
 
-    it('should capture logs while transient process is running', async () => {
-        // Start a transient process that runs for a while
-        await workspace.runCli([
-            'start', 'exit-test',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
-        ]);
+  it('should capture logs while transient process is running', async () => {
+    // Start a transient process that runs for a while
+    await workspace.runCli([
+      'start',
+      'exit-test',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 5000',
+    ]);
 
-        // Wait for the running message
-        await workspace.runCli(['wait-for-log', 'exit-test', '--message', 'Delayed exit server running']);
+    // Wait for the running message
+    await workspace.runCli([
+      'wait-for-log',
+      'exit-test',
+      '--message',
+      'Delayed exit server running',
+    ]);
 
-        // Check logs while process is still running
-        const logsResult = await workspace.runCli(['logs', 'exit-test']);
-        const output = logsResult.stdoutAsString();
+    // Check logs while process is still running
+    const logsResult = await workspace.runCli(['logs', 'exit-test']);
+    const output = logsResult.stdoutAsString();
 
-        expect(output).toContain('Delayed exit server');
-    });
+    expect(output).toContain('Delayed exit server');
+  });
 });
 
 describe('--count flag', () => {
-    it('should accept --count flag', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should accept --count flag', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        const result = await workspace.runCli(['logs', 'echo', '--count', '5']);
+    const result = await workspace.runCli(['logs', 'echo', '--count', '5']);
 
-        // Should succeed and show some output
-        expect(result.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    // Should succeed and show some output
+    expect(result.stdoutAsString().length).toBeGreaterThan(0);
+  });
 
-    it('should limit output lines when --count is small', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+  it('should limit output lines when --count is small', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-        const fullResult = await workspace.runCli(['logs', 'echo']);
-        const limitedResult = await workspace.runCli(['logs', 'echo', '--count', '1']);
+    const fullResult = await workspace.runCli(['logs', 'echo']);
+    const limitedResult = await workspace.runCli(['logs', 'echo', '--count', '1']);
 
-        const fullLines = fullResult.stdoutAsString().trim().split('\n');
-        const limitedLines = limitedResult.stdoutAsString().trim().split('\n');
+    const fullLines = fullResult.stdoutAsString().trim().split('\n');
+    const limitedLines = limitedResult.stdoutAsString().trim().split('\n');
 
-        expect(limitedLines.length).toBeLessThanOrEqual(fullLines.length);
-    });
+    expect(limitedLines.length).toBeLessThanOrEqual(fullLines.length);
+  });
 });
 
 describe('--start-at flag', () => {
-    it('should accept --start-at flag', async () => {
-        await workspace.runCli(['start', 'echo']);
-        await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
+  it('should accept --start-at flag', async () => {
+    await workspace.runCli(['start', 'echo']);
+    await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-        // Using a very high start-at ID should return no logs
-        const result = await workspace.runCli(['logs', 'echo', '--start-at', '999999']);
+    // Using a very high start-at ID should return no logs
+    const result = await workspace.runCli(['logs', 'echo', '--start-at', '999999']);
 
-        expect(result.stdoutAsString()).toContain('No logs found');
-    });
+    expect(result.stdoutAsString()).toContain('No logs found');
+  });
 });
 
 describe('unrecognized flags', () => {
-    it('should error on unrecognized flag', async () => {
-        const result = await workspace.runCli(['logs', '--bogus-flag'], { ignoreExitCode: true });
+  it('should error on unrecognized flag', async () => {
+    const result = await workspace.runCli(['logs', '--bogus-flag'], { ignoreExitCode: true });
 
-        expect(result.failed()).toBe(true);
-        const output = result.stdoutAsString() + result.stderrAsString();
-        expect(output).toContain('Unknown argument: --bogus-flag');
-    });
+    expect(result.failed()).toBe(true);
+    const output = result.stdoutAsString() + result.stderrAsString();
+    expect(output).toContain('Unknown argument: --bogus-flag');
+  });
 });
 
 describe('--json flag', () => {
-    it('should print log entries as JSON with their IDs', async () => {
-        await workspace.runCli(['start', 'json-burst', '--shell', 'node ../../sampleServers/burstServer.js 5 jb']);
-        await workspace.runCli(['wait-for-log', 'json-burst', '--message', 'jb done']);
+  it('should print log entries as JSON with their IDs', async () => {
+    await workspace.runCli([
+      'start',
+      'json-burst',
+      '--shell',
+      'node ../../sampleServers/burstServer.js 5 jb',
+    ]);
+    await workspace.runCli(['wait-for-log', 'json-burst', '--message', 'jb done']);
 
-        const result = await workspace.runCli(['logs', 'json-burst', '--json']);
-        const entries = JSON.parse(result.stdoutAsString());
+    const result = await workspace.runCli(['logs', 'json-burst', '--json']);
+    const entries = JSON.parse(result.stdoutAsString());
 
-        expect(Array.isArray(entries)).toBe(true);
-        const contents = entries.map((e: any) => e.content);
-        expect(contents).toEqual(['jb 0', 'jb 1', 'jb 2', 'jb 3', 'jb 4', 'jb done']);
-        for (const entry of entries) {
-            expect(typeof entry.id).toBe('number');
-            expect(entry.service).toBe('json-burst');
-            expect(entry.type).toBe('stdout');
-        }
+    expect(Array.isArray(entries)).toBe(true);
+    const contents = entries.map((e: any) => e.content);
+    expect(contents).toEqual(['jb 0', 'jb 1', 'jb 2', 'jb 3', 'jb 4', 'jb done']);
+    for (const entry of entries) {
+      expect(typeof entry.id).toBe('number');
+      expect(entry.service).toBe('json-burst');
+      expect(entry.type).toBe('stdout');
+    }
 
-        // An ID from the JSON output works with --start-at.
-        const afterId = entries[2].id;
-        const next = await workspace.runCli(['logs', 'json-burst', '--json', '--start-at', String(afterId)]);
-        const nextContents = JSON.parse(next.stdoutAsString()).map((e: any) => e.content);
-        expect(nextContents).toEqual(['jb 3', 'jb 4', 'jb done']);
+    // An ID from the JSON output works with --start-at.
+    const afterId = entries[2].id;
+    const next = await workspace.runCli([
+      'logs',
+      'json-burst',
+      '--json',
+      '--start-at',
+      String(afterId),
+    ]);
+    const nextContents = JSON.parse(next.stdoutAsString()).map((e: any) => e.content);
+    expect(nextContents).toEqual(['jb 3', 'jb 4', 'jb done']);
 
-        await workspace.runCli(['kill', 'json-burst']);
-    });
+    await workspace.runCli(['kill', 'json-burst']);
+  });
 
-    it('should print an empty array when there are no logs', async () => {
-        await workspace.runCli(['clear-logs', 'quick-exit']);
-        const result = await workspace.runCli(['logs', 'quick-exit', '--json']);
+  it('should print an empty array when there are no logs', async () => {
+    await workspace.runCli(['clear-logs', 'quick-exit']);
+    const result = await workspace.runCli(['logs', 'quick-exit', '--json']);
 
-        expect(JSON.parse(result.stdoutAsString())).toEqual([]);
-    });
+    expect(JSON.parse(result.stdoutAsString())).toEqual([]);
+  });
 });
 
 describe('blended mode --count', () => {
-    it('should apply --count to each service separately', async () => {
-        await workspace.runCli(['start', 'blend-chatty', '--shell', 'node ../../sampleServers/burstServer.js 30 chatty']);
-        await workspace.runCli(['start', 'blend-quiet', '--shell', 'node ../../sampleServers/burstServer.js 1 quiet']);
-        await workspace.runCli(['wait-for-log', 'blend-chatty', '--message', 'chatty done']);
-        await workspace.runCli(['wait-for-log', 'blend-quiet', '--message', 'quiet done']);
+  it('should apply --count to each service separately', async () => {
+    await workspace.runCli([
+      'start',
+      'blend-chatty',
+      '--shell',
+      'node ../../sampleServers/burstServer.js 30 chatty',
+    ]);
+    await workspace.runCli([
+      'start',
+      'blend-quiet',
+      '--shell',
+      'node ../../sampleServers/burstServer.js 1 quiet',
+    ]);
+    await workspace.runCli(['wait-for-log', 'blend-chatty', '--message', 'chatty done']);
+    await workspace.runCli(['wait-for-log', 'blend-quiet', '--message', 'quiet done']);
 
-        const result = await workspace.runCli(['logs', 'blend-chatty', 'blend-quiet', '--count', '3']);
-        const output = result.stdoutAsString();
+    const result = await workspace.runCli(['logs', 'blend-chatty', 'blend-quiet', '--count', '3']);
+    const output = result.stdoutAsString();
 
-        // The quiet service is not pushed out by the chatty one.
-        expect(output).toContain('[blend-quiet] quiet 0');
-        expect(output).toContain('[blend-quiet] quiet done');
-        const chattyLines = output.split('\n').filter((l) => l.startsWith('[blend-chatty]'));
-        expect(chattyLines).toEqual([
-            '[blend-chatty] chatty 28',
-            '[blend-chatty] chatty 29',
-            '[blend-chatty] chatty done',
-        ]);
-        expect(output).toContain('-- showing the last 3 lines per service (blend-chatty had more); use --count to see more --');
+    // The quiet service is not pushed out by the chatty one.
+    expect(output).toContain('[blend-quiet] quiet 0');
+    expect(output).toContain('[blend-quiet] quiet done');
+    const chattyLines = output.split('\n').filter(l => l.startsWith('[blend-chatty]'));
+    expect(chattyLines).toEqual([
+      '[blend-chatty] chatty 28',
+      '[blend-chatty] chatty 29',
+      '[blend-chatty] chatty done',
+    ]);
+    expect(output).toContain(
+      '-- showing the last 3 lines per service (blend-chatty had more); use --count to see more --'
+    );
 
-        await workspace.runCli(['kill', 'blend-chatty', 'blend-quiet']);
-    });
+    await workspace.runCli(['kill', 'blend-chatty', 'blend-quiet']);
+  });
 });
 
 describe('starting and logging multiple processes', () => {
-    it('should start service and capture logs', async () => {
-        // Start a service
-        const startResult = await workspace.runCli([
-            'start', 'delayed-exit-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
-        ]);
+  it('should start service and capture logs', async () => {
+    // Start a service
+    const startResult = await workspace.runCli([
+      'start',
+      'delayed-exit-a',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 2000',
+    ]);
 
-        const startOutput = startResult.stdoutAsString();
+    const startOutput = startResult.stdoutAsString();
 
-        // Service should have started
-        expect(startOutput).toContain("Started");
-        expect(startOutput).toContain("'delayed-exit-a'");
+    // Service should have started
+    expect(startOutput).toContain('Started');
+    expect(startOutput).toContain("'delayed-exit-a'");
 
-        // Wait for output and check logs
-        await workspace.runCli(['wait-for-log', 'delayed-exit-a', '--message', 'Delayed exit server running']);
-        const logsResult = await workspace.runCli(['logs', 'delayed-exit-a']);
-        expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
+    // Wait for output and check logs
+    await workspace.runCli([
+      'wait-for-log',
+      'delayed-exit-a',
+      '--message',
+      'Delayed exit server running',
+    ]);
+    const logsResult = await workspace.runCli(['logs', 'delayed-exit-a']);
+    expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
+  });
+
+  it('should start multiple transient services', async () => {
+    // Start two transient services
+    await workspace.runCli([
+      'start',
+      'blended-a',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 3000',
+    ]);
+    await workspace.runCli([
+      'start',
+      'blended-b',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 3000',
+    ]);
+
+    // Wait for them to fully start
+    await workspace.runCli([
+      'wait-for-log',
+      'blended-a',
+      '--message',
+      'Delayed exit server running',
+    ]);
+    await workspace.runCli([
+      'wait-for-log',
+      'blended-b',
+      '--message',
+      'Delayed exit server running',
+    ]);
+
+    // Check logs for each service
+    const logsA = await workspace.runCli(['logs', 'blended-a']);
+    const logsB = await workspace.runCli(['logs', 'blended-b']);
+
+    expect(logsA.stdoutAsString()).toContain('Delayed exit server');
+    expect(logsB.stdoutAsString()).toContain('Delayed exit server');
+  });
+
+  it('should list multiple running processes', async () => {
+    // Start two transient services
+    await workspace.runCli([
+      'start',
+      'watch-a',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 5000',
+    ]);
+    await workspace.runCli([
+      'start',
+      'watch-b',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 5000',
+    ]);
+
+    // Wait for them to fully start
+    await workspace.runCli(['wait-for-log', 'watch-a', '--message', 'Delayed exit server running']);
+    await workspace.runCli(['wait-for-log', 'watch-b', '--message', 'Delayed exit server running']);
+
+    // List should show both processes
+    const listResult = await workspace.runCli(['list']);
+    const output = listResult.stdoutAsString();
+
+    expect(output).toContain('watch-a');
+    expect(output).toContain('watch-b');
+  });
+
+  it('should capture logs from single process', async () => {
+    // Start a single service
+    await workspace.runCli([
+      'start',
+      'single-delayed',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 2000',
+    ]);
+
+    await workspace.runCli([
+      'wait-for-log',
+      'single-delayed',
+      '--message',
+      'Delayed exit server running',
+    ]);
+
+    const logsResult = await workspace.runCli(['logs', 'single-delayed']);
+    const output = logsResult.stdoutAsString();
+
+    // Should have the output
+    expect(output).toContain('Delayed exit server');
+  });
+
+  it('should error when using --shell with multiple service names', async () => {
+    const result = await workspace.runCli(
+      ['start', 'service1', 'service2', '--shell', 'node somescript.js'],
+      { ignoreExitCode: true }
+    );
+
+    expect(result.failed()).toBe(true);
+    expect(result.stderrAsString()).toContain(
+      'Exactly one service name is required when using --shell'
+    );
+  });
+
+  it('should start transient service and capture output', async () => {
+    // Start a transient service
+    const startResult = await workspace.runCli([
+      'start',
+      'multi-a',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 2000',
+    ]);
+
+    // Service should have started
+    const startOutput = startResult.stdoutAsString();
+    expect(startOutput).toContain('Started');
+    expect(startOutput).toContain("'multi-a'");
+
+    // Wait for output and verify logs
+    await workspace.runCli(['wait-for-log', 'multi-a', '--message', 'Delayed exit server running']);
+    const logsResult = await workspace.runCli(['logs', 'multi-a']);
+    expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
+  });
+
+  it('should start and track quick-exit config service', async () => {
+    // Start quick-exit (which exits quickly) and another transient
+    await workspace.runCli(['start', 'quick-exit']);
+    await workspace.runCli([
+      'start',
+      'quick-exit-b',
+      '--shell',
+      'node ../../sampleServers/delayedExitServer.js 0 2000',
+    ]);
+
+    // Wait for them to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Check that we can get logs for both
+    const logsResult = await workspace.runCli(['logs', 'quick-exit-b']);
+    expect(logsResult.stdoutAsString().length).toBeGreaterThan(0);
+  });
+});
+
+describe('logs across runs', () => {
+  const name = 'crash-then-restart';
+
+  /** First run prints "first run" and crashes; second run stays up. */
+  async function crashThenRestart() {
+    await workspace.runCli([
+      'start',
+      name,
+      '--shell',
+      'echo "first run"; sleep 1; echo "FATAL: lost connection" >&2; exit 1',
+    ]);
+    for (let i = 0; i < 50; i++) {
+      const logs = await workspace.runCli(['logs', name]);
+      if (logs.stdoutAsString().includes('exited with code 1')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return workspace.runCli(['start', name, '--shell', 'echo "second run"; sleep 60']);
+  }
+
+  afterAll(async () => {
+    await workspace.runCli(['kill', name], { ignoreExitCode: true });
+  });
+
+  it('start points at the crashed run, and --previous shows it', async () => {
+    const started = await crashThenRestart();
+    expect(started.stdoutAsString()).toContain(
+      `[The previous run exited with code 1; see 'candle logs ${name} --previous']`
+    );
+    await workspace.runCli(['wait-for-log', name, '--message', 'second run']);
+
+    const latest = (await workspace.runCli(['logs', name])).stdoutAsString();
+    expect(latest).toContain('second run');
+    expect(latest).not.toContain('first run');
+
+    const previous = (await workspace.runCli(['logs', name, '--previous'])).stdoutAsString();
+    expect(previous).toContain('first run');
+    expect(previous).toContain('FATAL: lost connection');
+    expect(previous).not.toContain('second run');
+  });
+
+  it('--all-runs shows every run in order, marking each new run', async () => {
+    const lines = (await workspace.runCli(['logs', name, '--all-runs']))
+      .stdoutAsString()
+      .split('\n');
+    const first = lines.indexOf('first run');
+    const marker = lines.indexOf('-- new run --');
+    const second = lines.indexOf('second run');
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(marker).toBeGreaterThan(first);
+    expect(second).toBeGreaterThan(marker);
+  });
+
+  it('--json includes the run of each entry', async () => {
+    const result = await workspace.runCli(['logs', name, '--all-runs', '--json']);
+    const entries = JSON.parse(result.stdoutAsString());
+    const runOf = (content: string) => entries.find((e: any) => e.content === content).run;
+    expect(runOf('first run')).toBeLessThan(runOf('second run'));
+  });
+
+  it('rejects --previous together with --all-runs', async () => {
+    const result = await workspace.runCli(['logs', name, '--previous', '--all-runs'], {
+      ignoreExitCode: true,
     });
-
-    it('should start multiple transient services', async () => {
-        // Start two transient services
-        await workspace.runCli([
-            'start', 'blended-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 3000'
-        ]);
-        await workspace.runCli([
-            'start', 'blended-b',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 3000'
-        ]);
-
-        // Wait for them to fully start
-        await workspace.runCli(['wait-for-log', 'blended-a', '--message', 'Delayed exit server running']);
-        await workspace.runCli(['wait-for-log', 'blended-b', '--message', 'Delayed exit server running']);
-
-        // Check logs for each service
-        const logsA = await workspace.runCli(['logs', 'blended-a']);
-        const logsB = await workspace.runCli(['logs', 'blended-b']);
-
-        expect(logsA.stdoutAsString()).toContain('Delayed exit server');
-        expect(logsB.stdoutAsString()).toContain('Delayed exit server');
-    });
-
-    it('should list multiple running processes', async () => {
-        // Start two transient services
-        await workspace.runCli([
-            'start', 'watch-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
-        ]);
-        await workspace.runCli([
-            'start', 'watch-b',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 5000'
-        ]);
-
-        // Wait for them to fully start
-        await workspace.runCli(['wait-for-log', 'watch-a', '--message', 'Delayed exit server running']);
-        await workspace.runCli(['wait-for-log', 'watch-b', '--message', 'Delayed exit server running']);
-
-        // List should show both processes
-        const listResult = await workspace.runCli(['list']);
-        const output = listResult.stdoutAsString();
-
-        expect(output).toContain('watch-a');
-        expect(output).toContain('watch-b');
-    });
-
-    it('should capture logs from single process', async () => {
-        // Start a single service
-        await workspace.runCli([
-            'start', 'single-delayed',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
-        ]);
-
-        await workspace.runCli(['wait-for-log', 'single-delayed', '--message', 'Delayed exit server running']);
-
-        const logsResult = await workspace.runCli(['logs', 'single-delayed']);
-        const output = logsResult.stdoutAsString();
-
-        // Should have the output
-        expect(output).toContain('Delayed exit server');
-    });
-
-    it('should error when using --shell with multiple service names', async () => {
-        const result = await workspace.runCli([
-            'start', 'service1', 'service2',
-            '--shell', 'node somescript.js'
-        ], { ignoreExitCode: true });
-
-        expect(result.failed()).toBe(true);
-        expect(result.stderrAsString()).toContain('Exactly one service name is required when using --shell');
-    });
-
-    it('should start transient service and capture output', async () => {
-        // Start a transient service
-        const startResult = await workspace.runCli([
-            'start', 'multi-a',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
-        ]);
-
-        // Service should have started
-        const startOutput = startResult.stdoutAsString();
-        expect(startOutput).toContain("Started");
-        expect(startOutput).toContain("'multi-a'");
-
-        // Wait for output and verify logs
-        await workspace.runCli(['wait-for-log', 'multi-a', '--message', 'Delayed exit server running']);
-        const logsResult = await workspace.runCli(['logs', 'multi-a']);
-        expect(logsResult.stdoutAsString()).toContain('Delayed exit server');
-    });
-
-    it('should start and track quick-exit config service', async () => {
-        // Start quick-exit (which exits quickly) and another transient
-        await workspace.runCli(['start', 'quick-exit']);
-        await workspace.runCli([
-            'start', 'quick-exit-b',
-            '--shell', 'node ../../sampleServers/delayedExitServer.js 0 2000'
-        ]);
-
-        // Wait for them to start
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Check that we can get logs for both
-        const logsResult = await workspace.runCli(['logs', 'quick-exit-b']);
-        expect(logsResult.stdoutAsString().length).toBeGreaterThan(0);
-    });
+    expect(result.failed()).toBe(true);
+    expect(result.stderrAsString()).toContain('Cannot use --previous and --all-runs together');
+  });
 });

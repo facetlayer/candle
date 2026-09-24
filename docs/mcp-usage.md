@@ -50,7 +50,7 @@ Generic client configuration:
  - `StartTransientService` — start a one-off process from a `shell` command (and optional `root`). See `candle get-doc transient-processes`.
  - `RestartService` — restart one service (starting it if it's stopped), or every service in the project if no name is given.
  - `KillService` — stop a service.
- - `GetLogs` — recent output for a service (`limit`, default 200).
+ - `GetLogs` — recent output for a service's latest run (`limit`, default 200). `previous: true` returns the run before it (e.g. the one that crashed), `allRuns: true` every stored run.
  - `ListPorts` — ports the running services are listening on.
  - `OpenBrowser` — open a browser to a service's detected port.
  - `AddServerConfig` — add a service to `.candle.json`.

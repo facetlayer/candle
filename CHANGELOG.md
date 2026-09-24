@@ -11,6 +11,7 @@
  - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
  - Docs: `project-setup` explains terminal vs. background `start`, start vs. restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
  - `candle get-doc` no longer prints a `(File source: ...)` line after each doc.
+ - `candle logs --previous` shows the run before the latest one (e.g. the crash, after starting the service again), and `--all-runs` shows every stored run in order. `start`/`restart` point at `--previous` when relaunching a service whose last run exited with an error. `logs --json` entries include `run`. MCP `GetLogs` takes `previous` and `allRuns`.
  - Fix: `candle kill` (and `restart`) also stops background children that detached from the service, such as a double-forked `(daemon &)`. Each service now runs in its own process group.
  - `--project-dir` (and other options) can go before the command: `candle --project-dir ~/app ps`. A leading option the command doesn't take is now an error instead of being silently ignored.
  - Fix: `find-orphans` no longer reports running transient processes (started with `--shell`) as orphaned because they aren't in `.candle.json`.

@@ -36,6 +36,8 @@ Get recent logs for a specific service.
 **Parameters:**
 - `name` (string, required) - Name of the service
 - `limit` (number, optional) - Maximum number of log lines to return (default: 200)
+- `previous` (boolean, optional) - Return the run before the latest one, like `candle logs --previous`
+- `allRuns` (boolean, optional) - Return every stored run, oldest first, like `candle logs --all-runs`. Can't be combined with `previous`
 - `projectDir` (string, optional) - Project directory for cross-directory access
 
 A name that isn't configured in the project, and has no stored logs or process, is an error: `No service '<name>' configured for directory: <dir>`, the same as `candle logs`. A finished transient service still has its logs, so its name keeps working.

@@ -22,6 +22,7 @@ use crate::commands::{assert_known_service_names_in_scope, assert_valid_command_
 use crate::config::commands::{add_server_config, AddServerConfigArgs};
 use crate::config::file::find_project_dir;
 use crate::errors::CandleError;
+use crate::logs::process_logs::RunScope;
 use crate::project_scope::ProjectScope;
 use crate::start::start_one_service::{start_one_service, IfRunning, RunOptions};
 
@@ -73,12 +74,14 @@ fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "GetLogs",
-            description: "Get recent logs for a specific service",
+            description: "Get recent logs for a specific service, from its latest run by default",
             schema: json!({
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" },
                     "limit": { "type": "number", "description": "Maximum number of log lines to return (optional)" },
+                    "previous": { "type": "boolean", "description": "Return the run before the latest one, e.g. the one that crashed before the service was started again (optional)" },
+                    "allRuns": { "type": "boolean", "description": "Return every stored run, oldest first (optional; can't be combined with previous)" },
                     "projectDir": { "type": "string", "description": "Project directory where the service is defined (optional - for cross-directory access)" }
                 },
                 "required": ["name"]
@@ -223,7 +226,19 @@ fn tool_get_logs(
     let project_dir = scope.resolve()?;
     let names = [name];
     assert_known_service_names_in_scope(conn, &scope, &project_dir, &names)?;
+    let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
+    let runs = match (flag("previous"), flag("allRuns")) {
+        (true, true) => {
+            return Err(CandleError::UsageError(
+                "Cannot use previous and allRuns together".to_string(),
+            ))
+        }
+        (true, false) => RunScope::Previous,
+        (false, true) => RunScope::All,
+        (false, false) => RunScope::Latest,
+    };
     let options = crate::commands::logs::LogsCommandOptions {
+        runs,
         more_hint: "pass a larger `limit` to see more".to_string(),
         ..crate::commands::logs::LogsCommandOptions::cli(limit)
     };

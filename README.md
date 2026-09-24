@@ -227,9 +227,14 @@ Example:
     [frontend] Web server available at http://localhost:8080
 
 
-### `candle logs [names] [--count <number>] [--start-at <id>] [--json]`
+### `candle logs [names] [--count <number>] [--previous | --all-runs] [--start-at <id>] [--json]`
 
 Show the recent logs for the given service, from its most recent run.
+
+If a service crashed and was started again, the crash output belongs to the previous run.
+`candle logs <name> --previous` shows it, and `start` points at it when it relaunches a
+service whose last run exited with an error. `--all-runs` shows every stored run in order,
+with a `-- new run --` line where each run begins.
 
 If `[name]` is not provided: Show recent logs across all services in the project directory.
 When more than one service is shown, each line is prefixed with `[<service name>]`, and the
@@ -243,8 +248,10 @@ A name that isn't configured and has no stored logs is an error (exit 1).
 Options:
 
  - `--count <number>` - Number of log lines to show per service (default: 100).
+ - `--previous` - Show the run before the latest one instead.
+ - `--all-runs` - Show every stored run, oldest first.
  - `--start-at <id>` - Only show logs with an ID greater than `<id>`. IDs appear in `--json` output.
- - `--json` - Print the logs as a JSON array of `{ id, service, type, content, timestamp }`.
+ - `--json` - Print the logs as a JSON array of `{ id, service, type, content, timestamp, run }`.
 
 ### `candle kill`
 

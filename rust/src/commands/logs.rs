@@ -4,14 +4,20 @@
 //! the project when none are named), filters to the most recent launch
 //! (showing logs from a previous launch when there is no launch marker), and
 //! renders each row through the output sink, either as text or (with `--json`)
-//! as a JSON array that carries each row's ID.
+//! as a JSON array that carries each row's ID and run.
+//!
+//! `--previous` reads the run before the latest instead (the output of a crash,
+//! after the service was started again), and `--all-runs` reads every stored
+//! run in order, marking where each new run begins.
+
+use std::collections::HashMap;
 
 use rusqlite::Connection;
 use serde_json::json;
 
 use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
 use crate::logs::process_logs::{
-    command_names_with_logs, get_log_tail, LogSearchOptions, LogTail, ProcessLog,
+    command_names_with_logs, get_log_tail_of, LogSearchOptions, LogTail, ProcessLog, RunScope,
 };
 use crate::logs::ProcessLogType;
 use crate::output;
@@ -28,6 +34,8 @@ pub struct LogsCommandOptions {
     pub start_at_id: Option<i64>,
     /// Print a JSON array instead of text.
     pub json: bool,
+    /// Which runs to read: the latest (default), the previous, or all.
+    pub runs: RunScope,
     /// Tail of the truncation hint, e.g. [`CLI_MORE_HINT`]. MCP callers pass a
     /// hint that names the tool's `limit` parameter instead.
     pub more_hint: String,
@@ -40,19 +48,20 @@ impl LogsCommandOptions {
             limit,
             start_at_id: None,
             json: false,
+            runs: RunScope::Latest,
             more_hint: CLI_MORE_HINT.to_string(),
         }
     }
 }
 
-/// The newest `limit` printable rows of each named command's latest run.
-fn fetch_latest_run_tail(
+/// The newest `limit` printable rows of each named command's selected runs.
+fn fetch_tail(
     conn: &Connection,
     project_dir: &str,
     command_names: Vec<String>,
     options: &LogsCommandOptions,
 ) -> LogTail {
-    get_log_tail(
+    get_log_tail_of(
         conn,
         &LogSearchOptions {
             project_dir: Some(project_dir.to_string()),
@@ -61,6 +70,7 @@ fn fetch_latest_run_tail(
             ..Default::default()
         },
         options.limit,
+        options.runs,
     )
     .unwrap_or_default()
 }
@@ -88,6 +98,7 @@ fn logs_to_json(logs: &[ProcessLog]) -> String {
                 "type": log_type,
                 "content": log.content.as_deref().unwrap_or_default(),
                 "timestamp": log.timestamp,
+                "run": log.run_id,
             }))
         })
         .collect();
@@ -126,7 +137,7 @@ pub fn handle_logs_command(
             command_names.to_vec()
         };
         for name in names {
-            let service = fetch_latest_run_tail(conn, project_dir, vec![name.clone()], options);
+            let service = fetch_tail(conn, project_dir, vec![name.clone()], options);
             if service.truncated && !service.logs.is_empty() {
                 truncated_services.push(name);
             }
@@ -134,7 +145,7 @@ pub fn handle_logs_command(
         }
         logs.sort_by_key(|l| l.id);
     } else {
-        let service = fetch_latest_run_tail(conn, project_dir, command_names.to_vec(), options);
+        let service = fetch_tail(conn, project_dir, command_names.to_vec(), options);
         if service.truncated {
             truncated_services.push(command_names[0].clone());
         }
@@ -147,21 +158,25 @@ pub fn handle_logs_command(
     }
 
     if logs.is_empty() {
+        let found = match options.runs {
+            RunScope::Previous => "No logs from a previous run",
+            RunScope::Latest | RunScope::All => "No logs",
+        };
         if command_names.len() == 1 {
             output::out(&format!(
-                "No logs found for service '{}' in project '{project_dir}'.",
+                "{found} found for service '{}' in project '{project_dir}'.",
                 command_names[0]
             ));
         } else {
             output::out(&format!(
-                "No logs found for services in project '{project_dir}'."
+                "{found} found for services in project '{project_dir}'."
             ));
         }
         return;
     }
 
-    // Only when the limit cut off lines from this run; a previous run's lines
-    // are hidden on purpose and aren't worth a hint.
+    // Only when the limit cut off lines from the selected runs; other runs'
+    // lines are left out on purpose and aren't worth a hint.
     if !truncated_services.is_empty() {
         let what = lines_phrase(options.limit);
         let hint = if is_blended_mode {
@@ -176,7 +191,21 @@ pub fn handle_logs_command(
         output::out(&hint);
     }
 
+    // With --all-runs, mark where each service's next run begins. The first run
+    // shown needs no marker.
+    let mut last_run: HashMap<&str, Option<i64>> = HashMap::new();
     for log in &logs {
+        if options.runs == RunScope::All {
+            let previous = last_run.insert(&log.command_name, log.run_id);
+            if previous.is_some_and(|run| run != log.run_id) {
+                let prefix = if is_blended_mode {
+                    format!("[{}] ", log.command_name)
+                } else {
+                    String::new()
+                };
+                output::out(&format!("{prefix}-- new run --"));
+            }
+        }
         console_log_row(
             log,
             &ConsoleLogOptions {
@@ -413,6 +442,125 @@ mod tests {
         let entries = parsed.as_array().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["content"], "beta");
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two runs of `svc`: the first prints "first" and crashes, the second
+    /// prints "second".
+    fn save_two_runs(conn: &Connection) {
+        let save = |log_type, content: Option<&str>| {
+            save_process_log(conn, "svc", "/proj", log_type, content).unwrap();
+        };
+        save(ProcessLogType::ProcessStartInitiated, None);
+        save(ProcessLogType::Stdout, Some("first"));
+        save(
+            ProcessLogType::ProcessExited,
+            Some("Process exited with code 1"),
+        );
+        save(ProcessLogType::ProcessStartInitiated, None);
+        save(ProcessLogType::Stdout, Some("second"));
+    }
+
+    fn run_logs(conn: &Connection, names: &[&str], options: &LogsCommandOptions) -> Vec<String> {
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let (_, captured) = output::capture(|| {
+            handle_logs_command(conn, "/proj", &names, options);
+        });
+        captured.stdout
+    }
+
+    fn with_runs(runs: RunScope) -> LogsCommandOptions {
+        LogsCommandOptions {
+            runs,
+            ..LogsCommandOptions::cli(100)
+        }
+    }
+
+    #[test]
+    fn previous_shows_the_run_before_the_latest() {
+        let dir = temp_db_dir("logs-previous");
+        let conn = get_database(Some(&dir)).unwrap();
+        save_two_runs(&conn);
+
+        assert_eq!(
+            run_logs(&conn, &["svc"], &LogsCommandOptions::cli(100)),
+            vec!["second"]
+        );
+        let previous = run_logs(&conn, &["svc"], &with_runs(RunScope::Previous));
+        assert_eq!(previous.len(), 2);
+        assert_eq!(previous[0], "first");
+        assert!(previous[1].contains("exited with code 1"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn previous_with_a_single_run_says_there_is_none() {
+        let dir = temp_db_dir("logs-previous-none");
+        let conn = get_database(Some(&dir)).unwrap();
+        save_process_log(
+            &conn,
+            "svc",
+            "/proj",
+            ProcessLogType::ProcessStartInitiated,
+            None,
+        )
+        .unwrap();
+        save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("only")).unwrap();
+
+        assert_eq!(
+            run_logs(&conn, &["svc"], &with_runs(RunScope::Previous)),
+            vec!["No logs from a previous run found for service 'svc' in project '/proj'."]
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn all_runs_are_shown_in_order_with_a_marker_between_runs() {
+        let dir = temp_db_dir("logs-all-runs");
+        let conn = get_database(Some(&dir)).unwrap();
+        save_two_runs(&conn);
+
+        let lines = run_logs(&conn, &["svc"], &with_runs(RunScope::All));
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "first");
+        assert!(lines[1].contains("exited with code 1"));
+        assert_eq!(lines[2], "-- new run --");
+        assert_eq!(lines[3], "second");
+
+        // Blended mode prefixes the marker with the service, like its lines.
+        let blended = run_logs(&conn, &[], &with_runs(RunScope::All));
+        assert!(blended.contains(&"[svc] -- new run --".to_string()));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn json_output_includes_each_row_run() {
+        let dir = temp_db_dir("logs-json-run");
+        let conn = get_database(Some(&dir)).unwrap();
+        save_two_runs(&conn);
+
+        let options = LogsCommandOptions {
+            json: true,
+            ..with_runs(RunScope::All)
+        };
+        let parsed: serde_json::Value =
+            serde_json::from_str(&run_logs(&conn, &["svc"], &options).join("\n")).unwrap();
+        let runs: Vec<i64> = parsed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["run"].as_i64().unwrap())
+            .collect();
+        // Each run's id is its start marker's row id: rows 1 and 4.
+        assert_eq!(runs, vec![1, 1, 4]);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

@@ -64,6 +64,8 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         "list-all" => &[("json", false)],
         "logs" => &[
             ("count", true),
+            ("previous", false),
+            ("all-runs", false),
             ("start-at", true),
             ("json", false),
             ("project-dir", true),

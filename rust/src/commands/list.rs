@@ -168,7 +168,7 @@ fn parse_exit_code(content: &str) -> Option<i64> {
 
 /// How a stopped service's latest run ended, as far as `ps` / `list` care.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LatestRun {
+pub(crate) enum LatestRun {
     /// Still going, stopped deliberately, exited cleanly, or never ran.
     Unremarkable,
     /// Ended with a non-zero exit code (a crash, or a start that exited
@@ -183,7 +183,7 @@ enum LatestRun {
 /// Classify a service's latest run from that run's newest lifecycle row (start
 /// initiated / failed / started / exited). A previous instance's late exit row
 /// belongs to an older run and is ignored.
-fn latest_run(
+pub(crate) fn latest_run(
     conn: &Connection,
     project_dir: &str,
     command_name: &str,

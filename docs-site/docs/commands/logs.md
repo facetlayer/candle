@@ -5,7 +5,7 @@ Show recent logs for service(s).
 ## Syntax
 
 ```bash
-candle logs [name...] [--count <number>] [--start-at <id>] [--json]
+candle logs [name...] [--count <number>] [--previous | --all-runs] [--start-at <id>] [--json]
 ```
 
 ## Description
@@ -13,6 +13,28 @@ candle logs [name...] [--count <number>] [--start-at <id>] [--json]
 The `logs` command displays the most recent log output from one or more services. By default, it shows the last 100 lines and then exits (non-interactive).
 
 It shows output from each service's most recent run. That works for services that aren't running anymore too, which is handy for seeing why one crashed. Output from earlier runs is left out.
+
+If a crashed service has already been started again, its crash output belongs to the previous run. Use `--previous` to see it. [start](start) and [restart](restart) point at it when they relaunch a service whose last run exited with an error:
+
+```
+$ candle start api
+[Started process 'api'] $ npm run dev
+[With root directory: /home/me/app]
+[The previous run exited with code 1; see 'candle logs api --previous']
+```
+
+`--all-runs` shows every stored run of each service, oldest first, with a `-- new run --` line where each run begins:
+
+```
+$ candle logs api --all-runs
+listening on port 3000
+[stderr] Error: connection refused
+[Process exited with code 1]
+-- new run --
+listening on port 3000
+```
+
+How many earlier runs are available depends on log retention; see [Configuration](../configuration).
 
 `--count` counts the lines that are printed. When there are more lines from the latest run than `--count` allows, the output starts with a hint:
 
@@ -44,8 +66,10 @@ Naming a service that isn't configured, and that has no stored logs, is an error
 ## Options
 
 - `--count <number>` - Number of log lines to show, per service. Default: 100.
+- `--previous` - Show the run before the latest one instead of the latest.
+- `--all-runs` - Show every stored run, oldest first. Can't be combined with `--previous`.
 - `--start-at <id>` - Only show logs with an ID greater than `<id>`. Log IDs appear in the `--json` output, so pass the `id` of the last entry you've seen to fetch only newer lines.
-- `--json` - Print the logs as a JSON array. Each entry has `id`, `service`, `type` (`stdout`, `stderr`, `exited` or `start_failed`), `content` and `timestamp` (Unix seconds). No truncation hint is printed; an empty result is `[]`.
+- `--json` - Print the logs as a JSON array. Each entry has `id`, `service`, `type` (`stdout`, `stderr`, `exited` or `start_failed`), `content`, `timestamp` (Unix seconds) and `run` (an ID shared by every line of one run of the service). No truncation hint is printed; an empty result is `[]`.
 - `--project-dir <dir>` - Act on the given project instead of the current directory. See [Targeting another project](../project-dir).
 
 ## Examples
@@ -60,6 +84,12 @@ candle logs api
 
 ```bash
 candle logs api web
+```
+
+### See why a service crashed, after starting it again
+
+```bash
+candle logs api --previous
 ```
 
 ### Show only the last 10 log lines
@@ -78,14 +108,16 @@ $ candle logs api --count 2 --json
     "service": "api",
     "type": "stdout",
     "content": "GET /health 200",
-    "timestamp": 1790000000
+    "timestamp": 1790000000,
+    "run": 498
   },
   {
     "id": 512,
     "service": "api",
     "type": "stdout",
     "content": "GET /api/users 200",
-    "timestamp": 1790000001
+    "timestamp": 1790000001,
+    "run": 498
   }
 ]
 ```
