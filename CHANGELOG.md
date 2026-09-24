@@ -5,6 +5,7 @@
  - `--` ends option parsing; everything after it is positional.
  - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
  - Docs: `project-setup` explains terminal vs. background `start`, start/check-start/restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
+ - `candle get-doc` no longer prints a `(File source: ...)` line after each doc.
 
 
 # 0.15.0 (2026-09-23)

@@ -23,13 +23,10 @@ pub struct DocInfo {
     pub filename: String,
 }
 
-/// A resolved doc: its filename, where it lives in the repo, and its content
-/// with the frontmatter stripped.
+/// A resolved doc: its filename and its content with the frontmatter stripped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocContent {
     pub filename: String,
-    /// Repo-relative path of the source file, e.g. `docs/project-setup.md`.
-    pub source_path: String,
     pub content: String,
 }
 
@@ -89,16 +86,6 @@ fn stem(filename: &str) -> &str {
     filename.strip_suffix(".md").unwrap_or(filename)
 }
 
-/// Repo-relative path of an embedded doc. `README.md` is the repo's top-level
-/// README; everything else comes from `docs/`.
-fn source_path(filename: &str) -> String {
-    if filename == "README.md" {
-        filename.to_string()
-    } else {
-        format!("docs/{filename}")
-    }
-}
-
 /// List all docs with metadata from frontmatter (`name`/`description`), falling back to the filename
 /// stem for `name`.
 pub fn list_docs() -> Vec<DocInfo> {
@@ -142,11 +129,7 @@ pub fn get_doc(name: &str) -> Result<DocContent, DocLookupError> {
         })
         .map(|(filename, raw)| {
             let (_, _, content) = parse_frontmatter(raw);
-            DocContent {
-                source_path: source_path(&filename),
-                filename,
-                content,
-            }
+            DocContent { filename, content }
         })
         .ok_or(DocLookupError::NotFound)
 }
@@ -175,7 +158,6 @@ mod tests {
     fn get_doc_exact_names() {
         let d = get_doc("project-setup").unwrap();
         assert_eq!(d.filename, "project-setup.md");
-        assert_eq!(d.source_path, "docs/project-setup.md");
         assert!(d.content.contains("Project Setup"));
 
         // The filename form works too.
@@ -200,12 +182,6 @@ mod tests {
         let d = get_doc("agents-intro").unwrap();
         assert!(!d.content.starts_with("---"));
         assert!(!d.content.contains("description:"));
-    }
-
-    #[test]
-    fn readme_source_is_repo_root() {
-        let d = get_doc("README").unwrap();
-        assert_eq!(d.source_path, "README.md");
     }
 
     #[test]

@@ -72,17 +72,10 @@ describe('CLI Get-Doc Command', () => {
             expect(output).not.toContain('description: Set up a project');
         });
 
-        it('should report the README at the repo root', async () => {
-            const result = await workspace.runCli(['get-doc', 'README']);
-
-            expect(result.stdoutAsString()).toContain('(File source: README.md)');
-            expect(result.stdoutAsString()).not.toContain('docs/README.md');
-        });
-
-        it('should report docs/ as the source for other docs', async () => {
+        it('should not print a file source annotation', async () => {
             const result = await workspace.runCli(['get-doc', 'project-setup']);
 
-            expect(result.stdoutAsString()).toContain('(File source: docs/project-setup.md)');
+            expect(result.stdoutAsString()).not.toContain('File source');
         });
     });
 

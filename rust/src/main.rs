@@ -273,10 +273,7 @@ fn cmd_get_doc(args: &CommandArgs) {
         _ => fatal("get-doc requires a <name>\nRun \"candle list-docs\" to see available docs."),
     };
     match doc_files::get_doc(name) {
-        Ok(doc) => {
-            println!("{}", doc.content);
-            println!("\n(File source: {})", doc.source_path);
-        }
+        Ok(doc) => println!("{}", doc.content),
         Err(DocLookupError::NotFound) => {
             fatal(format!(
                 "Doc file not found: {name}\nRun with \"list-docs\" command to see available docs."
