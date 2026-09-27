@@ -364,6 +364,37 @@ describe('CLI Start Command', () => {
         });
     });
 
+    describe('heavy startup output', () => {
+        it('reports a start without waiting for the output backlog to be stored', async () => {
+            // 200k lines used to make `start` time out after 10s and report
+            // "failed to start" while the service was running fine.
+            const startTime = Date.now();
+            const result = await workspace.runCli(['start', 'flood', '--shell', 'seq 1 200000; sleep 30']);
+            const elapsed = Date.now() - startTime;
+
+            expect(result.stdoutAsString()).toContain('Started');
+            expect(elapsed).toBeLessThan(5000);
+
+            // Every line still ends up in the logs, in order.
+            await workspace.runCli(['wait-for-log', 'flood', '--message', '200000', '--timeout', '20']);
+            const logs = await workspace.runCli(['logs', 'flood', '--count', '2']);
+            expect(logs.stdoutAsString()).toMatch(/199999\n200000/);
+
+            await workspace.runCli(['kill', 'flood']);
+        });
+
+        it('still reports a failed start behind a backlog of output', async () => {
+            const result = await workspace.runCli(
+                ['start', 'flood-fail', '--shell', 'seq 1 20000; echo boom >&2; exit 3'],
+                { ignoreExitCode: true }
+            );
+
+            expect(result.failed()).toBe(true);
+            expect(result.stderrAsString()).toContain('boom');
+            expect(result.stderrAsString()).toContain('exited with code 3');
+        });
+    });
+
 });
 
 describe('CLI Start with empty config', () => {

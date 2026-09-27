@@ -15,6 +15,7 @@
  - Fix: `candle kill` (and `restart`) also stops background children that detached from the service, such as a double-forked `(daemon &)`. Each service now runs in its own process group.
  - `--project-dir` (and other options) can go before the command: `candle --project-dir ~/app ps`. A leading option the command doesn't take is now an error instead of being silently ignored.
  - Fix: `find-orphans` no longer reports running transient processes (started with `--shell`) as orphaned because they aren't in `.candle.json`.
+ - Fix: a service that prints a lot at startup (100k+ lines) no longer makes `candle start` time out with "failed to start" while it is actually running. Output is also stored about 8x faster.
 
 
 # 0.15.0 (2026-09-23)

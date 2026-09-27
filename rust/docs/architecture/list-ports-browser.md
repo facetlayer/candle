@@ -33,7 +33,7 @@ DB location (`get_state_directory` in `dirs.rs`, `get_database` in `db/mod.rs`):
 2. `$XDG_STATE_HOME/candle` if set and non-empty, else
 3. `~/.local/state/candle`.
 
-DB opened with `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000`. Created if missing (`mkdir -p`).
+DB opened with `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=30000` and `PRAGMA temp_store=MEMORY`. Created if missing (`mkdir -p`).
 
 Relevant queries (`process_table.rs`):
 - `find_all_processes()` → `select * from processes` (no filter, includes killed).

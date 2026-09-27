@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -31,7 +31,7 @@ use crate::debug::debug_log;
 use crate::logs::log_type::{
     killed_by_signal_message, KILLED_BY_SIGNAL, STOPPED_WHILE_STARTING_MESSAGE,
 };
-use crate::logs::process_logs::save_run_log;
+use crate::logs::process_logs::{save_run_log, save_run_logs};
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 
@@ -102,33 +102,92 @@ fn forward_lines(pipe: impl Read, tx: mpsc::Sender<LineEvent>, event: fn(String)
     }
 }
 
-/// Persist one grace-period event.
-///
-/// Returns `Some(exit)` when the event was the child exiting, `None` for output
-/// lines (which are written to `process_output` as they arrive).
-fn record_grace_event(
-    conn: &Connection,
-    run_id: Option<i64>,
-    command_name: &str,
-    project_dir: &str,
-    event: LineEvent,
-) -> Option<ChildExit> {
-    let (log_type, line) = match event {
-        LineEvent::Exit(exit) => return Some(exit),
-        LineEvent::Stdout(line) => (ProcessLogType::Stdout, line),
-        LineEvent::Stderr(line) => (ProcessLogType::Stderr, line),
-    };
+/// Most output lines written in one transaction.
+const MAX_BATCH: usize = 1000;
 
-    debug_log(&format!("[monitor] {log_type:?}: {line}"));
-    let _ = save_run_log(
-        conn,
-        run_id,
-        command_name,
-        project_dir,
-        log_type,
-        Some(&line),
-    );
-    None
+/// An output line waiting to be written.
+type OutputLine = (ProcessLogType, String);
+
+/// Split events into output lines and the exit, if one is among them.
+fn split_events(
+    events: impl IntoIterator<Item = LineEvent>,
+) -> (Vec<OutputLine>, Option<ChildExit>) {
+    let mut lines = Vec::new();
+    let mut exit = None;
+    for event in events {
+        match event {
+            LineEvent::Stdout(line) => lines.push((ProcessLogType::Stdout, line)),
+            LineEvent::Stderr(line) => lines.push((ProcessLogType::Stderr, line)),
+            LineEvent::Exit(e) => exit = Some(e),
+        }
+    }
+    (lines, exit)
+}
+
+/// `first` plus the events already queued behind it, up to [`MAX_BATCH`].
+/// Never waits: a lone line on a quiet service is written at once. Stops at
+/// an `Exit` so the caller sees it right after the lines that preceded it.
+fn take_queued(
+    rx: &mpsc::Receiver<LineEvent>,
+    first: LineEvent,
+) -> (Vec<OutputLine>, Option<ChildExit>) {
+    let mut events = vec![first];
+    while events.len() < MAX_BATCH && !matches!(events.last(), Some(LineEvent::Exit(_))) {
+        match rx.try_recv() {
+            Ok(event) => events.push(event),
+            Err(_) => break,
+        }
+    }
+    split_events(events)
+}
+
+/// Writes a service's output lines into `process_output` for one run.
+struct OutputWriter<'a> {
+    conn: &'a Connection,
+    run_id: Option<i64>,
+    command_name: &'a str,
+    project_dir: &'a str,
+}
+
+impl OutputWriter<'_> {
+    fn write(&self, lines: &[OutputLine]) {
+        if lines.is_empty() {
+            return;
+        }
+        for (log_type, line) in lines {
+            debug_log(&format!("[monitor] {log_type:?}: {line}"));
+        }
+        let _ = save_run_logs(
+            self.conn,
+            self.run_id,
+            self.command_name,
+            self.project_dir,
+            lines.iter().map(|(t, l)| (*t, l.as_str())),
+        );
+    }
+
+    /// Receive and write output until the `Exit` event, which the wait thread
+    /// sends after every line queued before the exit. Used once the exit is
+    /// already known, so this doesn't wait on a live process.
+    fn write_until_exit(&self, rx: &mpsc::Receiver<LineEvent>) {
+        while let Ok(first) = rx.recv() {
+            let (lines, exit) = take_queued(rx, first);
+            self.write(&lines);
+            if exit.is_some() {
+                return;
+            }
+        }
+    }
+
+    /// Write the output that arrives after the `Exit` event (see
+    /// [`drain_after_exit`]).
+    fn write_after_exit(&self, rx: &mpsc::Receiver<LineEvent>) {
+        let mut events = Vec::new();
+        drain_after_exit(rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |e| {
+            events.push(e)
+        });
+        self.write(&split_events(events).0);
+    }
 }
 
 /// Collect output still in flight after the `Exit` event.
@@ -337,8 +396,13 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         None
     };
 
-    // Wait thread: forwards the exit code once the child terminates.
+    // Wait thread: reports the exit once the child terminates. The exit also
+    // goes into `exit_slot`, because on the channel it can sit behind a large
+    // backlog of output; the start decision reads the slot so it never waits
+    // for that backlog to be written.
+    let exit_slot = Arc::new(OnceLock::<ChildExit>::new());
     let tx_exit = tx;
+    let wait_slot = Arc::clone(&exit_slot);
     thread::spawn(move || {
         let exit = match child.wait() {
             Ok(status) => ChildExit {
@@ -347,8 +411,16 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             },
             Err(_) => ChildExit::default(),
         };
+        let _ = wait_slot.set(exit);
         let _ = tx_exit.send(LineEvent::Exit(exit));
     });
+
+    let writer = OutputWriter {
+        conn: &conn,
+        run_id,
+        command_name: &command_name,
+        project_dir: &project_dir,
+    };
 
     // Grace period: collect output until the deadline or an early exit.
     let grace_deadline = Instant::now() + Duration::from_millis(GRACE_PERIOD_MS);
@@ -361,10 +433,10 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             break;
         }
         match rx.recv_timeout(remaining) {
-            Ok(event) => {
-                if let Some(e) =
-                    record_grace_event(&conn, run_id, &command_name, &project_dir, event)
-                {
+            Ok(first) => {
+                let (lines, event_exit) = take_queued(&rx, first);
+                writer.write(&lines);
+                if let Some(e) = event_exit {
                     exited_during_grace = true;
                     exit = e;
                     break;
@@ -374,22 +446,21 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
-    // The deadline can expire with events already queued: a process that dies
-    // instantly still emits its error output first, and writing those lines can
-    // outlast the window on a loaded machine. Drain what has already arrived
-    // before deciding, or a fast failure gets misreported as a successful start.
-    while !exited_during_grace {
-        let Ok(event) = rx.try_recv() else { break };
-        if let Some(e) = record_grace_event(&conn, run_id, &command_name, &project_dir, event) {
+    // The child may have exited within the window with its `Exit` event still
+    // queued behind output (a process that dies instantly still prints its
+    // error first). Ask the wait thread directly rather than writing out the
+    // queue first: a service that prints a lot at startup would otherwise hold
+    // up the start decision until its whole backlog was in the database.
+    if !exited_during_grace {
+        if let Some(e) = exit_slot.get() {
             exited_during_grace = true;
-            exit = e;
+            exit = *e;
+            writer.write_until_exit(&rx);
         }
     }
 
     if exited_during_grace {
-        drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
-            record_grace_event(&conn, run_id, &command_name, &project_dir, event);
-        });
+        writer.write_after_exit(&rx);
     }
 
     // A nonzero exit within the grace period is a start failure: log it, delete
@@ -451,29 +522,13 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     let mut last_cleanup = Instant::now();
     loop {
         match rx.recv_timeout(Duration::from_secs(60)) {
-            Ok(LineEvent::Stdout(line)) => {
-                let _ = save_run_log(
-                    &conn,
-                    run_id,
-                    &command_name,
-                    &project_dir,
-                    ProcessLogType::Stdout,
-                    Some(&line),
-                );
-            }
-            Ok(LineEvent::Stderr(line)) => {
-                let _ = save_run_log(
-                    &conn,
-                    run_id,
-                    &command_name,
-                    &project_dir,
-                    ProcessLogType::Stderr,
-                    Some(&line),
-                );
-            }
-            Ok(LineEvent::Exit(e)) => {
-                exit = e;
-                break;
+            Ok(first) => {
+                let (lines, event_exit) = take_queued(&rx, first);
+                writer.write(&lines);
+                if let Some(e) = event_exit {
+                    exit = e;
+                    break;
+                }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -485,9 +540,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
-    drain_after_exit(&rx, Duration::from_millis(POST_EXIT_DRAIN_MS), |event| {
-        record_grace_event(&conn, run_id, &command_name, &project_dir, event);
-    });
+    writer.write_after_exit(&rx);
 
     debug_log(&format!(
         "[monitor] process exited, pid={child_pid}, {exit:?}"
@@ -544,6 +597,59 @@ mod tests {
         handle.join().unwrap();
         assert_eq!(saved, 2);
         assert_eq!(lines, vec!["late error", "late output"]);
+    }
+
+    #[test]
+    fn take_queued_batches_what_is_queued_and_stops_at_exit() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        tx.send(LineEvent::Stderr("b".into())).unwrap();
+        tx.send(LineEvent::Exit(ChildExit {
+            code: Some(3),
+            signal: None,
+        }))
+        .unwrap();
+        tx.send(LineEvent::Stdout("after exit".into())).unwrap();
+
+        let (lines, exit) = take_queued(&rx, LineEvent::Stdout("a".into()));
+        assert_eq!(
+            lines,
+            vec![
+                (ProcessLogType::Stdout, "a".to_string()),
+                (ProcessLogType::Stderr, "b".to_string()),
+            ]
+        );
+        assert_eq!(
+            exit,
+            Some(ChildExit {
+                code: Some(3),
+                signal: None
+            })
+        );
+        // The line after the exit is left for the post-exit drain.
+        assert!(matches!(rx.try_recv(), Ok(LineEvent::Stdout(_))));
+    }
+
+    #[test]
+    fn take_queued_caps_the_batch() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        for i in 0..(MAX_BATCH + 5) {
+            tx.send(LineEvent::Stdout(i.to_string())).unwrap();
+        }
+        let first = rx.recv().unwrap();
+        let (lines, exit) = take_queued(&rx, first);
+        assert_eq!(lines.len(), MAX_BATCH);
+        assert_eq!(exit, None);
+        assert_eq!(rx.try_iter().count(), 5);
+    }
+
+    #[test]
+    fn take_queued_does_not_wait_for_more_output() {
+        let (tx, rx) = mpsc::channel::<LineEvent>();
+        let start = Instant::now();
+        let (lines, _) = take_queued(&rx, LineEvent::Stdout("only".into()));
+        assert_eq!(lines.len(), 1);
+        assert!(start.elapsed() < Duration::from_millis(100));
+        drop(tx);
     }
 
     #[test]

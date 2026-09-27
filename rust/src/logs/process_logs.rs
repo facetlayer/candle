@@ -67,6 +67,35 @@ pub fn save_run_log(
     Ok(())
 }
 
+/// Save several output rows for one run in a single transaction.
+///
+/// A commit per line limits the monitor to roughly 10k lines/sec, so it
+/// writes whatever output has queued up in one go.
+pub fn save_run_logs<'a>(
+    conn: &Connection,
+    run_id: Option<i64>,
+    command_name: &str,
+    project_dir: &str,
+    entries: impl IntoIterator<Item = (ProcessLogType, &'a str)>,
+) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare_cached(
+            "insert into process_output(command_name, project_dir, content, log_type, run_id) values(?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for (log_type, content) in entries {
+            stmt.execute(rusqlite::params![
+                command_name,
+                project_dir,
+                content,
+                log_type.as_i64(),
+                run_id
+            ])?;
+        }
+    }
+    tx.commit()
+}
+
 /// [`save_run_log`] with the run assigned by position.
 pub fn save_process_log(
     conn: &Connection,
@@ -398,6 +427,47 @@ pub fn has_logs_for_command(
 mod tests {
     use super::*;
     use crate::db::{get_database, temp_db_dir};
+
+    #[test]
+    fn save_run_logs_writes_a_batch_in_order() {
+        let dir = temp_db_dir("process-logs-batch");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        save_run_logs(
+            &conn,
+            Some(7),
+            "api",
+            "/proj",
+            [
+                (ProcessLogType::Stdout, "one"),
+                (ProcessLogType::Stderr, "two"),
+                (ProcessLogType::Stdout, "three"),
+            ],
+        )
+        .unwrap();
+
+        let logs = get_process_logs(
+            &conn,
+            &LogSearchOptions {
+                project_dir: Some("/proj".into()),
+                command_names: vec!["api".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let rows: Vec<_> = logs
+            .iter()
+            .map(|l| (l.log_type, l.content.as_deref().unwrap(), l.run_id))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (ProcessLogType::Stdout.as_i64(), "one", Some(7)),
+                (ProcessLogType::Stderr.as_i64(), "two", Some(7)),
+                (ProcessLogType::Stdout.as_i64(), "three", Some(7)),
+            ]
+        );
+    }
 
     #[test]
     fn save_and_fetch_chronological() {

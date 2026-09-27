@@ -155,6 +155,10 @@ pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
     // returns a row ("wal"); query_row consumes it.
     conn.query_row("PRAGMA journal_mode=WAL", [], |_row| Ok(()))?;
     conn.pragma_update(None, "busy_timeout", 30000)?;
+    // The `process_output_assign_run` trigger makes every insert keep a
+    // statement journal, which the bundled SQLite writes to a temp file. On
+    // disk that made log inserts about 3x slower.
+    conn.pragma_update(None, "temp_store", "MEMORY")?;
 
     run_migration(&conn)?;
 

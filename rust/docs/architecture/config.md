@@ -107,7 +107,7 @@ DB file: `<state_dir>/candle.db` (`dirs::candle_db_path()`). The state dir is cr
 
 ## 5. SQLite schema (for completeness — created by the config/DB bootstrap)
 
-Applied by `db::get_database` / `open_database_at` as `create ... if not exists` statements, with WAL + `busy_timeout=30000` set on every connection. Tables:
+Applied by `db::get_database` / `open_database_at` as `create ... if not exists` statements, with WAL + `busy_timeout=30000` + `temp_store=MEMORY` set on every connection (the `process_output_assign_run` trigger gives every insert a statement journal; kept in a temp file, it made log writes about 3x slower). Tables:
 ```sql
 create table processes(
   id integer primary key autoincrement,
@@ -200,7 +200,7 @@ In `config/file.rs`.
 
 | Crate / API | Used for |
 |---------|----------|
-| `rusqlite` | SQLite open + `if not exists` schema statements; `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000` are set after open. |
+| `rusqlite` | SQLite open + `if not exists` schema statements; `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=30000` and `PRAGMA temp_store=MEMORY` are set after open. |
 | `std::fs`, `std::path` | file IO, lexical path ops; lexical normalization is hand-rolled (not `canonicalize`). |
 | `$HOME` env var | home dir for the default state dir. |
 | `serde_json` (`preserve_order` feature) | config IO with key-order preservation, plus explicit `key_order` tracking and `to_string_pretty` (2-space). |
