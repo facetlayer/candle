@@ -22,7 +22,10 @@ use crate::db::process_table::ProcessEntry;
 use crate::dirs::candle_db_path;
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
-use crate::logs::process_logs::{get_process_logs, save_run_log, start_run, LogSearchOptions};
+use crate::logs::process_logs::{
+    get_process_logs, get_process_logs_with_eviction_info, printable_log_types, save_run_log,
+    start_run, LogSearchOptions,
+};
 use crate::logs::ProcessLogType;
 use crate::monitor::MonitorLaunchInfo;
 use crate::output;
@@ -33,6 +36,9 @@ use crate::start::launch::launch_monitor;
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// Poll interval while watching the log table.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Most log lines a failed start prints; the rest are in `candle logs`.
+const FAILED_START_LOG_LINES: i64 = 20;
 
 /// What [`start_one_service`] does when the service is already running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,9 +278,23 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         match outcome.first() {
             Some(log) if log.log_type == ProcessLogType::ProcessStarted.as_i64() => break,
             Some(_) => {
-                // Lifecycle rows such as `process_start_initiated` carry no
-                // content; skip them rather than emit blank lines.
-                let recent_logs = this_run(vec![])?
+                // The last lines of the run, oldest first. The monitor writes
+                // every line before `process_start_failed`, and is the run's
+                // only writer, so row order is output order and the newest
+                // rows are the end of the output. Empty lines are skipped.
+                let tail = get_process_logs_with_eviction_info(
+                    conn,
+                    &LogSearchOptions {
+                        project_dir: Some(opts.project_dir.clone()),
+                        command_names: vec![service.name.clone()],
+                        run_id: Some(run_id),
+                        log_types: printable_log_types(),
+                        limit: Some(FAILED_START_LOG_LINES),
+                        ..Default::default()
+                    },
+                )?;
+                let recent_logs = tail
+                    .logs
                     .into_iter()
                     .filter_map(|l| l.content)
                     .filter(|c| !c.is_empty())
@@ -283,6 +303,7 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
                 return Err(CandleError::ProcessStartFailed {
                     command_name: service.name.clone(),
                     recent_logs,
+                    truncated: tail.logs_were_evicted,
                 });
             }
             None if Instant::now() >= deadline => {

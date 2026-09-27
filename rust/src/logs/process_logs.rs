@@ -321,7 +321,7 @@ pub fn get_process_logs_with_eviction_info(
 
 /// Log types that `candle logs` prints. The launch markers
 /// (`process_start_initiated`, `process_started`) render as nothing.
-fn printable_log_types() -> Vec<i64> {
+pub fn printable_log_types() -> Vec<i64> {
     vec![
         ProcessLogType::Stdout.as_i64(),
         ProcessLogType::Stderr.as_i64(),

@@ -16,6 +16,7 @@
  - `--project-dir` (and other options) can go before the command: `candle --project-dir ~/app ps`. A leading option the command doesn't take is now an error instead of being silently ignored.
  - Fix: `find-orphans` no longer reports running transient processes (started with `--shell`) as orphaned because they aren't in `.candle.json`.
  - Fix: a service that prints a lot at startup (100k+ lines) no longer makes `candle start` time out with "failed to start" while it is actually running. Output is also stored about 8x faster.
+ - When a start fails, `start` prints only the last 20 lines of the service's output (followed by `Run 'candle logs <name>' to see more.`) instead of every line.
 
 
 # 0.15.0 (2026-09-23)

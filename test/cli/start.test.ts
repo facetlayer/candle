@@ -390,8 +390,17 @@ describe('CLI Start Command', () => {
             );
 
             expect(result.failed()).toBe(true);
-            expect(result.stderrAsString()).toContain('boom');
-            expect(result.stderrAsString()).toContain('exited with code 3');
+            const stderr = result.stderrAsString();
+            expect(stderr).toContain('boom');
+            expect(stderr).toContain('exited with code 3');
+
+            // Only the end of the output is printed, oldest first, with a
+            // pointer to the rest.
+            expect(stderr).toContain("Process 'flood-fail' failed to start. Last 20 lines of its output:");
+            expect(stderr).toMatch(/19999\n20000\nboom\n/);
+            expect(stderr).not.toMatch(/^1$/m);
+            expect(stderr.split('\n').length).toBeLessThan(30);
+            expect(stderr).toContain("Run 'candle logs flood-fail' to see more.");
         });
     });
 

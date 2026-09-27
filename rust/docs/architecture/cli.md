@@ -14,7 +14,7 @@ A single error enum, `CandleError`:
 | `ConfigFileError` | `String` | (caller-supplied) |
 | `MissingServiceWithName` | `command_name`, `cwd` | `No service '<command_name>' configured for directory: <cwd>` |
 | `MissingSetupFile` | `cwd`, `explicit: bool` | Discovery: `No .candle.json file found in (or above) current directory: <cwd>` plus a second line suggesting `candle add-service <name> --shell <cmd>` or `candle setup-project`. `--project-dir` (`explicit`): `No .candle.json in <cwd> (--project-dir doesn't search parent directories)` |
-| `ProcessStartFailed` | `command_name`, `recent_logs: String` | `Process '<command_name>' failed to start. Recent logs:\n<recent_logs>`, or just `Process '<command_name>' failed to start.` when `recent_logs` is empty |
+| `ProcessStartFailed` | `command_name`, `recent_logs: String`, `truncated: bool` | `Process '<command_name>' failed to start. Recent logs:\n<recent_logs>`; when `truncated`, `Process '<command_name>' failed to start. Last <n> lines of its output:\n<recent_logs>\nRun 'candle logs <command_name>' to see more.`; just `Process '<command_name>' failed to start.` when `recent_logs` is empty |
 | `Generic` | `String` | (caller-supplied) — timeouts, launch/IO failures; `rusqlite::Error` converts to `Generic("database error: <e>")` |
 
 `recent_logs` is already the joined content string (blank/content-less rows dropped). `CandleError::unknown_service(name, project_dir)` builds the `MissingServiceWithName` error; every unknown-name check (CLI and MCP) goes through it so the text is identical everywhere.

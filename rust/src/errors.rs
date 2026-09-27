@@ -16,10 +16,12 @@ pub enum CandleError {
     /// never searches parent directories.
     MissingSetupFile { cwd: String, explicit: bool },
     /// A service failed to start; carries the joined content of the recent log
-    /// lines captured during launch.
+    /// lines captured during launch. `truncated` is set when earlier lines of
+    /// the run were left out.
     ProcessStartFailed {
         command_name: String,
         recent_logs: String,
+        truncated: bool,
     },
     /// A generic, non-usage error (timeouts, launch/IO failures).
     Generic(String),
@@ -66,9 +68,18 @@ impl fmt::Display for CandleError {
             CandleError::ProcessStartFailed {
                 command_name,
                 recent_logs,
+                truncated,
             } => {
                 if recent_logs.is_empty() {
                     write!(f, "Process '{command_name}' failed to start.")
+                } else if *truncated {
+                    let shown = recent_logs.lines().count();
+                    write!(
+                        f,
+                        "Process '{command_name}' failed to start. Last {shown} lines of its output:\n\
+                         {recent_logs}\n\
+                         Run 'candle logs {command_name}' to see more."
+                    )
                 } else {
                     write!(
                         f,
@@ -157,6 +168,7 @@ mod tests {
             command_name: "api".to_string(),
             recent_logs: "sh: x: command not found\nProcess failed to start: exited with code 127"
                 .to_string(),
+            truncated: false,
         };
         assert_eq!(
             err.to_string(),
@@ -166,8 +178,21 @@ mod tests {
         let bare = CandleError::ProcessStartFailed {
             command_name: "api".to_string(),
             recent_logs: String::new(),
+            truncated: false,
         };
         assert_eq!(bare.to_string(), "Process 'api' failed to start.");
+
+        let truncated = CandleError::ProcessStartFailed {
+            command_name: "api".to_string(),
+            recent_logs: "19999\n20000\nProcess failed to start: exited with code 3".to_string(),
+            truncated: true,
+        };
+        assert_eq!(
+            truncated.to_string(),
+            "Process 'api' failed to start. Last 3 lines of its output:\n19999\n20000\n\
+             Process failed to start: exited with code 3\n\
+             Run 'candle logs api' to see more."
+        );
     }
 
     #[test]

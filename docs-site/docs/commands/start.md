@@ -153,6 +153,9 @@ sh: nosuch-binary: command not found
 Process failed to start: exited with code 127
 ```
 
+If it printed more than 20 lines, only the last 20 are shown, followed by
+`Run 'candle logs api' to see more.`
+
 When starting several services, a failure doesn't stop the others: every
 service is attempted, and `start` then exits with code 1 and names the ones that
 failed:
