@@ -4,10 +4,10 @@ import { getCandleSpawn } from './TestWorkspace';
 
 describe('Simple Candle Test', () => {
     it('should show help when candle is run', async () => {
-        const { cmd, baseArgs } = getCandleSpawn();
+        const { cmd } = getCandleSpawn();
 
         const result = await new Promise<{stdout: string, stderr: string, code: number}>((resolve) => {
-            const proc = spawn(cmd, [...baseArgs, '--help']);
+            const proc = spawn(cmd, ['--help']);
             let stdout = '';
             let stderr = '';
 

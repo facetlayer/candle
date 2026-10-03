@@ -3,13 +3,6 @@ import * as fs from 'fs';
 import { runShellCommand, SubprocessResult } from '@facetlayer/subprocess';
 import { mcpShell, MCPStdinSubprocess } from 'expect-mcp';
 
-// DEPRECATED: CommandResult is the old response object. This will be deleted. Use SubprocessResult instead.
-export interface CommandResult {
-    stdout: string;
-    stderr: string;
-    code: number;
-}
-
 export interface CliOptions {
     cwd?: string;
     env?: Record<string, string>;
@@ -17,21 +10,17 @@ export interface CliOptions {
 }
 
 /**
- * Describes how to spawn the candle CLI under test.
- *
- * Candle is the compiled Rust binary at rust/target/release/candle, spawned directly. This is the
- * single seam that points the whole Vitest suite at the implementation.
+ * How to spawn the candle CLI under test: the compiled binary at rust/target/release/candle.
  */
 export interface CandleSpawn {
     cmd: string;
-    baseArgs: string[];
     mcpCommand: string;
 }
 
 export function getCandleSpawn(): CandleSpawn {
     const repoRoot = path.join(__dirname, '..');
     const bin = path.join(repoRoot, 'rust', 'target', 'release', 'candle');
-    return { cmd: bin, baseArgs: [], mcpCommand: `${bin} mcp` };
+    return { cmd: bin, mcpCommand: `${bin} mcp` };
 }
 
 /**
@@ -95,10 +84,8 @@ export class TestWorkspace {
             ...(options.env || {}),
         };
 
-        //console.log('runCandleCommand', args, options);
-
-        const { cmd, baseArgs } = getCandleSpawn();
-        const result = await runShellCommand(cmd, [...baseArgs, ...args], {
+        const { cmd } = getCandleSpawn();
+        const result = await runShellCommand(cmd, args, {
             cwd: options.cwd ?? cwd,
             env,
         });
@@ -153,8 +140,8 @@ export class TestWorkspace {
         };
 
         try {
-            const { cmd, baseArgs } = getCandleSpawn();
-            await runShellCommand(cmd, [...baseArgs, 'kill-all'], {
+            const { cmd } = getCandleSpawn();
+            await runShellCommand(cmd, ['kill-all'], {
                 cwd: this.dbDir,
                 env,
             });

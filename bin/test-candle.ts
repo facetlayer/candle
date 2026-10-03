@@ -55,10 +55,8 @@ function parseArgs(argv: string[]): ParsedArgs {
 async function main() {
   const { databaseDir, enableLogs, candleArgs } = parseArgs(process.argv);
 
-  // Candle is the compiled Rust binary at rust/target/release/candle.
   const repoRoot = join(__dirname, '..');
   const cmd = join(repoRoot, 'rust', 'target', 'release', 'candle');
-  const baseArgs: string[] = [];
 
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
 
@@ -70,7 +68,7 @@ async function main() {
     env.CANDLE_ENABLE_LOGS = 'true';
   }
 
-  const result = await runShellCommand(cmd, [...baseArgs, ...candleArgs], {
+  const result = await runShellCommand(cmd, candleArgs, {
     env,
     cwd: process.cwd(),
   });

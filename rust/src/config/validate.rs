@@ -409,19 +409,6 @@ mod tests {
     }
 
     #[test]
-    fn obsolete_log_collector_key_is_preserved_not_rejected() {
-        // `logCollector` chose between two former log-collector sidecars.
-        // Neither exists now (supervision runs as `candle --monitor`), so the key
-        // is no longer known — but an existing config that sets it must still load,
-        // with the value round-tripped like any other unknown key.
-        let cfg = validate_config(json!({ "services": [], "logCollector": "rust" })).unwrap();
-        assert_eq!(
-            cfg.to_value(),
-            json!({ "services": [], "logCollector": "rust" })
-        );
-    }
-
-    #[test]
     fn unknown_top_level_keys_preserved_round_trip() {
         let input = "{\n  \"services\": [\n    {\n      \"name\": \"api\",\n      \"shell\": \"npm run dev\"\n    }\n  ],\n  \"customKey\": \"customValue\"\n}";
         let value: Value = serde_json::from_str(input).unwrap();

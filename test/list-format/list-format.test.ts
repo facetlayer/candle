@@ -24,15 +24,11 @@ describe('List Format', () => {
         expect(lines[2]).toBe(`  command: ${SHELL}`);
         expect(lines[3]).toBe(`  directory: ${workspace.dbDir}`);
 
-        // The table headers belong to 'candle ps' now.
+        // The table headers belong to 'candle ps'.
         expect(output).not.toContain('NAME');
         expect(output).not.toContain('COMMAND');
         expect(output).not.toContain('DIRECTORY');
         expect(output).not.toContain('UPTIME');
-
-        // Check that old headers are NOT present
-        expect(output).not.toContain('LAUNCH_ID');
-        expect(output).not.toContain('WRAPPER_PID');
     });
 
     it('should show the compact table for ps', async () => {

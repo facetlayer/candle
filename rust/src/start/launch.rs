@@ -1,8 +1,7 @@
 //! Spawning the detached monitor process.
 //!
 //! Each service Candle starts is supervised by a second `candle` process running
-//! in monitor mode (`candle --monitor`) — the same executable, re-invoked. There is
-//! no separate sidecar binary to install or locate.
+//! in monitor mode (`candle --monitor`) — the same executable, re-invoked.
 //!
 //! The handshake: spawn the monitor in its own session so it outlives the CLI,
 //! write the [`MonitorLaunchInfo`] as a single line of JSON with NO trailing

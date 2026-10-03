@@ -1,4 +1,4 @@
-export { TestWorkspace, CommandResult } from '../TestWorkspace';
+export { TestWorkspace } from '../TestWorkspace';
 
 /**
  * Normalize output for snapshot testing

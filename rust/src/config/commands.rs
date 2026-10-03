@@ -527,19 +527,6 @@ mod tests {
     }
 
     #[test]
-    fn set_config_retired_log_collector_key() {
-        // `logCollector` picked between two former log-collector sidecars.
-        // Both are gone (supervision is `candle --monitor`), so the key is retired.
-        let dir = TempDir::new();
-        std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
-        let err = handle_set_config("logCollector", "rust", dir.path()).unwrap_err();
-        assert!(err
-            .to_string()
-            .starts_with("Unknown config key 'logCollector'"));
-        assert!(matches!(err, CandleError::UsageError(_)));
-    }
-
-    #[test]
     fn set_config_invalid_integer() {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();

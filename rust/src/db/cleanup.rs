@@ -141,7 +141,7 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("vacuum")?;
 
     // (5) Upsert the single-row process_last_cleanup timestamp (update-all, then
-    //     insert if the table was empty), matching the sqlite-wrapper `upsert`.
+    //     insert if the table was empty).
     let updated = conn.execute(
         "update process_last_cleanup set timestamp = ?1",
         params![now],

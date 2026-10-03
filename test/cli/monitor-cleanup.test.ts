@@ -32,7 +32,7 @@ describe('monitor process cleanup after service kill', () => {
     await workspace.runCli(['start', 'echo']);
     await workspace.runCli(['wait-for-log', 'echo', '--message', 'Echo server started']);
 
-    // Read the monitor's pid from the database (the column keeps its legacy name)
+    // Read the monitor's pid from the database (the `log_collector_pid` column)
     const monitorPid = getMonitorPid(workspace.dbDir, 'echo');
     expect(monitorPid).not.toBeNull();
     expect(isProcessAlive(monitorPid!)).toBe(true);
