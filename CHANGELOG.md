@@ -1,25 +1,9 @@
 # Unreleased
- - **Breaking:** the old `.candle-setup.json` config filename is no longer read; rename the file to `.candle.json`.
- - Installer: no longer removes a leftover `log-collector` binary from pre-0.15 installs.
- - **Breaking:** `candle start` no longer restarts a service that is already running; it leaves it alone and says so. Use `candle restart` to kill and relaunch.
- - **Breaking:** removed `candle check-start` (`candle start` now behaves the way it did).
- - `candle restart` with no names restarts every service in the project, starting any that are stopped.
- - `candle restart <name> --shell <cmd>` replaces the command of a transient process. `candle start` with a different `--shell` for a running service is now an error.
- - Starting or restarting several services no longer stops at the first failure; the rest are still started, then the failures are listed.
- - Installer: fail when `SHA256SUMS` has no (or more than one) entry for the archive, instead of printing "Checksum verified" without checking. Warn visibly when the checksum can't be verified at all.
- - Switches like `--json`, `--bg` and `--force` now reject an inline value (`--force=false` used to enable force).
- - `--version` / `--help` given as an option value (e.g. `wait-for-log api --message --version`) is treated as the value, not handled as a flag.
- - `--` ends option parsing; everything after it is positional.
- - `list --json`, `ps --json` and `list-all --json` rows include `projectDir`.
- - Docs: `project-setup` explains terminal vs. background `start`, start vs. restart, how services run (shell, environment, crashes, ports), soft log retention, and what to check before committing `.candle.json`.
- - `candle get-doc` no longer prints a `(File source: ...)` line after each doc.
- - `candle logs --previous` shows the run before the latest one (e.g. the crash, after starting the service again), and `--all-runs` shows every stored run in order. `start`/`restart` point at `--previous` when relaunching a service whose last run exited with an error. `logs --json` entries include `run`. MCP `GetLogs` takes `previous` and `allRuns`.
- - Fix: `candle kill` (and `restart`) also stops background children that detached from the service, such as a double-forked `(daemon &)`. Each service now runs in its own process group.
- - `--project-dir` (and other options) can go before the command: `candle --project-dir ~/app ps`. A leading option the command doesn't take is now an error instead of being silently ignored.
- - Fix: `find-orphans` no longer reports running transient processes (started with `--shell`) as orphaned because they aren't in `.candle.json`.
- - Fix: a service that prints a lot at startup (100k+ lines) no longer makes `candle start` time out with "failed to start" while it is actually running. Output is also stored about 8x faster.
- - When a start fails, `start` prints only the last 20 lines of the service's output (followed by `Run 'candle logs <name>' to see more.`) instead of every line.
-
+ - Bug fixes for handling processes that have a lot of output (such as 100k+ lines at startup)
+ - `candle start` no longer restarts a running process (use `candle restart` instead). Removed `candle check-start`.
+ - Add `--previous` and `--all-runs` options to `candle logs`
+ - Improve the builtin docs
+ - Various bug fixes
 
 # 0.15.0 (2026-09-23)
  - Lots of bug fixes and improvements.
