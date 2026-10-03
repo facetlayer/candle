@@ -6,9 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::file::{find_config_file, read_config_file};
-use crate::config::model::{
-    CandleSetupConfig, LogEvictionConfig, ServiceConfig, CONFIG_FILENAME,
-};
+use crate::config::model::{CandleSetupConfig, LogEvictionConfig, ServiceConfig, CONFIG_FILENAME};
 use crate::config::paths::{is_valid_root_path, path_resolve};
 use crate::config::validate::validate_config;
 use crate::errors::CandleError;
@@ -42,10 +40,7 @@ pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
         Err(CandleError::MissingSetupFile { .. }) => {
             let config_path = cwd.join(CONFIG_FILENAME);
             write_config_file(&config_path, &CandleSetupConfig::default())?;
-            Ok(format!(
-                "Created {CONFIG_FILENAME} in {}",
-                cwd.display()
-            ))
+            Ok(format!("Created {CONFIG_FILENAME} in {}", cwd.display()))
         }
         Err(e) => Err(e),
     }
