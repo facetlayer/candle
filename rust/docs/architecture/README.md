@@ -1,10 +1,10 @@
-# Candle (Rust) — architecture reference
+# Candle architecture reference
 
 This directory documents how the `candle` CLI under `rust/` is built. The Vitest suite in
-`../../test` runs against the compiled binary and is the conformance harness (see
+`../../test` runs against the compiled binary and is the acceptance suite (see
 [testing.md](testing.md)); when a doc and the suite disagree, the suite is authoritative.
 
-These are internal docs aimed at developers working on the Rust code. Each subsystem doc describes
+These are internal docs aimed at developers working on Candle. Each subsystem doc describes
 what the code does, the exact strings/SQL/algorithms it must produce, and the subtleties that are
 easy to get wrong. Many facts here are **load-bearing**: the acceptance suite substring-matches exact
 output and opens the database with raw SQL, so the strings, schema, and byte-level behavior below are
@@ -26,7 +26,7 @@ rust/
   tests/                    # integration tests
 ```
 
-**Monitor mode.** There is no sidecar binary. Every service Candle starts is supervised by a second
+**Monitor mode.** Every service Candle starts is supervised by a second
 `candle` process launched as `candle --monitor` — the same executable, re-invoked via
 `std::env::current_exe()` (`CANDLE_MONITOR_PATH` overrides, for tests). That means installation is
 one file, and the CLI and its monitors can never fall out of version sync.
@@ -44,7 +44,7 @@ one file, and the CLI and its monitors can never fall out of version sync.
 | [list-ports-browser.md](list-ports-browser.md) | `list`/`list-all`, `list-ports`/`list-ports-all` (per-platform port detection), `open-browser` | `commands/{list,list_ports,open_browser}`, `listening_ports`, `process_tree` |
 | [mcp.md](mcp.md) | the stdio JSON-RPC MCP server and its nine tools | `mcp/mod`, `output` |
 | [cli.md](cli.md) | errors, debug logging, agent-mode detection, doc files (`list-docs`/`get-doc`), `--project-dir` scope resolution, `find-orphans`, command-name validation, version handling | `errors`, `debug`, `run_context`, `doc_files`, `project_scope`, `commands/{mod,find_orphans}`; CLI `parser`/`help` |
-| [testing.md](testing.md) | the Vitest conformance harness, its `getCandleSpawn()` seam, fixtures, and CI | `../../test/*` |
+| [testing.md](testing.md) | the Vitest acceptance suite, its fixtures, and CI | `../../test/*` |
 
 ## Cross-cutting conventions
 
@@ -88,9 +88,6 @@ These are the contracts the acceptance suite depends on. They are byte-level and
   newline and then closes stdin; the monitor reads to EOF. The monitor is detached into a new session
   (`setsid`) and is never waited on, so it outlives the CLI. Getting EOF/detach wrong hangs every
   start. See [start-flow.md](start-flow.md).
-- **`logCollector` is retired.** This obsolete `.candle.json` key, which once selected a log-collector
-  sidecar, no longer exists. It is not a valid `set-config` key; a leftover entry in a
-  config file is preserved verbatim as an unknown key and otherwise ignored.
 - **Version** comes from `env!("CARGO_PKG_VERSION")`.
 - **MCP stdout purity.** Only newline-delimited JSON-RPC frames reach stdout; all handler output is
   captured. Tool list, ordering, content shapes, and error codes are fixed. See [mcp.md](mcp.md).

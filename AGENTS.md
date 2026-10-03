@@ -1,8 +1,7 @@
 
 # Repo organization #
 
- Candle is implemented in Rust. The former Node.js/TypeScript implementation has been removed;
- the only remaining TypeScript is the Vitest acceptance suite under ./test.
+ Candle is implemented in Rust. The only TypeScript is the Vitest acceptance suite under ./test.
 
  ./rust/ - Main source code. One crate, one binary (`candle`); `src/main.rs` is the entry point.
  ./rust/src/cli/ - Help text, argument parsing, and the `--monitor` entry point

@@ -107,12 +107,11 @@ do_uninstall() {
       removed=1
     fi
   done
-  # Older installs also placed a `log-collector` sidecar next to `candle`; it is
-  # no longer shipped (that mode now lives inside `candle` itself), so clean it up.
+  # Releases before 0.15 also installed a `log-collector` binary next to `candle`.
   for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
     if [ -f "$dir/log-collector" ]; then
       rm -f "$dir/log-collector"
-      say "removed $dir/log-collector (obsolete sidecar)"
+      say "removed $dir/log-collector"
       removed=1
     fi
   done
@@ -198,9 +197,7 @@ install -m 755 "$src" "$BIN_DIR/$BINARY" 2>/dev/null || {
 }
 say "    $BINARY -> $BIN_DIR/$BINARY"
 
-# Candle used to ship a `log-collector` sidecar alongside `candle`. That mode now
-# lives inside `candle` itself (`candle --monitor`), so remove any leftover copy
-# from an earlier install rather than leaving a dead binary on the user's PATH.
+# Releases before 0.15 also installed a `log-collector` binary; remove a leftover copy.
 if [ -f "$BIN_DIR/log-collector" ]; then
   rm -f "$BIN_DIR/log-collector"
   say "    removed obsolete $BIN_DIR/log-collector"

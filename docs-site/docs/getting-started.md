@@ -13,11 +13,6 @@ curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh |
 See [Installation](installation) for Homebrew, building from source, upgrading, and
 uninstalling.
 
-:::note
-Candle was previously distributed as the `@facetlayer/candle` npm package. That package
-is retired — Candle is now a native binary and is no longer installed through npm.
-:::
-
 ## Configure a service
 
 Use the `add-service` command to add a new configured service:

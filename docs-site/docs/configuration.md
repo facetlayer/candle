@@ -101,16 +101,7 @@ Cleanup runs at most once every 10 minutes, triggered by normal Candle commands 
 
 Each service Candle starts is supervised by a monitor process that captures its
 stdout/stderr and writes the output to the database. The monitor is the `candle`
-binary re-invoking itself (`candle --monitor`); there is no separate collector
-binary and nothing to configure.
-
-:::note Removed setting
-Older versions had a `logCollector` field for choosing between a Node.js and a Rust
-collector sidecar. Neither exists anymore, so the field is gone: `candle set-config
-logCollector ...` now reports an unknown key. A leftover `"logCollector"` entry in an
-existing `.candle.json` is harmless: Candle ignores it, preserves it as-is, and prints an
-unknown-key warning. Delete the entry to silence the warning.
-:::
+binary re-invoking itself (`candle --monitor`), so there is nothing to configure.
 
 ## Complete Example
 

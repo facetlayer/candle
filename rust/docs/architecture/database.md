@@ -61,7 +61,7 @@ create table processes(
 | command_name | TEXT | no | service name |
 | project_dir | TEXT | no | absolute project dir |
 | pid | INTEGER | no | OS pid of the service process |
-| log_collector_pid | INTEGER | **yes** | pid of the supervising monitor process (legacy column name) |
+| log_collector_pid | INTEGER | **yes** | pid of the supervising monitor process |
 | start_time | INTEGER | no | epoch seconds, set by app code (`create_process_entry`) |
 | created_at | INTEGER | no | default `strftime('%s','now')` |
 | killed_at | INTEGER | **yes** | NULL ⇒ running; non-NULL ⇒ marked killed |

@@ -1,6 +1,6 @@
 # Testing
 
-The acceptance test suite is a black-box conformance harness: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. Every spawn goes through one seam — `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts) — which returns the compiled Rust binary.
+The acceptance suite is black-box: a single Vitest suite that spawns the candle CLI as a subprocess and asserts on its behavior. Every spawn goes through `getCandleSpawn()` in [`test/TestWorkspace.ts`](../../../test/TestWorkspace.ts), which returns the compiled binary.
 
 ## 1. Test runner mechanics
 
@@ -19,12 +19,12 @@ test: {
 `test/setup.ts` is one line: `import 'expect-mcp/vitest-setup';` (registers custom matchers `toBeSuccessful`, `toHaveTool(s)`, `toMatchTextContent`).
 
 `package.json` scripts:
-- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && vitest run`** — builds the Rust release binary, then runs the suite against it.
+- `test`: **`cargo build --release --manifest-path rust/Cargo.toml && vitest run`** — builds the release binary, then runs the suite against it.
 - `test:watch`: `vitest`.
 - `format`: prettier over `test/` and `bin/`.
 
-### The spawn seam
-`getCandleSpawn()` returns `{ cmd, baseArgs, mcpCommand }`: `cmd = <repo>/rust/target/release/candle`, `baseArgs = []`, `mcpCommand = "<bin> mcp"`. Every spawn in `TestWorkspace` flows through it.
+### Spawning
+`getCandleSpawn()` returns `{ cmd, mcpCommand }`: `cmd = <repo>/rust/target/release/candle`, `mcpCommand = "<bin> mcp"`. Every spawn in `TestWorkspace` flows through it.
 
 | What | Spawned as |
 |---|---|
@@ -52,8 +52,8 @@ const env = {
     ...NON_AGENT_ENV,           // ← force is_run_by_agent=false (see §8)
     ...(options.env || {}),
 };
-const { cmd, baseArgs } = getCandleSpawn();
-const result = await runShellCommand(cmd, [...baseArgs, ...args], {
+const { cmd } = getCandleSpawn();
+const result = await runShellCommand(cmd, args, {
     cwd: options.cwd ?? cwd, env,
 });
 if (result.failed() && !options.ignoreExitCode) throw result.asError();
@@ -78,12 +78,8 @@ Note: the MCP env does **not** set `FORCE_COLOR`. `mcpShell` comes from `expect-
 
 ## 3. Other test utilities
 
-[`test/utils.ts`](../../../test/utils.ts):
-- `getTestTempDirectory(name)` → `test/temp/<name>` (unused by current tests).
-- `getSampleServersDirectory()` → `test/sampleServers`.
-
 `test/cli/utils.ts`:
-- Re-exports `TestWorkspace`, `CommandResult`.
+- Re-exports `TestWorkspace`.
 - `normalizeOutput(output)` — snapshot normalizer (only used by `help.test.ts`). Normalizes: CRLF→LF, trailing whitespace, uptime `\d+m \d+s|\d+s` → `<uptime>`, `PID: \d+`→`PID: <pid>`, `pid \d+`→`pid <pid>`, abs candle paths (`/Users/.../candle/`, `/home/.../candle/`, `C:\...\candle\`) → `<project>/`, `/tmp/...` → `<tmpdir>`, `CANDLE_DATABASE_DIR=...` → `=<dbdir>`.
 
 `bin/test-candle.ts` — dev helper (not used by Vitest, but documented in `AGENTS.md`). Parses `--database-dir <path>` → sets `CANDLE_DATABASE_DIR`, `--enable-logs` → `CANDLE_ENABLE_LOGS=true`, passes the rest through to candle. Prints captured stdout/stderr line-arrays and exits with the child's exit code.
@@ -92,7 +88,7 @@ Note: the MCP env does **not** set `FORCE_COLOR`. `mcpShell` comes from `expect-
 
 Isolation is purely via `CANDLE_DATABASE_DIR` → the DB file is `<dbDir>/candle.db`. The state-directory resolution order is: `CANDLE_DATABASE_DIR` → `XDG_STATE_HOME/candle` → `~/.local/state/candle`.
 
-Several tests open the DB **directly** with Node's built-in `node:sqlite` `DatabaseSync` and run raw SQL. These hard-code the schema, so they break if the Rust DB layer changes it:
+Several tests open the DB **directly** with Node's built-in `node:sqlite` `DatabaseSync` and run raw SQL. These hard-code the schema, so they break if the schema changes:
 
 - `start.test.ts` and `list.test.ts` insert a stale row:
   ```sql
@@ -106,7 +102,7 @@ Several tests open the DB **directly** with Node's built-in `node:sqlite` `Datab
 - `with-stdin/stdin.test.ts` defines its own `createStdinMessage` helper that inserts rows into `stdin_messages` with `node:sqlite`. This bypasses the CLI for the write side, so it asserts on the shared schema.
 
 ### Exact DB schema
-WAL mode + `busy_timeout=30000`. The Rust schema is applied with `create ... if not exists` on every open. Tables:
+WAL mode + `busy_timeout=30000`. The schema is applied with `create ... if not exists` on every open. Tables:
 
 ```sql
 create table processes(
@@ -178,7 +174,7 @@ These are ESM/CJS Node scripts launched via `node <file>`; they are test fixture
 | `errorServer.js` | logs to stderr, exit 1 | (used in `cli-logs` config) |
 | `simpleServer.js`, `listeningServer.js` | HTTP servers (port detection / `web` service) | `Test server listening on port` |
 
-Sample-server **config fixture** `test/sampleServers/.candle-setup.json` defines `web, api(root:test), echo, echo2, echo-test, test-format, delayed-logger` all relative to that dir (`node simpleServer.js` etc.). Shell commands in workspace configs use `node ../../sampleServers/<file>.js` (relative to `<dbDir>`, i.e. `test/workspaces/<name>/`).
+Shell commands in workspace configs use `node ../../sampleServers/<file>.js` (relative to `<dbDir>`, i.e. `test/workspaces/<name>/`).
 
 ## 6. Monitor process resolution
 
@@ -210,7 +206,7 @@ CLI tests (`test/cli/`), each owns a named workspace:
 | `list-docs.test.ts` | `cli-list-docs` | `list-docs`: non-empty stdout, <2s, no stderr |
 | `list.test.ts` | `cli-list`, `cli-list-fresh`, `cli-list-stale` | `list`/`ls`: headers `NAME STATUS UPTIME`; `RUNNING`; uptime regex `\d+s|\d+m`; `[config changed]` for transient shadowing config; stale dead-PID row NOT shown as RUNNING; killed not RUNNING |
 | `monitor-cleanup.test.ts` | `cli-monitor-cleanup` | monitor PID (from DB `log_collector_pid`) alive after start; **dead within 5s after `kill`** |
-| `log-eviction.test.ts` | `cli-log-eviction` | accepts `logEviction` config; asserts `older logs have been removed` is absent for a small log (that string is no longer emitted anywhere, so this check always passes); cleanup respects `maxLogsPerService:10` |
+| `log-eviction.test.ts` | `cli-log-eviction` | accepts `logEviction` config; cleanup respects `maxLogsPerService:10` |
 | `process-safety.test.ts` | `cli-process-safety` | `kill` escalates to SIGKILL for a service that ignores SIGTERM; five concurrent `restart`s leave one instance; five raced `start`s launch once; `logs --count 3` prints exactly 3 lines plus `-- showing the last 3 lines; use --count to see more --`; `erase-database` refuses while running, succeeds once stopped, and `--force` overrides |
 | `project-dir.test.ts` | `cli-project-dir` | `--project-dir`: start/list/logs/kill in another project; no leakage into the cwd project; relative paths; killing processes of a deleted project or deleted config; unknown name reports nothing running; config-requiring commands refuse a dir without its own config and don't fall back to an ancestor; `list-all` rejects the flag |
 | `logs.test.ts` | `cli-logs` | `logs [name]`: shows content; transient; historical after kill; unknown → `No logs found`; no-name shows running; only most-recent launch (marker filtering); `--count N`; `--start-at <id>` (high id → `No logs found`); `--bogus-flag` → `Unknown argument`; `Started` + `'name'` start message; `--shell` with multiple names → stderr `Exactly one service name is required when using --shell` |
@@ -229,7 +225,7 @@ Root-level tests:
 - `test/mcp.test.ts` (`mcp` workspace) — MCP tools list includes `[ListServices, ListPorts, GetLogs, StartService, StartTransientService, KillService, RestartService, AddServerConfig]` (the ninth tool, `OpenBrowser`, is not asserted); `StartService{name}` → `Started` + shell echoed; `ListServices` returns JSON `{processes:[{serviceName,status:'RUNNING',...}]}`; `StartTransientService{name,shell[,root]}`; missing `name`/`shell` → `isError`; `RestartService` matches `/Started|Restarted/`; `GetLogs{name,limit}`; `showAll` param.
 - `test/transient-processes.test.ts` (`transient-processes`) — transient start/kill/restart/logs; `--root`; validation; name-collision (transient shadows config; a different `--shell` under a running name is refused and `restart --shell` replaces it); config-drift `[config changed]`; DB stores shell.
 - `test/with-stdin/stdin.test.ts` (`with-stdin`) — config `enableStdin:true` and `--enable-stdin`; sends via its local `createStdinMessage` (raw `node:sqlite` insert) directly into DB; expects `[RECEIVED] ...` in logs; no-enableStdin → not received.
-- `test/list-format/list-format.test.ts` (`list-format`) — `list` renders the multiline detail view (header `<name>  RUNNING  pid N  uptime T`, then `  command:   <shell>` / `  directory: <dir>`) and contains none of the table headers; `ps` renders the compact table with column order `NAME, STATUS, PID, UPTIME` (header index ordering asserted) and omits `COMMAND`/`DIRECTORY` and the shell string; old headers `LAUNCH_ID`/`WRAPPER_PID` absent.
+- `test/list-format/list-format.test.ts` (`list-format`) — `list` renders the multiline detail view (header `<name>  RUNNING  pid N  uptime T`, then `  command:   <shell>` / `  directory: <dir>`) and contains none of the table headers; `ps` renders the compact table with column order `NAME, STATUS, PID, UPTIME` (header index ordering asserted) and omits `COMMAND`/`DIRECTORY` and the shell string.
 - `test/cli/ps.test.ts` (`ps`) — the `ps`/`status` table, its `--json` output, positional name filtering, and the unknown-name error.
 
 ## 8. Subtle / platform-specific behaviors
@@ -262,9 +258,9 @@ Test-side tooling:
 | `@facetlayer/subprocess` (`runShellCommand`, `SubprocessResult`) | spawning the CLI under test; line-buffered stdout/stderr capture; exit handling |
 | `node:sqlite` `DatabaseSync` | test-side raw SQL against the shared schema (§4) |
 | `expect-mcp` (`mcpShell`, `MCPStdinSubprocess`, vitest matchers) | test-side MCP client driving the candle MCP server over stdio |
-| `vitest` | the black-box conformance harness (points at the Rust binary via `getCandleSpawn()`) |
+| `vitest` | the acceptance suite runner |
 
-The Rust binary is exercised by this same Vitest suite; `cargo test` covers the Rust unit tests and `rust/tests/monitor_integration.rs` in addition. No Vitest test imports implementation code.
+`cargo test` covers the Rust unit tests and `rust/tests/monitor_integration.rs`. No Vitest test imports implementation code.
 
 ## 11. CI
 

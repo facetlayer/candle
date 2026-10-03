@@ -26,7 +26,6 @@ test/
 │   ├── simpleServer.js       # HTTP server
 │   └── ...                   # Other sample servers
 ├── workspaces/               # Test workspace directories
-│   ├── functional/           # General functional tests
 │   ├── cli-start/            # Start command tests
 │   ├── cli-kill/             # Kill command tests
 │   ├── invalid-config/       # Error handling tests

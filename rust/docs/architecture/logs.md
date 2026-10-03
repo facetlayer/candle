@@ -41,7 +41,7 @@ A **run** is one launch of a command. Its id is the id of its `process_start_ini
 - When migration rebuilds `process_output` to add the column, a one-time backfill applies the same positional rule to existing rows (see [database.md](database.md)).
 - The stale-process cleanup writes its `process_exited` "Process cleaned up" row with the `processes` row's `run_id`.
 
-Order-based readers ("everything after the latest launch marker") used to show a previous instance's late output as part of the new run; every reader now selects by `run_id` instead. `formal/README.md` has the background.
+Every reader selects by `run_id` rather than by row order, so a previous instance's late output never shows up as part of the new run. `formal/README.md` covers the models that check this.
 
 ## 2. ProcessLogType enum (exact integers)
 

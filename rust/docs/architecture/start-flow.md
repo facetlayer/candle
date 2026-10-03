@@ -41,7 +41,7 @@ candle start NAME
 
 ## 2. CLI surface
 
-`cmd_start` in `rust/src/main.rs` handles `start [name...]` (alias `run [name...]`) → `handle_start_command`. (There is no `check-start`; `start` itself leaves running services alone. `restart` — see [kill-restart.md](kill-restart.md) §7 — is the command that relaunches.)
+`cmd_start` in `rust/src/main.rs` handles `start [name...]` (alias `run [name...]`) → `handle_start_command`. (`start` leaves running services alone. `restart` — see [kill-restart.md](kill-restart.md) §7 — is the command that relaunches.)
 
 Options:
 - `--shell <string>` — shell command for a **transient** process.
@@ -199,7 +199,7 @@ Reading stdin as JSON: `read_launch_info_from_stdin` reads all of stdin to **EOF
 ### 7.2 Monitor lifecycle (`monitor::run`, std threads, no async runtime)
 1. `open_database_at(database_path)`; on failure print an error and exit 1.
 2. Spawn `sh -c <shell>` in `launch_dir` (§7.3). Every row the monitor writes goes through `save_run_log(conn, run_id, ..)`, below written `save_run_log(type, ..)`. On spawn error → `save_run_log(process_start_failed, "Process failed to start: <e>")` and exit 1. No `processes` row exists yet in this branch.
-3. `create_process_entry({ command_name, project_dir, pid: child_pid, log_collector_pid: Some(own_pid), shell, root, run_id })` — **pid = user shell pid; log_collector_pid = the monitor's own pid** (the DB column keeps its legacy name).
+3. `create_process_entry({ command_name, project_dir, pid: child_pid, log_collector_pid: Some(own_pid), shell, root, run_id })` — **pid = user shell pid; log_collector_pid = the monitor's own pid**.
 4. Reader threads (stdout, stderr), an optional stdin thread, and a wait thread forward events over one channel.
 5. **Grace period**: collect events for `GRACE_PERIOD_MS` (500ms), writing output lines as they arrive (in batches, see step 7). At the deadline, check `exit_slot`, which the wait thread sets before sending `Exit`: if the child already exited, write the output queued ahead of its `Exit` event, then drain the rest. If the child exited with a code other than `Some(0)` (a nonzero code or a signal) → `save_run_log(process_start_failed, "Process failed to start: exited with code <n>"` or, for a signal, `"Process failed to start: stopped by a signal"`), `delete_process_entry`, return. A signal counts as a deliberate stop when the `processes` row is already marked `killed_at` (kill marks it before signalling) or already gone; then the content is `STOPPED_WHILE_STARTING_MESSAGE` (`"Process was stopped while starting"`, `logs/log_type.rs`), which `list` does not report as `FAILED`.
 6. Else `save_run_log(process_started)` (no content). If it already exited with 0 during the grace period, immediately log `process_exited` and delete the row.

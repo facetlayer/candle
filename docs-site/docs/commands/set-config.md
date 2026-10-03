@@ -43,8 +43,6 @@ candle set-config logEviction.maxRetentionSeconds 172800
 ## Notes
 
 - The command validates values before writing to prevent invalid configuration
-- `logCollector` is no longer a valid key. It chose between the old Node.js and Rust
-  collector sidecars; Candle now ships one binary that supervises services itself.
 
 ## See Also
 
