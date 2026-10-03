@@ -73,7 +73,7 @@ CLI (`cmd_list` in `main.rs`): with `--json`, prints `list_output_to_json` = pre
 - Only alive processes appear (dead ones filtered + deleted). All listed rows are `RUNNING`.
 
 ### 2.2 `list` branch (default)
-1. `find_config_file(cwd)` → `{ config, project_dir }`. `MissingSetupFile` if no `.candle.json`/`.candle-setup.json` found walking up (see §6). (`cwd` is the scope's base dir; `cmd_list` first runs `require_own_config` for an explicit `--project-dir`.)
+1. `find_config_file(cwd)` → `{ config, project_dir }`. `MissingSetupFile` if no `.candle.json` found walking up (see §6). (`cwd` is the scope's base dir; `cmd_list` first runs `require_own_config` for an explicit `--project-dir`.)
 2. `running = filter_alive_processes(find_running_processes_by_project_dir(project_dir))`.
 3. **First** iterate `config.services` in file order, marking each name `seen`:
    - If a running process matches the name: `status='RUNNING'`, real `pid`, `uptime` from `start_time`, `configChanged = has_config_drift(entry, service)`, `command` = the row's `shell` (falling back to the config's), `workingDir = resolve_launch_dir(project_dir, entry.root or service.root)`.
@@ -213,7 +213,7 @@ All commands use strict option parsing (`Unknown argument: <flag>` on unrecogniz
 
 ## 6. Config resolution (`rust/src/config/file.rs`) — needed by all three
 
-`find_config_file(cwd)`: walk from the (lexically absolutized) `cwd` upward; at each dir test `.candle.json` then `.candle-setup.json` (priority order, `CONFIG_FILENAMES`). First existing → parse via `read_config_file` and return `FoundConfig { config, project_dir, config_filename }`. If a file exists but parse fails → `ConfigFileError("Invalid <filename> at <path>: <msg>")`. If the filesystem root is reached with nothing → `MissingSetupFile { cwd: starting_dir }` (message: `No .candle.json file found in (or above) current directory: <cwd>`).
+`find_config_file(cwd)`: walk from the (lexically absolutized) `cwd` upward; at each dir test `.candle.json`. First existing → parse via `read_config_file` and return `FoundConfig { config, project_dir, config_filename }`. If a file exists but parse fails → `ConfigFileError("Invalid <filename> at <path>: <msg>")`. If the filesystem root is reached with nothing → `MissingSetupFile { cwd: starting_dir }` (message: `No .candle.json file found in (or above) current directory: <cwd>`).
 
 `find_project_dir(cwd)` returns just `project_dir`.
 

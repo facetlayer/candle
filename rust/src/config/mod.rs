@@ -24,7 +24,7 @@ pub use file::{
 };
 pub use model::{
     CandleSetupConfig, LogEvictionConfig, ResolvedLogEvictionConfig, ServiceConfig,
-    CONFIG_FILENAMES, DEFAULT_CONFIG_FILENAME, LOG_EVICTION_DEFAULTS,
+    CONFIG_FILENAME, LOG_EVICTION_DEFAULTS,
 };
 pub use paths::{get_service_cwd, is_valid_relative_path, is_valid_root_path};
 pub use validate::validate_config;

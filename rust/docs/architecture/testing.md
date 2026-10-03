@@ -192,7 +192,7 @@ CLI tests (`test/cli/`), each owns a named workspace:
 
 | File | Workspace(s) | Covers |
 |---|---|---|
-| `add-service.test.ts` | `cli-add-service` | `add-service <name> --shell [--root]`; creates/updates `.candle.json`/`.candle-setup.json`; output contains `'name'` + `added`; errors on missing name/shell; exits <2s; success stderr empty |
+| `add-service.test.ts` | `cli-add-service` | `add-service <name> --shell [--root]`; creates/updates `.candle.json`; output contains `'name'` + `added`; errors on missing name/shell; exits <2s; success stderr empty |
 | `clear-logs.test.ts` | `cli-clear-logs` | `clear-logs [name]`: `Logs cleared successfully`; unknown → `No logs found to clear`; works on transient/running; no stderr |
 | `erase-database.test.ts` | `cli-erase-database` | `erase-database`: clears state; idempotent; <2s; recognized command |
 | `find-orphans.test.ts` | `cli-find-orphans` | `find-orphans`: none when healthy; reports deleted project dir / deleted config / service removed from config; `--json` records; the suggested `kill --project-dir` cleans up; help + grouped help |
@@ -243,7 +243,7 @@ Root-level tests:
 6. Multiple-launch log filtering: `logs` shows only the **most recent execution** (the rows whose `run_id` is the command's highest). Rows from earlier runs must not appear, even ones a previous instance wrote after the new launch marker (`watch-restart.test.ts`, `restart.test.ts`).
 7. `list-all` must work from any cwd (no config required); `list`/`start`/`kill`/`logs` require/resolve a config via upward search.
 8. Times stored as unix seconds; uptime formatting matches `\d+m \d+s` or `\d+s`.
-9. Config file lookup order: `.candle.json` then `.candle-setup.json` (deprecated), searching upward to filesystem root. Empty config file ⇒ `{services:[]}`.
+9. Config file lookup: `.candle.json`, searching upward to filesystem root. Empty config file ⇒ `{services:[]}`.
 
 ## 9. Test fixtures (committed `.candle.json` per workspace)
 

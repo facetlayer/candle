@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::file::{find_config_file, read_config_file};
 use crate::config::model::{
-    CandleSetupConfig, LogEvictionConfig, ServiceConfig, DEFAULT_CONFIG_FILENAME,
+    CandleSetupConfig, LogEvictionConfig, ServiceConfig, CONFIG_FILENAME,
 };
 use crate::config::paths::{is_valid_root_path, path_resolve};
 use crate::config::validate::validate_config;
@@ -33,17 +33,17 @@ fn revalidate(config: &CandleSetupConfig) -> Result<(), CandleError> {
 pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
     match find_config_file(cwd) {
         Ok(found) => {
-            let config_path = found.project_dir.join(&found.config_filename);
+            let config_path = found.project_dir.join(CONFIG_FILENAME);
             Ok(format!(
                 "Config file already exists at {}",
                 config_path.display()
             ))
         }
         Err(CandleError::MissingSetupFile { .. }) => {
-            let config_path = cwd.join(DEFAULT_CONFIG_FILENAME);
+            let config_path = cwd.join(CONFIG_FILENAME);
             write_config_file(&config_path, &CandleSetupConfig::default())?;
             Ok(format!(
-                "Created {DEFAULT_CONFIG_FILENAME} in {}",
+                "Created {CONFIG_FILENAME} in {}",
                 cwd.display()
             ))
         }
@@ -51,13 +51,12 @@ pub fn handle_setup_project(cwd: &Path) -> Result<String, CandleError> {
     }
 }
 
-/// Find an existing config file (using its discovered filename) or create a new
-/// `.candle.json` in `start_dir`.
+/// Find an existing config file or create a new `.candle.json` in `start_dir`.
 fn find_or_create_setup_file(start_dir: &Path) -> Result<PathBuf, CandleError> {
     match find_config_file(start_dir) {
-        Ok(found) => Ok(found.project_dir.join(&found.config_filename)),
+        Ok(found) => Ok(found.project_dir.join(CONFIG_FILENAME)),
         Err(CandleError::MissingSetupFile { .. }) => {
-            let config_path = start_dir.join(DEFAULT_CONFIG_FILENAME);
+            let config_path = start_dir.join(CONFIG_FILENAME);
             write_config_file(&config_path, &CandleSetupConfig::default())?;
             Ok(config_path)
         }
@@ -138,7 +137,7 @@ fn validate_service_name(name: &str) -> Result<(), CandleError> {
 /// `remove-service`: remove a service by name.
 pub fn remove_server_config(name: &str, start_dir: &Path) -> Result<String, CandleError> {
     let found = find_config_file(start_dir)?;
-    let config_path = found.project_dir.join(&found.config_filename);
+    let config_path = found.project_dir.join(CONFIG_FILENAME);
     let mut config = read_config_file(&config_path)?;
 
     let original_len = config.services.len();
@@ -162,17 +161,14 @@ pub fn handle_set_config(key: &str, value: &str, cwd: &Path) -> Result<String, C
     let parsed = parse_config_value(key, value)?;
 
     let found = find_config_file(cwd)?;
-    let config_path = found.project_dir.join(&found.config_filename);
+    let config_path = found.project_dir.join(CONFIG_FILENAME);
     let mut config = read_config_file(&config_path)?;
 
     apply_config_value(&mut config, &parsed);
     revalidate(&config)?;
     write_config_file(&config_path, &config)?;
 
-    Ok(format!(
-        "Set '{key}' to '{value}' in {}",
-        found.config_filename
-    ))
+    Ok(format!("Set '{key}' to '{value}' in {CONFIG_FILENAME}"))
 }
 
 /// A validated set-config assignment.

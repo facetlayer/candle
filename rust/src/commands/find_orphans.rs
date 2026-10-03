@@ -18,7 +18,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::config::{find_service_by_name, read_config_file, CONFIG_FILENAMES};
+use crate::config::{find_service_by_name, read_config_file, CONFIG_FILENAME};
 use crate::db::process_table::find_all_running_processes;
 use crate::errors::CandleError;
 use crate::process_alive::filter_alive_processes;
@@ -80,14 +80,10 @@ fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<Or
 
     // Only the project directory itself counts. A config file in some ancestor
     // describes a different project, not this one.
-    let config_path = CONFIG_FILENAMES
-        .iter()
-        .map(|name| dir.join(name))
-        .find(|path| path.exists());
-
-    let Some(config_path) = config_path else {
+    let config_path = dir.join(CONFIG_FILENAME);
+    if !config_path.exists() {
         return Some(OrphanReason::MissingConfigFile);
-    };
+    }
 
     if transient {
         return None;

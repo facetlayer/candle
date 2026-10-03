@@ -28,7 +28,7 @@ This removes the "api" service entry from `.candle.json`. Other services and con
 
 ## Behavior
 
-1. Finds the nearest `.candle.json` (or `.candle-setup.json`) configuration file
+1. Finds the nearest `.candle.json` configuration file
 2. Removes the service with the matching name
 3. Writes the updated configuration back to the file
 4. Errors if the service name is not found

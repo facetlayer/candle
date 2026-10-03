@@ -107,14 +107,6 @@ do_uninstall() {
       removed=1
     fi
   done
-  # Releases before 0.15 also installed a `log-collector` binary next to `candle`.
-  for dir in "$BIN_DIR" "$HOME/.cargo/bin" "/usr/local/bin"; do
-    if [ -f "$dir/log-collector" ]; then
-      rm -f "$dir/log-collector"
-      say "removed $dir/log-collector"
-      removed=1
-    fi
-  done
   [ "$removed" -eq 1 ] || say "no Candle binary found in $BIN_DIR, ~/.cargo/bin, or /usr/local/bin"
 
   state_dir="${CANDLE_DATABASE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/candle}"
@@ -196,12 +188,6 @@ install -m 755 "$src" "$BIN_DIR/$BINARY" 2>/dev/null || {
   cp "$src" "$BIN_DIR/$BINARY" && chmod 755 "$BIN_DIR/$BINARY"
 }
 say "    $BINARY -> $BIN_DIR/$BINARY"
-
-# Releases before 0.15 also installed a `log-collector` binary; remove a leftover copy.
-if [ -f "$BIN_DIR/log-collector" ]; then
-  rm -f "$BIN_DIR/log-collector"
-  say "    removed obsolete $BIN_DIR/log-collector"
-fi
 
 say ""
 say "==> Done. Installed Candle $TAG to $BIN_DIR"

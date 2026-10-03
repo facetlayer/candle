@@ -50,14 +50,13 @@ Defaults are applied at read time by `get_log_eviction_config` (each unset field
 
 Implemented in `config/file.rs`. Two filenames, **priority order, first match wins**:
 ```rust
-pub const CONFIG_FILENAMES: [&str; 2] = [".candle.json", ".candle-setup.json"]; // .candle-setup.json is deprecated
-pub const DEFAULT_CONFIG_FILENAME: &str = ".candle.json";
+pub const CONFIG_FILENAME: &str = ".candle.json";
 ```
 
-`find_config_file(start_dir)`, returning `FoundConfig { config, project_dir, config_filename }`:
+`find_config_file(start_dir)`, returning `FoundConfig { config, project_dir }`:
 1. Make `start_dir` absolute lexically (`std::path::absolute`, no symlink resolution).
-2. Loop: in the current dir, test each filename in `CONFIG_FILENAMES` order. First existing file is read+validated and returned as `FoundConfig { config, project_dir: current, config_filename }`.
-3. If reading/parsing fails, it is re-wrapped as `ConfigFileError("Invalid <filename> at <path>: <msg>")`, so a broken existing file is never reported as `MissingSetupFile`.
+2. Loop: in the current dir, look for `.candle.json`. If it exists it is read+validated and returned as `FoundConfig { config, project_dir: current }`.
+3. If reading/parsing fails, it is re-wrapped as `ConfigFileError("Invalid .candle.json at <path>: <msg>")`, so a broken existing file is never reported as `MissingSetupFile`.
 4. Move to parent dir. Stop when the parent equals the current dir (filesystem root).
 5. If none found, return `CandleError::MissingSetupFile { cwd: start_dir, explicit: false }` — message: `No .candle.json file found in (or above) current directory: <start_dir>` plus a hint line (see [cli.md](cli.md) §1). Note: the error reports the **original** starting dir, not the root.
 
@@ -146,14 +145,14 @@ Implemented in `config/commands.rs` (each handler returns the success message; `
 
 ### `setup-project` (`handle_setup_project`)
 - No args/options (unknown flags rejected). Operates on the current working directory.
-- If `find_config_file(cwd)` succeeds → print `Config file already exists at <config_path>` and return (no write). `<config_path>` = `project_dir.join(config_filename)`.
+- If `find_config_file(cwd)` succeeds → print `Config file already exists at <config_path>` and return (no write). `<config_path>` = `project_dir.join(".candle.json")`.
 - Else (only if error is `MissingSetupFile`; other errors propagate) → write `{ "services": [] }` to `cwd.join(".candle.json")` and print `Created .candle.json in <cwd>`.
 
 ### `add-service <name> --shell <s> [--root <r>] [--enable-stdin]` (`add_server_config`)
 - `name` positional required (missing → `Error: Service name is required`, exit 1). `--shell` required and non-empty (missing → `Error: --shell <command> is required`, exit 1). `--root` string optional. `--enable-stdin` boolean optional. Unknown flags are rejected.
 - CLI rejects multiple command names: prints `Error: Cannot use multiple command names for add-service` to stderr, exit 1.
 - Before any file is created: the name must be non-empty and use only ASCII letters, digits, `-`, `_`, `.` (else `UsageError("Invalid service name '<name>': use only letters, digits, '-', '_' and '.'")`). A non-empty, otherwise valid `--root` must resolve (against the discovered project dir, or `cwd` if none) to an existing directory (else `UsageError("Root directory does not exist: <abs path>")`).
-- `find_or_create_setup_file(cwd)`: if a config exists upward, use `project_dir.join(config_filename)`; if `MissingSetupFile`, create `{ "services": [] }` at `cwd.join(".candle.json")` (other errors propagate).
+- `find_or_create_setup_file(cwd)`: if a config exists upward, use `project_dir.join(".candle.json")`; if `MissingSetupFile`, create `{ "services": [] }` at `cwd.join(".candle.json")` (other errors propagate).
 - Read config. If a service with `name` exists → `ConfigFileError("Service '<name>' already exists in configuration")`.
 - Build the new service with fields in this exact order: `name`, `shell`, then `root` **only if non-empty**, then `enableStdin` **only if `true`** (empty/false values are omitted entirely).
 - Push, revalidate (`validate_config(config.to_value())`), write, print `Service '<name>' added successfully to .candle.json`.
@@ -174,7 +173,7 @@ Implemented in `config/commands.rs` (each handler returns the success message; `
 - Unknown key → `UsageError("Unknown config key '<key>'. Valid keys: logEviction.maxLogsPerService, logEviction.maxRetentionSeconds")`. Key/value are validated **before** the config file is read.
 - Locates config via `find_config_file(cwd)` (errors if absent; does NOT create).
 - Sets the field on `log_eviction` (creating it if absent, and appending `logEviction` to `key_order` if new). There is no generic dot-path setter.
-- Revalidate, write, print `Set '<key>' to '<value>' in <config_filename>` (note: prints the `value` string as given, and the resolved `config_filename` which may be `.candle-setup.json`).
+- Revalidate, write, print `Set '<key>' to '<value>' in .candle.json` (note: prints the `value` string as given).
 - CLI error wrapper: `Error: <message>`, exit 1.
 
 **Subtle:** value parsing is lenient numeric coercion (`js_number` / `js_positive_int`), not `str::parse::<i64>()`: surrounding whitespace is trimmed (`" 5 "` → 5, passes), `""` → 0 (fails), `"3.5"` is not an integer (fails), `"3abc"` does not parse (fails), `"0x10"` → 16 and `"1e3"` → 1000 (pass; `0o`/`0b` prefixes are accepted too), and `Infinity`/`NaN` spellings fail.

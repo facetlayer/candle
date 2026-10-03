@@ -161,6 +161,6 @@ JSON-RPC error codes used: `-32601` (method not found) for both unknown methods 
 3. **Content ordering** — logs item first, then the result/error item. Result is serialized as pretty (2-space) JSON. Error text is exactly `Error: <message>` (no stack in the visible text).
 4. **No-result vs JSON** — `KillService`, `RestartService`, `GetLogs`, and `AddServerConfig` return no structured result; their content is logs-only. No `"null"` text is emitted — a result item is pushed only when a value exists.
 5. **Single-element name arrays** — several tools wrap one name into a one-element list; the underlying handlers expect arrays.
-6. **`find_project_dir` errors** if no `.candle.json`/`.candle-setup.json` is found walking up from cwd; that error becomes an `isError: true` response (not a transport error). Config filenames, in priority order: `.candle.json`, `.candle-setup.json`.
+6. **`find_project_dir` errors** if no `.candle.json` is found walking up from cwd; that error becomes an `isError: true` response (not a transport error).
 7. **`limit` default 200** is applied with nullish semantics: an explicit `0` is passed through, only an absent/`null` `limit` falls back to 200.
 8. **Unknown tool name** → `-32601` protocol-level error response, distinct from handler errors which return `isError: true` content.

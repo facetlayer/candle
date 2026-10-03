@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::config::model::{
-    CandleSetupConfig, ResolvedLogEvictionConfig, ServiceConfig, CONFIG_FILENAMES,
+    CandleSetupConfig, ResolvedLogEvictionConfig, ServiceConfig, CONFIG_FILENAME,
     LOG_EVICTION_DEFAULTS,
 };
 use crate::config::paths::path_resolve;
@@ -17,7 +17,6 @@ use crate::errors::CandleError;
 pub struct FoundConfig {
     pub config: CandleSetupConfig,
     pub project_dir: PathBuf,
-    pub config_filename: String,
 }
 
 /// Result of resolving a service by name.
@@ -81,8 +80,8 @@ fn to_absolute(p: &Path) -> PathBuf {
 
 /// Find the nearest config file in `start_dir` or any ancestor.
 ///
-/// Tries each filename in [`CONFIG_FILENAMES`] order per directory, walking up
-/// to the filesystem root. A read/parse error of an existing file is wrapped as
+/// Looks for [`CONFIG_FILENAME`] in each directory, walking up to the
+/// filesystem root. A read/parse error of an existing file is wrapped as
 /// `Invalid <filename> at <path>: <msg>` (losing the `MissingSetupFile` type).
 /// If nothing is found, returns `MissingSetupFile` reporting the original
 /// starting directory.
@@ -91,21 +90,18 @@ pub fn find_config_file(start_dir: &Path) -> Result<FoundConfig, CandleError> {
     let mut current = to_absolute(start_dir);
 
     loop {
-        for filename in CONFIG_FILENAMES {
-            let config_file_path = current.join(filename);
-            if config_file_path.exists() {
-                return match read_config_file(&config_file_path) {
-                    Ok(config) => Ok(FoundConfig {
-                        config,
-                        project_dir: current.clone(),
-                        config_filename: filename.to_string(),
-                    }),
-                    Err(e) => Err(CandleError::ConfigFileError(format!(
-                        "Invalid {filename} at {}: {e}",
-                        config_file_path.display()
-                    ))),
-                };
-            }
+        let config_file_path = current.join(CONFIG_FILENAME);
+        if config_file_path.exists() {
+            return match read_config_file(&config_file_path) {
+                Ok(config) => Ok(FoundConfig {
+                    config,
+                    project_dir: current.clone(),
+                }),
+                Err(e) => Err(CandleError::ConfigFileError(format!(
+                    "Invalid {CONFIG_FILENAME} at {}: {e}",
+                    config_file_path.display()
+                ))),
+            };
         }
 
         match current.parent() {
@@ -302,7 +298,6 @@ mod tests {
 
         let found = find_config_file(&nested).unwrap();
         assert_eq!(found.project_dir, dir.path());
-        assert_eq!(found.config_filename, ".candle.json");
         assert_eq!(found.config.services.len(), 1);
     }
 
@@ -335,20 +330,6 @@ mod tests {
         );
         // Wrapping loses the MissingSetupFile type.
         assert!(matches!(err, CandleError::ConfigFileError(_)));
-    }
-
-    #[test]
-    fn filename_priority_prefers_candle_json() {
-        let dir = TempDir::new();
-        std::fs::write(dir.path().join(".candle.json"), "{\n  \"services\": []\n}").unwrap();
-        std::fs::write(
-            dir.path().join(".candle-setup.json"),
-            "{\n  \"services\": [ { \"name\": \"x\", \"shell\": \"y\" } ]\n}",
-        )
-        .unwrap();
-        let found = find_config_file(dir.path()).unwrap();
-        assert_eq!(found.config_filename, ".candle.json");
-        assert!(found.config.services.is_empty());
     }
 
     #[test]

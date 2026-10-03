@@ -177,7 +177,7 @@ describe('CLI Error Handling', () => {
             const result = await workspace.runCli(['start', 'web'], { cwd: '/tmp', ignoreExitCode: true });
 
             expect(result.failed()).toBe(true);
-            expect(result.stderrAsString()).toMatch(/\.candle\.json|\.candle-setup\.json|config/i);
+            expect(result.stderrAsString()).toMatch(/\.candle\.json|config/i);
         });
 
         it('should suggest how to create a config on first run', async () => {

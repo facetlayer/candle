@@ -11,12 +11,8 @@
 
 use serde_json::{Map, Value};
 
-/// Config filenames in priority order (first match wins). `.candle-setup.json`
-/// is deprecated but still supported.
-pub const CONFIG_FILENAMES: [&str; 2] = [".candle.json", ".candle-setup.json"];
-
-/// Default filename used when creating a new config file.
-pub const DEFAULT_CONFIG_FILENAME: &str = ".candle.json";
+/// Name of the config file.
+pub const CONFIG_FILENAME: &str = ".candle.json";
 
 /// Defaults applied at read time by `get_log_eviction_config` (not written to disk).
 pub const LOG_EVICTION_DEFAULTS: ResolvedLogEvictionConfig = ResolvedLogEvictionConfig {

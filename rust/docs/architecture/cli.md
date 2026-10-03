@@ -107,7 +107,7 @@ first applicable `OrphanReason`:
 | Reason | Condition |
 |---|---|
 | `MissingProjectDir` | `project_dir` is not a directory |
-| `MissingConfigFile` | no name in `CONFIG_FILENAMES` exists **in that directory** (ancestors deliberately don't count — an ancestor's config describes a different project) |
+| `MissingConfigFile` | no `.candle.json` exists **in that directory** (ancestors deliberately don't count — an ancestor's config describes a different project) |
 | `ServiceNotInConfig` | the config parses but has no service by that name, and the row is not `transient` |
 
 A transient process (row `transient = 1`, started with `--shell`) is never in the config, so it is

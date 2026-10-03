@@ -1,4 +1,6 @@
 # Unreleased
+ - **Breaking:** the old `.candle-setup.json` config filename is no longer read; rename the file to `.candle.json`.
+ - Installer: no longer removes a leftover `log-collector` binary from pre-0.15 installs.
  - **Breaking:** `candle start` no longer restarts a service that is already running; it leaves it alone and says so. Use `candle restart` to kill and relaunch.
  - **Breaking:** removed `candle check-start` (`candle start` now behaves the way it did).
  - `candle restart` with no names restarts every service in the project, starting any that are stopped.

@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{find_project_dir, CONFIG_FILENAMES};
+use crate::config::{find_project_dir, CONFIG_FILENAME};
 use crate::dirs::normalize_path;
 use crate::errors::CandleError;
 
@@ -81,7 +81,7 @@ impl ProjectScope {
             return Ok(());
         };
 
-        if CONFIG_FILENAMES.iter().any(|name| dir.join(name).exists()) {
+        if dir.join(CONFIG_FILENAME).exists() {
             return Ok(());
         }
 

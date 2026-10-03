@@ -4,12 +4,7 @@ Candle uses a JSON configuration file to define services for your project.
 
 ## Configuration File
 
-Candle looks for configuration files in this order:
-
-1. `.candle.json` (recommended)
-2. `.candle-setup.json` (deprecated, still supported)
-
-The configuration file should be placed in your project root. Candle will search upward from the current directory to find it.
+The configuration file is named `.candle.json` and should be placed in your project root. Candle will search upward from the current directory to find it.
 
 ## Schema
 

@@ -50,18 +50,6 @@ describe('CLI Remove-Service Command', () => {
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             expect(config.services).toHaveLength(0);
         });
-
-        it('should work with .candle-setup.json', async () => {
-            const configPath = path.join(tempDir, '.candle-setup.json');
-            fs.writeFileSync(configPath, JSON.stringify({
-                services: [{ name: 'my-service', shell: 'npm start' }],
-            }, null, 2));
-
-            await workspace.runCli(['remove-service', 'my-service'], { cwd: tempDir });
-
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            expect(config.services).toHaveLength(0);
-        });
     });
 
     describe('error cases', () => {

@@ -309,4 +309,4 @@ Key SQL used by start-flow:
 10. **Launch directory**: the banner uses `resolve_launch_dir` (normalized); the monitor's cwd uses a plain `Path::join`. Both let an absolute root win, so they differ only in normalization.
 11. **Start lock**: concurrent starts of one service serialize on the `flock` from §4.0; different services (or projects) never contend.
 12. **Exact output strings** (the two-line start banner `[Started process '<name>'] $ <shell>` / `[With root directory: <dir>]`, `[Service '<name>' is already running (pid <pid>, up <uptime>); use 'candle restart <name>' to restart it]` and its outdated-command variant, `[Killed '<name>' process with PID: <pid>]`, cleanup/error variants) are asserted by tests — reproduced verbatim including backticks and brackets.
-13. **Config resolution order**: `.candle.json` then deprecated `.candle-setup.json`; loose substring + directory-aware matching for service names; walk up parent dirs to find config.
+13. **Config resolution order**: walk up parent dirs to find `.candle.json`; loose substring + directory-aware matching for service names.
