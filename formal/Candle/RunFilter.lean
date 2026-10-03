@@ -5,7 +5,7 @@ Mirrors `rust/src/log_filters/latest_run_filter.rs`. Every row carries the run
 it belongs to (`run_id`, `none` only before a service's first launch), and the
 filter keeps a row iff its run is the highest seen for its command.
 
-Unlike `LogFilter.lean`, nothing here assumes rows arrive in id order: the main
+Nothing here assumes rows arrive in id order: the main
 results hold for **every** list of rows. That is the point of the design, since
 a previous instance's monitor can write its last rows after a relaunch.
 
