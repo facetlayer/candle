@@ -112,6 +112,55 @@ When the service is already running:
    the second one fails with "address in use". Give each checkout its own port, for
    example through a variable in its `shell` command.
 
+## Troubleshooting: a service is running but `candle logs` is empty
+
+Candle reads a service's output through a pipe, not a terminal. Many programs
+notice that and stop printing line by line: they collect output in a buffer and
+only write it out when the buffer fills (often 4-8 KB) or the program exits. The
+service works, but its "listening on ..." line hasn't been written yet, so
+`candle logs` shows nothing and `candle wait-for-log` times out. If the service is
+killed, whatever was still in the buffer is lost.
+
+Node.js, Go, and most programs that write through a logging library are not
+affected. Python, Ruby, and C programs that use `printf` are. Error output
+(stderr) is usually unbuffered, which is why you may see tracebacks but no
+ordinary output.
+
+The fix is to tell the program not to buffer, in the `shell` command:
+
+| Program | Change the command to |
+|---|---|
+| Python | `python3 -u app.py`, or `PYTHONUNBUFFERED=1 python3 app.py` (also works for `flask`, `uvicorn`, `gunicorn`, `manage.py` and other Python entry points) |
+| Ruby | Put `$stdout.sync = true` at the top of the program, or `ruby -e 'STDOUT.sync = true; load "./app.rb"'` |
+| C / C++ and other programs using stdio | `stdbuf -oL ./server` (if macOS has no `stdbuf`: `brew install coreutils`, then `gstdbuf -oL ./server`) |
+| `grep`, `sed`, `awk` in a pipeline | `grep --line-buffered`, `sed -u` (GNU sed; `sed -l` on macOS), `awk '{ print; fflush() }'` |
+| Anything else | `script -q /dev/null ./server` on macOS, or `script -qfec "./server" /dev/null` on Linux, which runs the program on a terminal so it prints line by line |
+
+For example:
+
+```bash
+candle add-service api --shell "PYTHONUNBUFFERED=1 python3 app.py"
+```
+
+To check whether buffering is the cause, run `candle kill <name>` and then
+`candle logs <name>`: output that only shows up in bulk when the program exits
+normally, or never shows up for a killed one, was sitting in a buffer.
+
+## Commands that put something in the background
+
+A `shell` command can start a process in the background and return, for example
+`"./start-server.sh"` where the script ends with `server &`. Candle keeps the
+service listed as running, and keeps collecting its output, for as long as
+anything the command started is still running. `candle kill` stops all of it.
+The exit status reported at the end is the shell command's own.
+
+The exception is a program that detaches itself completely (a daemon that calls
+`setsid`): Candle can't follow it. Run such programs in their foreground mode
+(often a `--foreground` or `--no-daemon` flag).
+
+If the command fails during startup, anything it had already put in the
+background is stopped too, so a failed start leaves nothing running.
+
 ## Optional: log retention
 
 Candle keeps each service's output in a local database. Two optional keys
@@ -123,8 +172,11 @@ candle set-config logEviction.maxRetentionSeconds 172800  # default 86400 (one d
 ```
 
 These are cleanup targets, not hard caps. Old logs are removed at most once every
-10 minutes, so a very chatty service can go well past the limit (and use more disk)
-until the next cleanup.
+10 minutes, so a chatty service can go past the limit until the next cleanup. There
+is a ceiling, though: a service that prints continuously is trimmed as it goes, to
+its most recent 100,000 to 200,000 lines (or about 64 MB), and is slowed down to
+the speed its output can be stored at rather than piling up in memory. A line longer
+than 64 KB is stored as several lines.
 
 ## Optional: commit the file
 
