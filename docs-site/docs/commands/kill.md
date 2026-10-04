@@ -14,6 +14,8 @@ The `kill` command stops running services. `candle stop` is an alias for this co
 
 When called without arguments, it kills all services in the current project directory.
 
+If a service's shell command started something in the background and returned, the service is still listed as running while anything it started is alive, and `kill` stops all of it.
+
 Candle sends `SIGTERM` to the service and all of its child processes (including background children that detached from it, since each service runs in its own process group; only a child that calls `setsid` escapes), then waits up to 5 seconds for all of them to exit. If any are still running after that, for example because they trap or ignore `SIGTERM`, Candle sends `SIGKILL` to them and prints a note on stderr:
 
 ```

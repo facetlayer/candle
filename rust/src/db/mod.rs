@@ -40,7 +40,10 @@ const TABLE_STATEMENTS: &[(&str, &str)] = &[
             shell text,
             root text,
             run_id integer,
-            transient integer
+            transient integer,
+            pid_identity integer,
+            monitor_identity integer,
+            leader_exited integer
         )",
     ),
     (
@@ -625,6 +628,9 @@ mod tests {
             ("root", "TEXT", 0),
             ("run_id", "INTEGER", 0),
             ("transient", "INTEGER", 0),
+            ("pid_identity", "INTEGER", 0),
+            ("monitor_identity", "INTEGER", 0),
+            ("leader_exited", "INTEGER", 0),
         ];
         assert_eq!(cols.len(), expected.len());
         for (actual, exp) in cols.iter().zip(expected.iter()) {

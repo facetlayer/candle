@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use crate::db::process_table::{
     delete_process_entry, find_processes_by_command_name_and_project_dir, ProcessEntry,
 };
+use crate::process_identity::is_recorded_process;
 
 /// Check whether a process with the given PID is currently alive.
 ///
@@ -28,11 +29,30 @@ pub fn is_process_alive(pid: i64) -> bool {
     std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-/// Filter out process entries whose PIDs are no longer alive, deleting the stale
-/// rows from the database.
+/// Whether the entry's service process (`pid`) is alive and is still the
+/// process the row recorded, not a later one given the same PID.
+pub fn is_service_process_alive(entry: &ProcessEntry) -> bool {
+    is_recorded_process(entry.pid, entry.pid_identity)
+}
+
+/// The same for the entry's monitor (`log_collector_pid`).
+pub fn is_monitor_alive(entry: &ProcessEntry) -> bool {
+    entry
+        .log_collector_pid
+        .is_some_and(|pid| is_recorded_process(pid, entry.monitor_identity))
+}
+
+/// Whether the entry describes something still running: its monitor or its
+/// service process is alive.
+pub fn is_entry_alive(entry: &ProcessEntry) -> bool {
+    is_monitor_alive(entry) || is_service_process_alive(entry)
+}
+
+/// Filter out process entries whose processes are no longer alive, deleting the
+/// stale rows from the database.
 ///
-/// An entry is kept if its `log_collector_pid` is alive OR its `pid` is alive
-/// (checked in that order). Otherwise the row is deleted (keyed on
+/// An entry is kept if its monitor or its service process is alive (see
+/// [`is_entry_alive`]). Otherwise the row is deleted (keyed on
 /// command_name/project_dir/pid) and dropped from the result.
 pub fn filter_alive_processes(
     conn: &Connection,
@@ -41,12 +61,7 @@ pub fn filter_alive_processes(
     let mut alive = Vec::new();
 
     for entry in entries {
-        let collector_alive = match entry.log_collector_pid {
-            Some(pid) => is_process_alive(pid),
-            None => false,
-        };
-
-        if collector_alive || is_process_alive(entry.pid) {
+        if is_entry_alive(&entry) {
             alive.push(entry);
             continue;
         }

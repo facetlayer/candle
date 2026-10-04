@@ -45,7 +45,7 @@ Relevant queries (`process_table.rs`):
 ### Liveness (`rust/src/process_alive.rs`)
 `is_process_alive(pid)`: a signal-0 `libc::kill(pid, 0)` probe; `pid <= 0` is dead. **Subtle:** `EPERM` (process exists, other user) → **alive=true**; `ESRCH` → dead.
 
-`filter_alive_processes(conn, entries)`: for each entry, alive if **either** `log_collector_pid` is set AND alive, **or** `pid` is alive. If neither, **delete the row from the DB** (side effect) and drop it. `log_collector_pid` is checked first and short-circuits.
+`filter_alive_processes(conn, entries)`: for each entry, alive if **either** `log_collector_pid` is set AND alive, **or** `pid` is alive, where alive also requires the PID's OS start time to match the one recorded in the row (`process_identity.rs`). For a row marked `leader_exited`, `list-ports` looks up the members of the process group (`pgrep -g`) instead of walking a tree from the exited shell. If neither, **delete the row from the DB** (side effect) and drop it. `log_collector_pid` is checked first and short-circuits.
 
 ## 2. `handle_list` — `list` / `list-all` (`commands/list.rs`)
 

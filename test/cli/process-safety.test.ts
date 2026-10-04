@@ -181,9 +181,10 @@ describe('process safety', () => {
         expect(result.stdoutAsString()).toContain('Database erased');
         expect(isAlive(pid)).toBe(true);
       } finally {
-        // --force orphans it by design; clean up by hand. Its monitor
-        // exits once the shell does.
-        process.kill(pid, 'SIGKILL');
+        // --force orphans it by design; clean up by hand. The service leads
+        // its own process group, and its monitor exits once the whole group
+        // is gone (the shell's `sleep` included).
+        process.kill(-pid, 'SIGKILL');
       }
     });
   });

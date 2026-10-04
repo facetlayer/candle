@@ -20,9 +20,19 @@ describe('Monitor output capture', () => {
                         },
                         {
                             name: 'leaky',
-                            // Exits at once but leaves a background child holding
-                            // stdout open; the monitor must not wait on it forever.
-                            shell: 'sleep 6 & echo leaky-done; exit 0',
+                            // The shell exits at once but leaves a background
+                            // child running: the service is that child now.
+                            shell: 'sleep 60 & echo leaky-done; exit 0',
+                        },
+                        {
+                            name: 'brief',
+                            // The same, with a child that ends by itself.
+                            shell: 'sleep 2 & echo brief-done; exit 0',
+                        },
+                        {
+                            name: 'leaky-fail',
+                            // A failed start must not leave its child behind.
+                            shell: 'sleep 6161 & echo leaky-fail-done; exit 3',
                         },
                     ],
                 },
@@ -42,18 +52,62 @@ describe('Monitor output capture', () => {
         expect(out).toContain('final-error-line');
     });
 
-    it('records the exit within a bounded time when a grandchild holds the pipe open', async () => {
+    it('keeps a service running while a background child outlives its shell', async () => {
+        await workspace.runCli(['start', 'leaky']);
+        await workspace.runCli(['wait-for-log', 'leaky', '--message', 'leaky-done']);
+        // Give the shell time to exit; the child is all that is left.
+        await new Promise((r) => setTimeout(r, 1000));
+
+        const ps = (await workspace.runCli(['ps', 'leaky'])).stdoutAsString();
+        expect(ps).toContain('RUNNING');
+        const logs = (await workspace.runCli(['logs', 'leaky'])).stdoutAsString();
+        expect(logs).not.toContain('exited');
+
+        // `kill` reaches the child even though the shell's PID is gone.
         const started = Date.now();
-        await workspace.runCli(['start', 'leaky'], { ignoreExitCode: true });
+        const kill = (await workspace.runCli(['kill', 'leaky'])).stdoutAsString();
+        expect(kill).toContain("Killed 'leaky'");
+        expect(Date.now() - started).toBeLessThan(4000);
+
         let out = '';
         while (Date.now() - started < 5000) {
             out = (await workspace.runCli(['logs', 'leaky'])).stdoutAsString();
+            if (out.includes('Process was stopped')) break;
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(out).toContain('Process was stopped');
+        expect((await workspace.runCli(['ps', 'leaky'])).stdoutAsString()).not.toContain('RUNNING');
+    });
+
+    it('records the exit once the background child ends', async () => {
+        const started = Date.now();
+        await workspace.runCli(['start', 'brief']);
+        let out = '';
+        while (Date.now() - started < 8000) {
+            out = (await workspace.runCli(['logs', 'brief'])).stdoutAsString();
             if (out.includes('exited')) break;
             await new Promise((r) => setTimeout(r, 100));
         }
-        expect(out).toContain('leaky-done');
-        expect(out).toContain('exited');
-        // Well before the background `sleep 6` would release the pipe.
-        expect(Date.now() - started).toBeLessThan(5000);
+        expect(out).toContain('brief-done');
+        expect(out).toContain('Process exited with code 0');
+        // Not before the child's two seconds were up.
+        expect(Date.now() - started).toBeGreaterThan(1500);
+    });
+
+    it('stops a background child when the start fails', async () => {
+        const result = await workspace.runCli(['start', 'leaky-fail'], { ignoreExitCode: true });
+        expect(result.stderrAsString()).toContain('failed to start');
+        expect((await workspace.runCli(['list-all'])).stdoutAsString()).not.toContain('leaky-fail');
+
+        // The monitor exits once nothing of the service is left; it would
+        // otherwise live as long as the child.
+        const { execSync } = await import('child_process');
+        const leftover = () =>
+            execSync('ps -ax -o command').toString().split('\n').includes('sleep 6161');
+        const started = Date.now();
+        while (leftover() && Date.now() - started < 8000) {
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(leftover()).toBe(false);
     });
 });

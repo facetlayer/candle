@@ -23,6 +23,7 @@ pub mod mcp;
 pub mod monitor;
 pub mod output;
 pub mod process_alive;
+pub mod process_identity;
 pub mod process_tree;
 pub mod project_scope;
 pub mod run_context;

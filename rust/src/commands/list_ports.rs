@@ -18,7 +18,7 @@ use crate::config::{find_config_file, find_service_by_name};
 use crate::db::process_table::{find_all_processes, find_processes_by_project_dir};
 use crate::errors::CandleError;
 use crate::listening_ports::listening_sockets_for_pids;
-use crate::process_tree::get_process_tree;
+use crate::process_tree::{get_process_group_members, get_process_tree};
 
 /// One listening socket attributed to a service. Field names match the JSON the
 /// MCP `ListPorts` tool serializes.
@@ -82,7 +82,11 @@ pub fn handle_list_ports(
             (
                 entry.command_name.clone(),
                 entry.pid,
-                get_process_tree(entry.pid),
+                if entry.leader_exited {
+                    get_process_group_members(entry.pid)
+                } else {
+                    get_process_tree(entry.pid)
+                },
             )
         })
         .collect();

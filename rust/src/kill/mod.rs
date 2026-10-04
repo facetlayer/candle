@@ -20,7 +20,7 @@ use crate::db::process_table::{
     update_process_killed_at, ProcessEntry,
 };
 use crate::output;
-use crate::process_alive::is_process_alive;
+use crate::process_alive::{is_monitor_alive, is_process_alive, is_service_process_alive};
 use crate::process_tree::get_process_tree;
 
 /// How long a signalled process gets to exit on `SIGTERM` before the tree is
@@ -116,7 +116,12 @@ fn led_process_group(pid: i64) -> Option<i64> {
 }
 
 /// Whether any process is left in process group `pgid`.
-fn process_group_alive(pgid: i64) -> bool {
+pub(crate) fn process_group_alive(pgid: i64) -> bool {
+    // `kill(-1, ..)` and `kill(0, ..)` address every process and the caller's
+    // own group, never a service's.
+    if pgid <= 1 {
+        return false;
+    }
     let result = unsafe { libc::kill(-(pgid as libc::pid_t), 0) };
     result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
@@ -124,6 +129,9 @@ fn process_group_alive(pgid: i64) -> bool {
 /// Signal every process in group `pgid`, ignoring errors (the group may
 /// already be empty).
 fn signal_process_group(pgid: i64, signal: libc::c_int) {
+    if pgid <= 1 {
+        return;
+    }
     unsafe {
         libc::kill(-(pgid as libc::pid_t), signal);
     }
@@ -201,6 +209,30 @@ pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
     }
 }
 
+/// `SIGTERM` every process in group `pgid`, wait up to `grace` for the group to
+/// empty, and `SIGKILL` whatever is left.
+///
+/// For a service whose shell has exited while processes it started in the
+/// background are still running: the shell's PID is gone, so there is no tree
+/// to walk, but its process group still holds them. The caller must know the
+/// group is the service's (see `leader_exited` on
+/// [`ProcessEntry`](crate::db::process_table::ProcessEntry)).
+pub fn kill_process_group_and_wait(pgid: i64, grace: Duration) -> KillOutcome {
+    if !process_group_alive(pgid) {
+        return KillOutcome::ProcessNotFound;
+    }
+    signal_process_group(pgid, libc::SIGTERM);
+    if wait_for_all_to_exit(&[], Some(pgid), grace) {
+        return KillOutcome::Terminated;
+    }
+    signal_process_group(pgid, libc::SIGKILL);
+    if wait_for_all_to_exit(&[], Some(pgid), SIGKILL_WAIT) {
+        KillOutcome::Escalated
+    } else {
+        KillOutcome::Error
+    }
+}
+
 /// Outcome of [`kill_process_tree_and_wait`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KillOutcome {
@@ -221,7 +253,8 @@ pub enum KillOutcome {
 /// - **Success**: print `[Killed ...]` (unless `quiet`); then if the row was
 ///   already marked killed over 5 minutes ago, warn + hard-delete it; otherwise
 ///   mark `killed_at = now`.
-/// - **ProcessNotFound**: hard-delete the row (the OS process is gone). The
+/// - **ProcessNotFound**: hard-delete the row (the OS process is gone, or its
+///   PID has since been given to an unrelated process, which is left alone). The
 ///   warning is printed only for a row that still claimed to be running; a row
 ///   already marked killed is expected to be gone (e.g. the second kill inside
 ///   `restart`), so sweeping it is silent.
@@ -254,7 +287,20 @@ pub fn kill_one_running_process(
         )?;
     }
 
-    let killed = match kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD) {
+    let outcome = if is_service_process_alive(entry) {
+        kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD)
+    } else if entry.leader_exited && is_monitor_alive(entry) {
+        // The shell is gone; its monitor is still supervising what the shell
+        // left running in its process group.
+        kill_process_group_and_wait(entry.pid, KILL_GRACE_PERIOD)
+    } else {
+        // Nothing of the service is left. If the PID is alive it now belongs
+        // to an unrelated process (the row outlived a reboot or a killed
+        // monitor), which must not be signalled.
+        KillOutcome::ProcessNotFound
+    };
+
+    let killed = match outcome {
         outcome @ (KillOutcome::Terminated | KillOutcome::Escalated) => {
             if !quiet {
                 if outcome == KillOutcome::Escalated {
@@ -454,6 +500,77 @@ mod tests {
         assert_eq!(
             kill_process_tree(2_000_000_000),
             KillResult::ProcessNotFound
+        );
+    }
+
+    /// A row can outlive its process (a reboot, a killed monitor), and the OS
+    /// then hands the PID to something unrelated.
+    #[test]
+    fn a_reused_pid_is_not_signalled() {
+        let dir = temp_db_dir("kill-reused-pid");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        let mut stranger = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let pid = stranger.id() as i64;
+        insert(&conn, "svc", pid);
+        // As if the row had been written for an earlier process with this PID.
+        conn.execute("update processes set pid_identity = pid_identity - 1", [])
+            .unwrap();
+
+        let entry = find_all_processes(&conn).unwrap().pop().unwrap();
+        assert!(entry.pid_identity.is_some());
+        assert!(!crate::process_alive::is_entry_alive(&entry));
+        let (killed, _) = capture(|| kill_one_running_process(&conn, &entry, false).unwrap());
+
+        assert!(!killed);
+        assert!(
+            stranger.try_wait().unwrap().is_none(),
+            "stranger was killed"
+        );
+        assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
+
+        stranger.kill().unwrap();
+        stranger.wait().unwrap();
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_recorded_process_is_killed() {
+        let dir = temp_db_dir("kill-recorded-pid");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        let mut service = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        insert(&conn, "svc", service.id() as i64);
+        // Reap the child as it dies, as a monitor would: a zombie still
+        // answers signal 0, and the kill waits for the PID to disappear.
+        let reaper = std::thread::spawn(move || service.wait().unwrap());
+
+        let entry = find_all_processes(&conn).unwrap().pop().unwrap();
+        let (killed, _) = capture(|| kill_one_running_process(&conn, &entry, true).unwrap());
+
+        assert!(killed);
+        assert!(!reaper.join().unwrap().success());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn group_kill_refuses_reserved_ids() {
+        assert_eq!(
+            kill_process_group_and_wait(0, Duration::from_millis(10)),
+            KillOutcome::ProcessNotFound
+        );
+        assert_eq!(
+            kill_process_group_and_wait(1, Duration::from_millis(10)),
+            KillOutcome::ProcessNotFound
         );
     }
 

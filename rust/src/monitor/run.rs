@@ -7,8 +7,11 @@
 //! 3. stream stdout/stderr lines into `log_lines`;
 //! 4. a 500ms grace period distinguishes a fast failure from a real start;
 //! 5. poll the stdin queue (when enabled) and run periodic cleanup;
-//! 6. on exit, log `process_exited` and delete the `processes` row.
+//! 6. when the shell exits, keep going while its process group still has
+//!    members (something it started in the background);
+//! 7. then log `process_exited` and delete the `processes` row.
 
+use std::cell::Cell;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
@@ -21,13 +24,15 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
-use crate::db::cleanup::maybe_run_cleanup;
+use crate::db::cleanup::{evict_logs_of, maybe_run_cleanup, resolve_eviction_config};
 use crate::db::open_database_at;
 use crate::db::process_table::{
-    create_process_entry, delete_process_entry, find_process_entry, CreateProcessEntry,
+    create_process_entry, delete_process_entry, find_process_entry, mark_leader_exited,
+    CreateProcessEntry,
 };
 use crate::db::stdin_messages::{clear_stdin_messages, pop_stdin_message};
 use crate::debug::debug_log;
+use crate::kill::{kill_process_group_and_wait, process_group_alive, KILL_GRACE_PERIOD};
 use crate::logs::log_type::{
     killed_by_signal_message, KILLED_BY_SIGNAL, STOPPED_WHILE_STARTING_MESSAGE,
 };
@@ -45,6 +50,9 @@ const CLEANUP_INTERVAL_MS: u128 = 60 * 1000;
 /// a few lines written after the timeout in that case is acceptable, and
 /// keeping it short means the exit (and `ps` / `kill`) isn't held up.
 const POST_EXIT_DRAIN_MS: u64 = 500;
+/// Once the service's shell has exited, how often to check whether its
+/// process group has emptied.
+const GROUP_POLL_INTERVAL_MS: u64 = 250;
 
 /// Events forwarded from the reader / wait threads to the supervisor.
 enum LineEvent {
@@ -72,29 +80,62 @@ fn exit_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     }
 }
 
+/// Longest line stored as one log row. Output with no newline for longer than
+/// this is split into rows of this size, so a service that never ends its line
+/// can't grow the monitor without limit.
+const MAX_LINE_BYTES: usize = 64 * 1024;
+
+/// How many output lines can wait to be written to the database. When the
+/// queue is full the reader threads stop reading, the pipe fills, and the
+/// service blocks on its next write: a service that prints faster than the
+/// database can take it is slowed to that rate instead of the backlog piling
+/// up in the monitor's memory.
+const OUTPUT_QUEUE_LINES: usize = 2 * MAX_BATCH;
+
+/// Where to cut `buf` so that a UTF-8 sequence left incomplete at its end
+/// stays with the bytes that follow.
+fn utf8_split_point(buf: &[u8]) -> usize {
+    match std::str::from_utf8(buf) {
+        Err(e) if e.error_len().is_none() => e.valid_up_to(),
+        _ => buf.len(),
+    }
+}
+
 /// Forward each line of a child's output pipe as an event until EOF.
 ///
 /// Reads bytes rather than `String`s so output that isn't valid UTF-8 is
 /// decoded lossily instead of ending the read: closing the pipe early would
-/// kill the child with SIGPIPE on its next write.
-fn forward_lines(pipe: impl Read, tx: mpsc::Sender<LineEvent>, event: fn(String) -> LineEvent) {
+/// kill the child with SIGPIPE on its next write. A line longer than
+/// [`MAX_LINE_BYTES`] is forwarded in pieces.
+fn forward_lines(pipe: impl Read, tx: mpsc::SyncSender<LineEvent>, event: fn(String) -> LineEvent) {
     let mut reader = BufReader::new(pipe);
+    // Holds the start of a line across iterations only when a split left an
+    // incomplete UTF-8 sequence to carry over.
     let mut buf = Vec::new();
     loop {
-        buf.clear();
-        match reader.read_until(b'\n', &mut buf) {
-            Ok(0) => return,
+        let room = (MAX_LINE_BYTES - buf.len()) as u64;
+        match (&mut reader).take(room).read_until(b'\n', &mut buf) {
+            Ok(0) => {
+                if !buf.is_empty() {
+                    let _ = tx.send(event(String::from_utf8_lossy(&buf).into_owned()));
+                }
+                return;
+            }
             Ok(_) => {
+                let mut carry = Vec::new();
                 if buf.ends_with(b"\n") {
                     buf.pop();
                     if buf.ends_with(b"\r") {
                         buf.pop();
                     }
+                } else if buf.len() >= MAX_LINE_BYTES {
+                    carry = buf.split_off(utf8_split_point(&buf));
                 }
                 let line = String::from_utf8_lossy(&buf).into_owned();
-                // The supervisor is gone; keep draining so the child never
-                // blocks or gets SIGPIPE.
+                // If the supervisor is gone this fails at once; keep draining
+                // so the child never blocks or gets SIGPIPE.
                 let _ = tx.send(event(line));
+                buf = carry;
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => return,
@@ -141,12 +182,20 @@ fn take_queued(
     split_events(events)
 }
 
+/// While a service floods its output, the monitor trims that service's logs
+/// each time it has written this many lines...
+const TRIM_AFTER_LINES: usize = 100_000;
+/// ...or this many bytes, whichever comes first.
+const TRIM_AFTER_BYTES: usize = 32 * 1024 * 1024;
+
 /// Writes a service's output lines into `log_lines` for one run.
 struct OutputWriter<'a> {
     conn: &'a Connection,
     run_id: Option<i64>,
     command_name: &'a str,
     project_dir: &'a str,
+    /// Lines and bytes written since the last trim (see [`Self::trim_if_due`]).
+    since_trim: Cell<(usize, usize)>,
 }
 
 impl OutputWriter<'_> {
@@ -164,6 +213,32 @@ impl OutputWriter<'_> {
             self.project_dir,
             lines.iter().map(|(t, l)| (*t, l.as_str())),
         );
+        self.trim_if_due(lines.len(), lines.iter().map(|(_, l)| l.len()).sum());
+    }
+
+    /// Bound what a flooding service can put in the database.
+    ///
+    /// `maxLogsPerService` is applied by the periodic cleanup, which runs at
+    /// most every ten minutes; a service in a print loop can write gigabytes in
+    /// that time. So after every [`TRIM_AFTER_LINES`] lines (or
+    /// [`TRIM_AFTER_BYTES`]) the service's older rows are deleted, keeping what
+    /// was written since the previous trim (and never fewer rows than
+    /// `maxLogsPerService`). The database then holds at most about two such
+    /// stretches per service. Keeping the latest stretch rather than cutting
+    /// straight down to the limit gives `wait-for-log` and `watch`, which poll,
+    /// time to see every line before it goes.
+    fn trim_if_due(&self, lines: usize, bytes: usize) {
+        let (mut total_lines, mut total_bytes) = self.since_trim.get();
+        total_lines += lines;
+        total_bytes += bytes;
+        if total_lines >= TRIM_AFTER_LINES || total_bytes >= TRIM_AFTER_BYTES {
+            let limit = resolve_eviction_config(self.project_dir).max_logs_per_service as i64;
+            let keep = limit.max(total_lines as i64);
+            debug_log(&format!("[monitor] trimming logs to {keep} lines"));
+            let _ = evict_logs_of(self.conn, self.project_dir, self.command_name, keep);
+            (total_lines, total_bytes) = (0, 0);
+        }
+        self.since_trim.set((total_lines, total_bytes));
     }
 
     /// Receive and write output until the `Exit` event, which the wait thread
@@ -187,6 +262,77 @@ impl OutputWriter<'_> {
             events.push(e)
         });
         self.write(&split_events(events).0);
+    }
+}
+
+/// Keep supervising after the service's shell has exited, for as long as its
+/// process group (`pgid`, the shell's PID) still has members.
+///
+/// A command that starts something in the background and returns
+/// (`server & echo started`) leaves that process running in the service's
+/// group. Reporting the service as exited at that point would put the process
+/// out of reach of `ps` and `kill`. So the row stays, marked `leader_exited` so
+/// that `kill` signals the group instead of the shell's PID, and output keeps
+/// being collected until the group is empty. A process that has left the group
+/// (`setsid`) isn't covered. Returns whether the group outlived the shell.
+///
+/// A group id isn't reused while the group has members, so the check can't
+/// mistake another group for this one while the service is still around.
+fn supervise_remaining_group(
+    conn: &Connection,
+    writer: &OutputWriter<'_>,
+    rx: &mpsc::Receiver<LineEvent>,
+    pgid: i64,
+) -> bool {
+    if !process_group_alive(pgid) {
+        return false;
+    }
+    debug_log(&format!(
+        "[monitor] shell exited, process group {pgid} still has members"
+    ));
+    let _ = mark_leader_exited(conn, writer.command_name, writer.project_dir, pgid);
+
+    let poll = Duration::from_millis(GROUP_POLL_INTERVAL_MS);
+    let mut pipes_open = true;
+    let mut last_cleanup = Instant::now();
+    while process_group_alive(pgid) {
+        if pipes_open {
+            match rx.recv_timeout(poll) {
+                Ok(first) => writer.write(&take_queued(rx, first).0),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => pipes_open = false,
+            }
+        } else {
+            thread::sleep(poll);
+        }
+
+        if last_cleanup.elapsed().as_millis() >= CLEANUP_INTERVAL_MS {
+            let _ = maybe_run_cleanup(conn);
+            last_cleanup = Instant::now();
+        }
+    }
+    true
+}
+
+/// The `process_exited` message for a service that had started. `outlived` is
+/// set when the process group outlived the shell (see
+/// [`supervise_remaining_group`]): the shell's own exit status then says
+/// nothing about how the rest of the service ended, so a stop by Candle is
+/// reported as one.
+fn final_exit_message(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+    pid: i64,
+    exit: ChildExit,
+    outlived: bool,
+) -> String {
+    let stopped = (outlived || exit.code.is_none())
+        && stopped_by_candle(conn, command_name, project_dir, pid);
+    if outlived && stopped {
+        exit_message(ChildExit::default(), true)
+    } else {
+        exit_message(exit, stopped)
     }
 }
 
@@ -343,8 +489,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         },
     );
 
-    // Reader + wait threads forward events over a channel.
-    let (tx, rx) = mpsc::channel::<LineEvent>();
+    // Reader + wait threads forward events over a bounded channel (see
+    // `OUTPUT_QUEUE_LINES`).
+    let (tx, rx) = mpsc::sync_channel::<LineEvent>(OUTPUT_QUEUE_LINES);
 
     let stdout = child.stdout.take().expect("stdout piped");
     let tx_out = tx.clone();
@@ -420,6 +567,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         run_id,
         command_name: &command_name,
         project_dir: &project_dir,
+        since_trim: Cell::new((0, 0)),
     };
 
     // Grace period: collect output until the deadline or an early exit.
@@ -483,6 +631,9 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             )),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
+        // A failed start leaves nothing running: stop whatever the shell had
+        // already put in the background.
+        let _ = kill_process_group_and_wait(child_pid, KILL_GRACE_PERIOD);
         done.store(true, Ordering::Relaxed);
         if let Some(handle) = stdin_handle {
             let _ = handle.join();
@@ -502,13 +653,22 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 
     // Exited cleanly (code 0) within the grace period.
     if exited_during_grace {
+        let outlived = supervise_remaining_group(&conn, &writer, &rx, child_pid);
+        writer.write_after_exit(&rx);
         let _ = save_run_log(
             &conn,
             run_id,
             &command_name,
             &project_dir,
             ProcessLogType::ProcessExited,
-            Some(&exit_message(exit, false)),
+            Some(&final_exit_message(
+                &conn,
+                &command_name,
+                &project_dir,
+                child_pid,
+                exit,
+                outlived,
+            )),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
         done.store(true, Ordering::Relaxed);
@@ -540,6 +700,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
+    let outlived = supervise_remaining_group(&conn, &writer, &rx, child_pid);
     writer.write_after_exit(&rx);
 
     debug_log(&format!(
@@ -551,9 +712,13 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         &command_name,
         &project_dir,
         ProcessLogType::ProcessExited,
-        Some(&exit_message(
+        Some(&final_exit_message(
+            &conn,
+            &command_name,
+            &project_dir,
+            child_pid,
             exit,
-            exit.code.is_none() && stopped_by_candle(&conn, &command_name, &project_dir, child_pid),
+            outlived,
         )),
     );
     let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
@@ -718,19 +883,109 @@ mod tests {
         assert_eq!(exit_message(code, false), "Process exited with code 0");
     }
 
-    #[test]
-    fn forward_lines_survives_invalid_utf8() {
-        let (tx, rx) = mpsc::channel::<LineEvent>();
-        let input: &[u8] = b"a\xffb\r\nnext\nlast";
+    fn forwarded(input: &[u8]) -> Vec<String> {
+        let (tx, rx) = mpsc::sync_channel::<LineEvent>(1024);
         forward_lines(input, tx, LineEvent::Stdout);
-        let lines: Vec<String> = rx
-            .iter()
+        rx.iter()
             .map(|e| match e {
                 LineEvent::Stdout(l) => l,
                 _ => unreachable!(),
             })
+            .collect()
+    }
+
+    #[test]
+    fn forward_lines_survives_invalid_utf8() {
+        assert_eq!(
+            forwarded(b"a\xffb\r\nnext\nlast"),
+            vec!["a\u{fffd}b", "next", "last"]
+        );
+    }
+
+    #[test]
+    fn forward_lines_splits_an_overlong_line() {
+        // Two and a half rows' worth with no newline, then a normal line.
+        let mut input = vec![b'x'; MAX_LINE_BYTES * 2 + MAX_LINE_BYTES / 2];
+        input.extend_from_slice(b"\nshort\n");
+        let lines = forwarded(&input);
+        assert_eq!(
+            lines.iter().map(String::len).collect::<Vec<_>>(),
+            vec![MAX_LINE_BYTES, MAX_LINE_BYTES, MAX_LINE_BYTES / 2, 5]
+        );
+        assert_eq!(lines[3], "short");
+
+        // A line of exactly the maximum isn't followed by an empty row.
+        let mut exact = vec![b'y'; MAX_LINE_BYTES - 1];
+        exact.extend_from_slice(b"\nnext\n");
+        assert_eq!(forwarded(&exact).len(), 2);
+    }
+
+    #[test]
+    fn forward_lines_does_not_split_inside_a_character() {
+        // 'é' is two bytes; an odd offset puts one of them across the cut.
+        let mut input = vec![b'a'];
+        input.extend("é".repeat(MAX_LINE_BYTES).bytes());
+        let lines = forwarded(&input);
+        assert!(lines.len() >= 2);
+        assert!(lines.iter().all(|l| !l.contains('\u{fffd}')));
+        assert_eq!(lines.concat().len(), input.len());
+    }
+
+    #[test]
+    fn a_full_queue_holds_the_reader_back() {
+        let (tx, rx) = mpsc::sync_channel::<LineEvent>(2);
+        let input = b"1\n2\n3\n4\n5\n".to_vec();
+        let handle = thread::spawn(move || forward_lines(&input[..], tx, LineEvent::Stdout));
+        thread::sleep(Duration::from_millis(100));
+        // Nothing has been received, so the reader is parked with the queue full.
+        assert!(!handle.is_finished());
+        assert_eq!(rx.iter().count(), 5);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_flood_is_trimmed_as_it_is_written() {
+        use crate::db::{get_database, temp_db_dir};
+        use crate::logs::process_logs::start_run;
+
+        let dir = temp_db_dir("monitor-flood-trim");
+        let conn = get_database(Some(&dir)).unwrap();
+        let run_id = start_run(&conn, "svc", "/proj").unwrap();
+        let writer = OutputWriter {
+            conn: &conn,
+            run_id: Some(run_id),
+            command_name: "svc",
+            project_dir: "/proj",
+            since_trim: Cell::new((0, 0)),
+        };
+        let batch: Vec<OutputLine> = (0..MAX_BATCH)
+            .map(|i| (ProcessLogType::Stdout, format!("line {i}")))
             .collect();
-        assert_eq!(lines, vec!["a\u{fffd}b", "next", "last"]);
+        let count = |conn: &Connection| -> i64 {
+            conn.query_row("select count(*) from log_lines", [], |row| row.get(0))
+                .unwrap()
+        };
+
+        // Three stretches' worth: never more than about two are kept.
+        let mut most = 0;
+        for _ in 0..(3 * TRIM_AFTER_LINES / MAX_BATCH) {
+            writer.write(&batch);
+            most = most.max(count(&conn));
+        }
+        assert!(most <= 2 * TRIM_AFTER_LINES as i64 + 1, "{most}");
+        assert_eq!(count(&conn), TRIM_AFTER_LINES as i64);
+        // The newest line is still there.
+        let last: String = conn
+            .query_row(
+                "select content from log_lines order by id desc limit 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(last, format!("line {}", MAX_BATCH - 1));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

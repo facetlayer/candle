@@ -269,6 +269,9 @@ them still running 5 seconds later. The escalation is reported on stderr. Each s
 process group, so this also reaches background children that detached from the service's process tree
 (such as a double-forked `(daemon &)`), unless they started a new session with `setsid`.
 
+If a service's shell command starts something in the background and returns, the service stays
+listed as running until everything it started has exited, and `candle kill` stops all of it.
+
 ### `candle restart`
 
     candle restart

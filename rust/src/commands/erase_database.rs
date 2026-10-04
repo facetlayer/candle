@@ -8,7 +8,7 @@ use crate::db::get_database;
 use crate::db::process_table::{find_all_running_processes, ProcessEntry};
 use crate::dirs::get_state_directory;
 use crate::output;
-use crate::process_alive::is_process_alive;
+use crate::process_alive::is_entry_alive;
 use crate::start::service_lock::acquire_database_lock_in;
 
 /// Services whose rows say they're running and whose shell or monitor is alive.
@@ -21,10 +21,7 @@ pub fn live_processes_in(state_dir: &Path) -> rusqlite::Result<Vec<ProcessEntry>
     }
     let conn = get_database(Some(state_dir))?;
     let entries = find_all_running_processes(&conn)?;
-    Ok(entries
-        .into_iter()
-        .filter(|e| is_process_alive(e.pid) || e.log_collector_pid.is_some_and(is_process_alive))
-        .collect())
+    Ok(entries.into_iter().filter(is_entry_alive).collect())
 }
 
 /// Outcome of [`erase_database_guarded`].

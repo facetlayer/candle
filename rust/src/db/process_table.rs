@@ -6,6 +6,8 @@
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::process_identity::process_start_token;
+
 /// A row from the `processes` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessEntry {
@@ -25,6 +27,15 @@ pub struct ProcessEntry {
     /// Started with `--shell` rather than from `.candle.json`. Rows written
     /// by an older candle read as `false`.
     pub transient: bool,
+    /// OS start time of `pid` when the row was written (see
+    /// [`crate::process_identity`]). `None` on rows written by an older candle.
+    pub pid_identity: Option<i64>,
+    /// The same for `log_collector_pid`.
+    pub monitor_identity: Option<i64>,
+    /// The service's shell (`pid`) has exited but its process group still has
+    /// members, which the monitor is still supervising. `pid` is then only the
+    /// id of that group.
+    pub leader_exited: bool,
 }
 
 /// Input for [`create_process_entry`].
@@ -61,20 +72,24 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessEntry> {
         root: row.get(9)?,
         run_id: row.get(10)?,
         transient: row.get::<_, Option<bool>>(11)?.unwrap_or(false),
+        pid_identity: row.get(12)?,
+        monitor_identity: row.get(13)?,
+        leader_exited: row.get::<_, Option<bool>>(14)?.unwrap_or(false),
     })
 }
 
-const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id, transient";
+const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id, transient, pid_identity, monitor_identity, leader_exited";
 
-/// Insert a new process row. Sets `start_time` to the current unix seconds and
+/// Insert a new process row. Sets `start_time` to the current unix seconds,
+/// records the identity of both PIDs (see [`crate::process_identity`]), and
 /// leaves `created_at`/`killed_at` to default/NULL. Returns the new row id.
 pub fn create_process_entry(
     conn: &Connection,
     entry: &CreateProcessEntry,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root, run_id, transient) \
-         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "insert into processes (command_name, project_dir, pid, start_time, log_collector_pid, shell, root, run_id, transient, pid_identity, monitor_identity) \
+         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             entry.command_name,
             entry.project_dir,
@@ -85,9 +100,26 @@ pub fn create_process_entry(
             entry.root,
             entry.run_id,
             entry.transient,
+            process_start_token(entry.pid),
+            entry.log_collector_pid.and_then(process_start_token),
         ],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Record that the service's shell has exited while its process group still
+/// has members (see [`ProcessEntry::leader_exited`]).
+pub fn mark_leader_exited(
+    conn: &Connection,
+    command_name: &str,
+    project_dir: &str,
+    pid: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "update processes set leader_exited = 1 where command_name = ?1 and project_dir = ?2 and pid = ?3",
+        params![command_name, project_dir, pid],
+    )?;
+    Ok(())
 }
 
 /// Mark a process row as killed at the given unix timestamp.

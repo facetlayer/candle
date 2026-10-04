@@ -698,6 +698,9 @@ mod tests {
             root: None,
             run_id: None,
             transient: false,
+            pid_identity: None,
+            monitor_identity: None,
+            leader_exited: false,
         }
     }
 

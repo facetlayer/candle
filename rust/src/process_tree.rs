@@ -29,6 +29,26 @@ pub fn get_process_tree(root_pid: i64) -> Vec<i64> {
     all_pids
 }
 
+/// The PIDs in process group `pgid`, via `pgrep -g`. Empty if the tool is
+/// missing or the group has no members.
+///
+/// For a service whose shell has exited (see `leader_exited` on
+/// [`ProcessEntry`](crate::db::process_table::ProcessEntry)): there is no root
+/// left to walk a tree from, but what it started is still in its group.
+pub fn get_process_group_members(pgid: i64) -> Vec<i64> {
+    if pgid <= 1 {
+        return Vec::new();
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        run_command_for_pids("pgrep", &["-g", &pgid.to_string()])
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Vec::new()
+    }
+}
+
 /// Get the direct child PIDs of `parent_pid` using the platform's process tool.
 pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
     #[cfg(target_os = "macos")]

@@ -10,6 +10,10 @@
  - Add `--json` to `candle list-docs`
  - Fix `candle wait-for-log` missing a message when the service printed more than 1000 lines after it. It now searches every line of the service's latest run.
  - Developer docs are no longer compiled into the binary.
+ - `candle kill` no longer risks signalling an unrelated process. Each process record now stores the process's start time, and a PID that has since been reused by another program (after a reboot, or after a monitor was killed) is treated as gone.
+ - A service whose command starts something in the background and returns (`server & echo started`) stays listed as running until everything it started has exited, and `candle kill` stops it. Previously the background process was left running with no way to see or stop it through Candle. If such a command fails during startup, what it started is stopped.
+ - A service that prints in a tight loop no longer grows the monitor's memory or the database without limit. Output is read only as fast as it can be stored, the service's logs are trimmed while it floods, and a line longer than 64 KB is stored as several lines.
+ - `project-setup` doc: how to fix services whose output doesn't show up in `candle logs` because the program buffers it (Python, Ruby and others).
 
 # 0.15.0 (2026-09-23)
  - Lots of bug fixes and improvements.

@@ -22,7 +22,7 @@ use crate::db::process_table::{
 };
 use crate::logs::process_logs::save_run_log;
 use crate::logs::ProcessLogType;
-use crate::process_alive::is_process_alive;
+use crate::process_alive::is_entry_alive;
 
 /// Minimum seconds between cleanup runs. Matches `CLEANUP_INTERVAL_SECONDS`.
 pub const CLEANUP_INTERVAL_SECONDS: i64 = 10 * 60;
@@ -53,9 +53,53 @@ pub fn maybe_run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     run_cleanup(conn)
 }
 
+/// Delete all but the newest `keep` log rows of one service.
+fn evict_service_logs(conn: &Connection, service_id: i64, keep: i64) -> rusqlite::Result<()> {
+    // The id threshold: the row at offset = `keep` when sorted newest-first.
+    // Everything with id <= that is evicted.
+    let cutoff_id: Option<i64> = conn
+        .query_row(
+            "select id from log_lines where service_id = ?1 \
+             order by id desc limit 1 offset ?2",
+            params![service_id, keep],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(cutoff) = cutoff_id {
+        conn.execute(
+            "delete from log_lines where service_id = ?1 and id <= ?2",
+            params![service_id, cutoff],
+        )?;
+    }
+    Ok(())
+}
+
+/// Delete all but the newest `keep` log rows of `command_name` in
+/// `project_dir`. The monitor calls this while a service floods its output, so
+/// the database stays bounded between the periodic cleanups.
+pub fn evict_logs_of(
+    conn: &Connection,
+    project_dir: &str,
+    command_name: &str,
+    keep: i64,
+) -> rusqlite::Result<()> {
+    let service_id: Option<i64> = conn
+        .query_row(
+            "select id from services where project_dir = ?1 and command_name = ?2",
+            params![project_dir, command_name],
+            |row| row.get(0),
+        )
+        .ok();
+    match service_id {
+        Some(service_id) => evict_service_logs(conn, service_id, keep),
+        None => Ok(()),
+    }
+}
+
 /// Resolve the log-eviction config for a project directory, falling back to the
 /// defaults on any error (missing/invalid config file).
-fn resolve_eviction_config(project_dir: &str) -> ResolvedLogEvictionConfig {
+pub(crate) fn resolve_eviction_config(project_dir: &str) -> ResolvedLogEvictionConfig {
     match find_config_file(Path::new(project_dir)) {
         Ok(found) => get_log_eviction_config(Some(&found.config)),
         Err(_) => get_log_eviction_config(None),
@@ -119,23 +163,7 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
             continue;
         }
 
-        // Find the id threshold: the row at offset = maxLogsPerService when
-        // sorted newest-first. Everything with id <= that is evicted.
-        let cutoff_id: Option<i64> = conn
-            .query_row(
-                "select id from log_lines where service_id = ?1 \
-                 order by id desc limit 1 offset ?2",
-                params![service_id, max_logs],
-                |row| row.get(0),
-            )
-            .ok();
-
-        if let Some(cutoff) = cutoff_id {
-            conn.execute(
-                "delete from log_lines where service_id = ?1 and id <= ?2",
-                params![service_id, cutoff],
-            )?;
-        }
+        evict_service_logs(conn, service_id, max_logs)?;
     }
 
     // (4) Forget services with no logs left. A writer that races this recreates
@@ -174,15 +202,8 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
 ///   (the collector died before it could clean up).
 pub fn cleanup_stale_processes(conn: &Connection) -> rusqlite::Result<()> {
     for proc in find_all_running_processes(conn)? {
-        // Log collector still alive -> it is managing this process.
-        if let Some(collector_pid) = proc.log_collector_pid {
-            if is_process_alive(collector_pid) {
-                continue;
-            }
-        }
-
-        // The service process itself is still alive.
-        if is_process_alive(proc.pid) {
+        // The monitor is still managing it, or the service itself is alive.
+        if is_entry_alive(&proc) {
             continue;
         }
 
