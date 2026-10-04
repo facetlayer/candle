@@ -80,6 +80,23 @@ fn exit_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     }
 }
 
+/// Variables added to a service's environment unless it already has them
+/// (even set to an empty value, which is how to turn one off).
+///
+/// `PYTHONUNBUFFERED`: the service's stdout is a pipe, so Python would hold
+/// its output in a block buffer and `logs` / `wait-for-log` would see nothing
+/// until the buffer filled or the program exited.
+const DEFAULT_SERVICE_ENV: [(&str, &str); 1] = [("PYTHONUNBUFFERED", "1")];
+
+/// The entries of [`DEFAULT_SERVICE_ENV`] that `is_set` doesn't report as set.
+fn default_service_env(
+    is_set: impl Fn(&str) -> bool,
+) -> impl Iterator<Item = (&'static str, &'static str)> {
+    DEFAULT_SERVICE_ENV
+        .into_iter()
+        .filter(move |(name, _)| !is_set(name))
+}
+
 /// Longest line stored as one log row. Output with no newline for longer than
 /// this is split into rows of this size, so a service that never ends its line
 /// can't grow the monitor without limit.
@@ -439,6 +456,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         .arg("-c")
         .arg(&shell)
         .process_group(0)
+        .envs(default_service_env(|name| std::env::var_os(name).is_some()))
         .current_dir(&launch_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -734,6 +752,18 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_service_env_skips_variables_already_set() {
+        assert_eq!(
+            default_service_env(|_| false).collect::<Vec<_>>(),
+            vec![("PYTHONUNBUFFERED", "1")]
+        );
+        assert_eq!(
+            default_service_env(|name| name == "PYTHONUNBUFFERED").count(),
+            0
+        );
+    }
 
     #[test]
     fn drain_collects_lines_sent_after_exit_until_disconnect() {

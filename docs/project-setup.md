@@ -100,6 +100,9 @@ When the service is already running:
    moment. To pick up a changed variable, run `candle restart` from a shell that has
    it. Candle doesn't read `.env` files; load them in the command itself
    (e.g. `"shell": "set -a && . ./.env && npm run dev"`).
+ - Candle adds `PYTHONUNBUFFERED=1` to that environment so Python programs print
+   line by line (see the troubleshooting section below). If the variable is already
+   set, even to an empty value, Candle leaves it alone.
  - Services are independent: there's no start order or dependency graph. Use
    `wait-for-log` to wait for one before starting another.
  - Candle doesn't restart a service when it crashes, and doesn't restart services
@@ -122,7 +125,8 @@ service works, but its "listening on ..." line hasn't been written yet, so
 killed, whatever was still in the buffer is lost.
 
 Node.js, Go, and most programs that write through a logging library are not
-affected. Python, Ruby, and C programs that use `printf` are. Error output
+affected, and neither is Python, because Candle runs services with
+`PYTHONUNBUFFERED=1`. Ruby and C programs that use `printf` are. Error output
 (stderr) is usually unbuffered, which is why you may see tracebacks but no
 ordinary output.
 
@@ -130,7 +134,7 @@ The fix is to tell the program not to buffer, in the `shell` command:
 
 | Program | Change the command to |
 |---|---|
-| Python | `python3 -u app.py`, or `PYTHONUNBUFFERED=1 python3 app.py` (also works for `flask`, `uvicorn`, `gunicorn`, `manage.py` and other Python entry points) |
+| Python | Nothing: Candle sets `PYTHONUNBUFFERED=1` for every service. If output is still missing, check that the command or the environment `candle start` ran in doesn't set `PYTHONUNBUFFERED` to an empty value |
 | Ruby | Put `$stdout.sync = true` at the top of the program, or `ruby -e 'STDOUT.sync = true; load "./app.rb"'` |
 | C / C++ and other programs using stdio | `stdbuf -oL ./server` (if macOS has no `stdbuf`: `brew install coreutils`, then `gstdbuf -oL ./server`) |
 | `grep`, `sed`, `awk` in a pipeline | `grep --line-buffered`, `sed -u` (GNU sed; `sed -l` on macOS), `awk '{ print; fflush() }'` |
@@ -139,7 +143,7 @@ The fix is to tell the program not to buffer, in the `shell` command:
 For example:
 
 ```bash
-candle add-service api --shell "PYTHONUNBUFFERED=1 python3 app.py"
+candle add-service api --shell "stdbuf -oL ./server"
 ```
 
 To check whether buffering is the cause, run `candle kill <name>` and then

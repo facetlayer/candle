@@ -110,4 +110,18 @@ describe('Monitor output capture', () => {
         }
         expect(leftover()).toBe(false);
     });
+
+    // Python block-buffers stdout when it's a pipe, which would hide a
+    // service's output from `logs` and `wait-for-log`.
+    it('runs services with PYTHONUNBUFFERED=1 by default', async () => {
+        await workspace.runCli(['start', 'unbuf-default', '--shell', 'echo "unbuffered=[$PYTHONUNBUFFERED]"; sleep 30']);
+        await workspace.runCli(['wait-for-log', 'unbuf-default', '--message', 'unbuffered=[1]', '--timeout', '5']);
+    });
+
+    it('keeps a PYTHONUNBUFFERED the caller already set, even an empty one', async () => {
+        await workspace.runCli(['start', 'unbuf-empty', '--shell', 'echo "unbuffered=[$PYTHONUNBUFFERED]"; sleep 30'], {
+            env: { PYTHONUNBUFFERED: '' },
+        });
+        await workspace.runCli(['wait-for-log', 'unbuf-empty', '--message', 'unbuffered=[]', '--timeout', '5']);
+    });
 });

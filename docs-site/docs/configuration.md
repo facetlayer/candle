@@ -46,6 +46,8 @@ The shell command to execute when starting the service.
 }
 ```
 
+The command runs with `sh -c`, in the environment of the `candle start` (or `restart`) that launched it. Candle adds one variable, `PYTHONUNBUFFERED=1`, so that Python programs print line by line and their output shows up in `candle logs` right away. If `PYTHONUNBUFFERED` is already set, even to an empty value, Candle leaves it alone.
+
 ### root (optional)
 
 The directory where the command will run. A relative path is resolved against the config file location. An absolute path is used as-is.
