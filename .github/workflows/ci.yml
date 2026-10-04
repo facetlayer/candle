@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+  # The release workflow runs this suite against the tag before it builds.
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to test (defaults to the ref that triggered the caller)'
+        type: string
+        default: ''
 
 jobs:
   rust:
@@ -14,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - uses: ./.github/actions/setup-node-pnpm
 
@@ -49,6 +58,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Check install.sh
         run: |

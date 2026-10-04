@@ -19,8 +19,15 @@ permissions:
   contents: write
 
 jobs:
+  # Nothing is built or published unless the test suite passes on the tag.
+  test:
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref }}
+
   build:
     name: build (${{ matrix.target }})
+    needs: test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
