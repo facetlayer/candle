@@ -384,8 +384,11 @@ describe('CLI Start Command', () => {
         });
 
         it('still reports a failed start behind a backlog of output', async () => {
+            // `boom` goes to stdout like the numbers: stdout and stderr are
+            // separate pipes, so a stderr line isn't ordered against a
+            // backlog still sitting in the stdout pipe (64 KB on Linux).
             const result = await workspace.runCli(
-                ['start', 'flood-fail', '--shell', 'seq 1 20000; echo boom >&2; exit 3'],
+                ['start', 'flood-fail', '--shell', 'seq 1 20000; echo boom; exit 3'],
                 { ignoreExitCode: true }
             );
 

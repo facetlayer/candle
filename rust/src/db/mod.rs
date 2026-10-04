@@ -775,7 +775,8 @@ mod tests {
         assert!(!process_output_is_table(&conn).unwrap());
 
         // Every row kept its id, run, type, timestamp and content.
-        let rows: Vec<(i64, String, String, Option<String>, i64, i64, Option<i64>)> = {
+        type MigratedRow = (i64, String, String, Option<String>, i64, i64, Option<i64>);
+        let rows: Vec<MigratedRow> = {
             let mut stmt = conn
                 .prepare(
                     "select l.id, s.project_dir, s.command_name, l.content, l.log_type, l.timestamp, l.run_id \
