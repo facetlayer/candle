@@ -2,6 +2,8 @@
 
 Candle is a process manager designed for local development, worktrees, and AI agents.
 
+Documentation: https://facetlayer.github.io/candle/
+
 Compared to other existing tools out there:
 
 There are production grade tools (like `pm2`, `systemd`, and others) which can be overcomplicated for
