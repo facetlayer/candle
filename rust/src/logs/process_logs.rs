@@ -1,15 +1,17 @@
 //! Process output (log) storage and retrieval.
 //!
 //! Rows are written by the monitor process and read back by the CLI / MCP
-//! server. The `timestamp` column is populated by its SQLite `DEFAULT
-//! (strftime('%s','now'))`, so it is not supplied on insert.
+//! server. They live in `log_lines`, keyed on a `services` row per
+//! `(project_dir, command_name)`; see `db/mod.rs`. The `timestamp` column is
+//! populated by its SQLite `DEFAULT (strftime('%s','now'))`, so it is not
+//! supplied on insert.
 
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection};
 
 use crate::logs::log_type::ProcessLogType;
 
-/// A row from the `process_output` table.
+/// A log row, with its service's project and name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessLog {
     pub id: i64,
@@ -20,7 +22,7 @@ pub struct ProcessLog {
     pub timestamp: i64,
     /// The run this row belongs to: the id of that run's
     /// `process_start_initiated` row. `None` only for rows saved before the
-    /// service's first launch. See `run_of_row` in `db/mod.rs`.
+    /// service's first launch. See `latest_run_of` in `db/mod.rs`.
     pub run_id: Option<i64>,
 }
 
@@ -48,10 +50,9 @@ pub struct LogSearchOptions {
 
 /// Insert a new process log line belonging to `run_id`.
 ///
-/// With `run_id: None` the database assigns the run by position (the latest
-/// launch at or before the row), which is only right for writers that can't
-/// be overtaken by a newer launch. `timestamp` is intentionally omitted so the
-/// column DEFAULT fills it in (unix seconds).
+/// With `run_id: None` the row joins the service's latest run, which is only
+/// right for writers that can't be overtaken by a newer launch. `timestamp` is
+/// intentionally omitted so the column DEFAULT fills it in (unix seconds).
 pub fn save_run_log(
     conn: &Connection,
     run_id: Option<i64>,
@@ -60,10 +61,7 @@ pub fn save_run_log(
     log_type: ProcessLogType,
     content: Option<&str>,
 ) -> rusqlite::Result<()> {
-    conn.execute(
-        "insert into process_output(command_name, project_dir, content, log_type, run_id) values(?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![command_name, project_dir, content, log_type.as_i64(), run_id],
-    )?;
+    insert_log(conn, run_id, command_name, project_dir, log_type, content)?;
     Ok(())
 }
 
@@ -79,21 +77,55 @@ pub fn save_run_logs<'a>(
     entries: impl IntoIterator<Item = (ProcessLogType, &'a str)>,
 ) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
-    {
-        let mut stmt = tx.prepare_cached(
-            "insert into process_output(command_name, project_dir, content, log_type, run_id) values(?1, ?2, ?3, ?4, ?5)",
+    for (log_type, content) in entries {
+        insert_log(
+            &tx,
+            run_id,
+            command_name,
+            project_dir,
+            log_type,
+            Some(content),
         )?;
-        for (log_type, content) in entries {
-            stmt.execute(rusqlite::params![
-                command_name,
-                project_dir,
-                content,
-                log_type.as_i64(),
-                run_id
-            ])?;
-        }
     }
     tx.commit()
+}
+
+/// Insert a log row and return its id.
+///
+/// The row is inserted in one statement that looks up its `services` row. The
+/// first log of a service finds none (`0` rows inserted), so the service row is
+/// created and the insert retried. Cleanup deletes service rows that have no
+/// logs, so the retry can in principle miss again; it loops until it lands.
+fn insert_log(
+    conn: &Connection,
+    run_id: Option<i64>,
+    command_name: &str,
+    project_dir: &str,
+    log_type: ProcessLogType,
+    content: Option<&str>,
+) -> rusqlite::Result<i64> {
+    let mut insert = conn.prepare_cached(&format!(
+        "insert into log_lines(service_id, run_id, log_type, content) \
+         select s.id, coalesce(?3, {}), ?4, ?5 from services s \
+         where s.project_dir = ?1 and s.command_name = ?2",
+        crate::db::latest_run_of("s.id")
+    ))?;
+    loop {
+        let inserted = insert.execute(rusqlite::params![
+            project_dir,
+            command_name,
+            run_id,
+            log_type.as_i64(),
+            content
+        ])?;
+        if inserted > 0 {
+            return Ok(conn.last_insert_rowid());
+        }
+        conn.execute(
+            "insert or ignore into services(project_dir, command_name) values(?1, ?2)",
+            rusqlite::params![project_dir, command_name],
+        )?;
+    }
 }
 
 /// [`save_run_log`] with the run assigned by position.
@@ -109,20 +141,20 @@ pub fn save_process_log(
 
 /// Record a new launch of `command_name` and return its run id: the id of the
 /// `process_start_initiated` row, which the database assigns as the row's own
-/// run (see `run_of_row` in `db/mod.rs`).
+/// run (see `LAUNCH_RUN_TRIGGER` in `db/mod.rs`).
 pub fn start_run(
     conn: &Connection,
     command_name: &str,
     project_dir: &str,
 ) -> rusqlite::Result<i64> {
-    save_process_log(
+    insert_log(
         conn,
+        None,
         command_name,
         project_dir,
         ProcessLogType::ProcessStartInitiated,
         None,
-    )?;
-    Ok(conn.last_insert_rowid())
+    )
 }
 
 /// The latest run id of each command in scope that has one.
@@ -137,8 +169,8 @@ pub fn latest_run_ids(
         ..Default::default()
     });
     let sql = format!(
-        "select po.command_name, max(po.run_id) from process_output po where {scope} \
-         and po.run_id is not null group by po.command_name"
+        "select s.command_name, (select max(l.run_id) from log_lines l where l.service_id = s.id) as run \
+         from services s where {scope} and run is not null"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
@@ -149,31 +181,35 @@ pub fn latest_run_ids(
 
 /// Build the log-search SQL + params.
 ///
-/// Returns rows in newest-first order (`timestamp desc, id desc`); callers that
-/// want chronological order should reverse the result (see [`get_process_logs`]).
+/// Returns rows in newest-first order (`id desc`, which is insertion order);
+/// callers that want chronological order should reverse the result (see
+/// [`get_process_logs`]).
 fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
     let (scope, mut params) = scope_clause(options);
-    let mut sql = format!("select po.* from process_output po where {scope}");
+    let mut sql = format!(
+        "select l.id, s.command_name, s.project_dir, l.content, l.log_type, l.timestamp, l.run_id \
+         from services s join log_lines l on l.service_id = s.id where {scope}"
+    );
 
     if let Some(since) = options.since_timestamp {
-        sql.push_str(" and po.timestamp > ?");
+        sql.push_str(" and l.timestamp > ?");
         params.push(Value::Integer(since));
     }
 
     if let Some(after) = options.after_log_id {
-        sql.push_str(" and po.id > ?");
+        sql.push_str(" and l.id > ?");
         params.push(Value::Integer(after));
     }
 
     if let Some(min_id) = options.min_log_id {
-        sql.push_str(" and po.id >= ?");
+        sql.push_str(" and l.id >= ?");
         params.push(Value::Integer(min_id));
     }
 
     push_log_type_filter(&mut sql, &mut params, &options.log_types);
 
     if let Some(run_id) = options.run_id {
-        sql.push_str(" and po.run_id = ?");
+        sql.push_str(" and l.run_id = ?");
         params.push(Value::Integer(run_id));
     }
 
@@ -185,7 +221,7 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
         push_previous_launch_filter(&mut sql);
     }
 
-    sql.push_str(" order by po.timestamp desc, po.id desc");
+    sql.push_str(" order by l.id desc");
 
     if let Some(limit) = options.limit {
         sql.push_str(" limit ?");
@@ -195,17 +231,17 @@ fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
     (sql, params)
 }
 
-/// The project/command part of a `where` clause over `process_output po`.
+/// The project/command part of a `where` clause over `services s`.
 fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
     let mut conditions = Vec::new();
     let mut params = Vec::new();
     if let Some(project_dir) = &options.project_dir {
-        conditions.push("po.project_dir = ?".to_string());
+        conditions.push("s.project_dir = ?".to_string());
         params.push(Value::Text(project_dir.clone()));
     }
     if !options.command_names.is_empty() {
         let placeholders = vec!["?"; options.command_names.len()].join(", ");
-        conditions.push(format!("po.command_name in ({placeholders})"));
+        conditions.push(format!("s.command_name in ({placeholders})"));
         params.extend(options.command_names.iter().cloned().map(Value::Text));
     }
     if conditions.is_empty() {
@@ -219,22 +255,21 @@ fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
 /// Keep only rows from the row's command's latest run. `is` rather than `=` so
 /// a command that has never been launched (every `run_id` null) keeps its rows.
 fn push_latest_launch_filter(sql: &mut String) {
-    sql.push_str(
-        " and po.run_id is (select max(p2.run_id) from process_output p2 \
-         where p2.project_dir = po.project_dir and p2.command_name = po.command_name)",
-    );
+    sql.push_str(&format!(
+        " and l.run_id is {}",
+        crate::db::latest_run_of("s.id")
+    ));
 }
 
 /// Keep only rows from the run before the row's command's latest one: the
 /// highest `run_id` below the highest. `=` rather than `is`, so a command with a
 /// single run (the subquery is null) keeps nothing.
 fn push_previous_launch_filter(sql: &mut String) {
-    sql.push_str(
-        " and po.run_id = (select max(p2.run_id) from process_output p2 \
-         where p2.project_dir = po.project_dir and p2.command_name = po.command_name \
-         and p2.run_id < (select max(p3.run_id) from process_output p3 \
-         where p3.project_dir = po.project_dir and p3.command_name = po.command_name))",
-    );
+    sql.push_str(&format!(
+        " and l.run_id = (select max(l2.run_id) from log_lines l2 \
+         where l2.service_id = s.id and l2.run_id < {})",
+        crate::db::latest_run_of("s.id")
+    ));
 }
 
 fn push_log_type_filter(sql: &mut String, params: &mut Vec<Value>, log_types: &[i64]) {
@@ -242,7 +277,7 @@ fn push_log_type_filter(sql: &mut String, params: &mut Vec<Value>, log_types: &[
         return;
     }
     let placeholders = vec!["?"; log_types.len()].join(", ");
-    sql.push_str(&format!(" and po.log_type in ({placeholders})"));
+    sql.push_str(&format!(" and l.log_type in ({placeholders})"));
     params.extend(log_types.iter().copied().map(Value::Integer));
 }
 
@@ -398,8 +433,9 @@ pub fn command_names_with_logs(
     after_log_id: Option<i64>,
 ) -> rusqlite::Result<Vec<String>> {
     let mut stmt = conn.prepare(
-        "select distinct command_name from process_output \
-         where project_dir = ?1 and id > ?2 order by command_name",
+        "select s.command_name from services s where s.project_dir = ?1 \
+         and exists(select 1 from log_lines l where l.service_id = s.id and l.id > ?2) \
+         order by s.command_name",
     )?;
     let names = stmt
         .query_map(
@@ -417,7 +453,8 @@ pub fn has_logs_for_command(
     command_name: &str,
 ) -> rusqlite::Result<bool> {
     conn.query_row(
-        "select exists(select 1 from process_output where project_dir = ?1 and command_name = ?2)",
+        "select exists(select 1 from services s join log_lines l on l.service_id = s.id \
+         where s.project_dir = ?1 and s.command_name = ?2)",
         rusqlite::params![project_dir, command_name],
         |row| row.get(0),
     )

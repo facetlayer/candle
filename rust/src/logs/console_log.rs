@@ -1,4 +1,4 @@
-//! Console rendering of `process_output` rows.
+//! Console rendering of log rows.
 //!
 //! All output goes through [`crate::output::out`] — even stderr-typed log lines,
 //! which are rendered to stdout with a `[stderr]` prefix rather than to stderr.
@@ -75,7 +75,7 @@ pub fn console_log_system_message(format: OutputFormat, msg: &str, prefix: &str)
     }
 }
 
-/// Render a single `process_output` row.
+/// Render a single log row.
 ///
 /// `stdout` lines print as-is, `stderr` lines gain a `[stderr] ` prefix,
 /// `process_exited` / `process_start_failed` render as bracketed system messages,

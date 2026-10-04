@@ -26,7 +26,8 @@ pub fn handle_clear_logs_command(
     // services and ones since removed from .candle.json.
     if command_names.is_empty() {
         cleared_count += conn.execute(
-            "DELETE FROM process_output WHERE project_dir = ?1",
+            "DELETE FROM log_lines WHERE service_id IN \
+             (SELECT id FROM services WHERE project_dir = ?1)",
             rusqlite::params![project_dir],
         )?;
     }
@@ -34,7 +35,8 @@ pub fn handle_clear_logs_command(
     for command_name in command_names {
         // Clear logs for this specific project directory and command.
         let changes = conn.execute(
-            "DELETE FROM process_output WHERE command_name = ?1 AND project_dir = ?2",
+            "DELETE FROM log_lines WHERE service_id IN \
+             (SELECT id FROM services WHERE command_name = ?1 AND project_dir = ?2)",
             rusqlite::params![command_name, project_dir],
         )?;
         cleared_count += changes;
@@ -46,9 +48,7 @@ pub fn handle_clear_logs_command(
         output::out("No logs found to clear");
     }
 
-    conn.execute("VACUUM", [])?;
-
-    Ok(())
+    crate::db::reclaim_space(conn)
 }
 
 #[cfg(test)]
@@ -166,7 +166,14 @@ mod tests {
         // None of these have a `processes` row, like a crashed or stopped service.
         save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("1")).unwrap();
         save_process_log(&conn, "other", "/proj", ProcessLogType::Stdout, Some("2")).unwrap();
-        save_process_log(&conn, "crashed", "/elsewhere", ProcessLogType::Stderr, Some("3")).unwrap();
+        save_process_log(
+            &conn,
+            "crashed",
+            "/elsewhere",
+            ProcessLogType::Stderr,
+            Some("3"),
+        )
+        .unwrap();
 
         let (_, captured) = output::capture(|| {
             handle_clear_logs_command(&conn, "/proj", &["svc".to_string()]).unwrap();

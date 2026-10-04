@@ -70,11 +70,12 @@ section headers, MCP content shapes).
 
 These are the contracts the acceptance suite depends on. They are byte-level and must not drift.
 
-- **SQLite schema is fixed.** Four tables (`processes`, `process_output`, `process_last_cleanup`,
-  `stdin_messages`) with `default (strftime('%s','now'))` timestamps, autoincrement ids, a fixed column
-  order, six indexes — notably `idx_process_output_lookup (project_dir, command_name, timestamp desc, id desc)` —
-  a nullable `run_id` column on `processes` and `process_output` (followed by a nullable `transient` on `processes`), and the `process_output_assign_run`
-  trigger. Migration creates missing tables and rebuilds a table that lacks a column (backfilling `run_id`).
+- **SQLite schema is fixed.** Five tables (`processes`, `services`, `log_lines`, `process_last_cleanup`,
+  `stdin_messages`) with `default (strftime('%s','now'))` timestamps, autoincrement ids and a fixed column
+  order. Logs are keyed on `services.id`; `process_output` is a view with the old log table's columns, kept
+  for monitors started by the previous release. A nullable `run_id` on `processes` and `log_lines` (followed by a
+  nullable `transient` on `processes`), and the `log_lines_launch_run` trigger. Migration creates missing
+  tables, rebuilds a table that lacks a column, and moves an old `process_output` table into `log_lines`.
   Several tests open `candle.db` with raw SQL, so this is a hard contract. Timestamps
   are **unix seconds** everywhere, never milliseconds. Full schema in [database.md](database.md).
 - **Output strings are load-bearing.** Tests substring-match exact bytes, so brackets, backticks,

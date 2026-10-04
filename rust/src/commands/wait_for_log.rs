@@ -1,6 +1,6 @@
 //! `wait-for-log` command handler.
 //!
-//! Polls the `process_output` table for a given substring, scoped to the most
+//! Polls the `log_lines` table for a given substring, scoped to the most
 //! recent launch of the named service(s), until the message appears, the
 //! process exits, or a timeout is hit.
 //!

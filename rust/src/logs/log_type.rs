@@ -1,6 +1,6 @@
 //! Process log type enum.
 //!
-//! Stored in the `process_output.log_type` integer column.
+//! Stored in the `log_lines.log_type` integer column.
 
 /// Content of the `process_start_failed` row the monitor writes when Candle
 /// itself stopped the process (`kill`, `restart`, or a `start` replacing it)

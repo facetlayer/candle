@@ -7,7 +7,7 @@ Scope: the `start` command path (and the per-service launch that `restart` reuse
 There are **two OS processes** per launched service:
 
 1. **CLI process** (`candle start ...`) — resolves config, leaves an already-running instance alone (`restart` kills it instead), spawns the monitor, then blocks watching the SQLite log table until it sees a success/failure marker and prints a result line. In non-interactive mode (or with `--bg`) it then prints a `Run 'candle logs ...' to see logs.` hint and exits; in interactive mode (or with `--watch`) it streams the new launch's logs until Ctrl+C (`watch_started_services`). Either way the service keeps running without it.
-2. **Monitor process** (`candle --monitor`) — the same `candle` executable re-invoked in monitor mode: a detached, long-lived process that actually spawns the user's shell command, pipes its stdout/stderr into the SQLite `process_output` table, owns the DB `processes` row lifecycle, optionally feeds stdin, and exits when the service exits.
+2. **Monitor process** (`candle --monitor`) — the same `candle` executable re-invoked in monitor mode: a detached, long-lived process that actually spawns the user's shell command, pipes its stdout/stderr into the SQLite `log_lines` table, owns the DB `processes` row lifecycle, optionally feeds stdin, and exits when the service exits.
 
 Communication between the two is **only** through the SQLite database (`candle.db`) plus a one-shot JSON handshake over the monitor's stdin.
 
@@ -250,14 +250,16 @@ create table processes(
   shell text,
   root text,
   run_id integer);
-create table process_output(
+create table services(
+  id integer primary key,
+  project_dir text not null, command_name text not null,
+  unique(project_dir, command_name));
+create table log_lines(
   id integer primary key autoincrement,
-  command_name text not null,
-  project_dir text not null,
-  content text,
-  log_type integer not null,
+  service_id integer not null,  -- services.id
+  run_id integer, log_type integer not null,
   timestamp integer not null default (strftime('%s','now')),
-  run_id integer);
+  content text);
 create table process_last_cleanup(timestamp integer not null);
 create table stdin_messages(
   id integer primary key autoincrement,
@@ -266,18 +268,16 @@ create table stdin_messages(
   data text not null,
   encoding text not null default 'utf8',
   created_at integer not null default (strftime('%s','now')));
-create index idx_process_output_command_name on process_output(command_name);
-create index idx_process_output_project_dir on process_output(project_dir);
-create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
+create index idx_log_lines_service on log_lines(service_id);
+create index idx_log_lines_run on log_lines(service_id, run_id);
 create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id);
-create index idx_process_output_run on process_output(project_dir, command_name, run_id);
-create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
--- plus trigger process_output_assign_run (see database.md)
+-- plus trigger log_lines_launch_run and the view process_output
+-- (the old log table's columns); see database.md
 ```
 
 Key SQL used by start-flow:
 - Insert process: `create_process_entry` sets `start_time` = now in unix seconds; `root` / `run_id` → `NULL` when absent. (`created_at` via default.)
-- `save_run_log`: `insert into process_output(command_name, project_dir, content, log_type, run_id) values(?,?,?,?,?)`. `start_run` is `save_process_log` (`run_id` NULL) of a `process_start_initiated` row, returning `last_insert_rowid()`.
+- `save_run_log`: one `insert into log_lines(...) select <services.id>, ...` per line, creating the `services` row on a service's first line (see [database.md](database.md) §5); `save_run_logs` does the same for a batch in one transaction. `start_run` inserts a `process_start_initiated` row and returns its id, which the `log_lines_launch_run` trigger made its own `run_id`.
 - `find_processes_by_command_name_and_project_dir`: `select * from processes where command_name=? and project_dir=?`.
 - `update_process_killed_at`: `update processes set killed_at=? where command_name=? and project_dir=? and pid=?`.
 - `delete_process_entry`: `delete from processes where command_name=? and project_dir=? and pid=?`.

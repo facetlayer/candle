@@ -4,7 +4,7 @@
 //!
 //! 1. open the DB and spawn `sh -c <shell>` (cwd = projectDir[/root]);
 //! 2. register a `processes` row (pid = shell, log_collector_pid = self);
-//! 3. stream stdout/stderr lines into `process_output`;
+//! 3. stream stdout/stderr lines into `log_lines`;
 //! 4. a 500ms grace period distinguishes a fast failure from a real start;
 //! 5. poll the stdin queue (when enabled) and run periodic cleanup;
 //! 6. on exit, log `process_exited` and delete the `processes` row.
@@ -141,7 +141,7 @@ fn take_queued(
     split_events(events)
 }
 
-/// Writes a service's output lines into `process_output` for one run.
+/// Writes a service's output lines into `log_lines` for one run.
 struct OutputWriter<'a> {
     conn: &'a Connection,
     run_id: Option<i64>,

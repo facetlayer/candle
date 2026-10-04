@@ -4,41 +4,42 @@ The Rust logs subsystem lives under `rust/src/logs/` (`log_type.rs`, `process_lo
 
 ## 1. Storage model
 
-All logs live in a single SQLite table `process_output`. Schema (`rust/src/db/mod.rs`):
+Log rows live in the SQLite table `log_lines`, keyed on a `services` row per `(project_dir, command_name)`. Schema (`rust/src/db/mod.rs`; full detail in [database.md](database.md) §3):
 
 ```sql
-create table process_output(
-    id integer primary key autoincrement,
-    command_name text not null,
+create table services(
+    id integer primary key,
     project_dir text not null,
-    content text,                 -- nullable
+    command_name text not null,
+    unique(project_dir, command_name)
+)
+create table log_lines(
+    id integer primary key autoincrement,
+    service_id integer not null,  -- services.id
+    run_id integer,               -- nullable; see "Runs" below
     log_type integer not null,
     timestamp integer not null default (strftime('%s', 'now')),
-    run_id integer                -- nullable; see "Runs" below
+    content text                  -- nullable
 )
+create index idx_log_lines_service on log_lines(service_id);        -- (service_id, id)
+create index idx_log_lines_run on log_lines(service_id, run_id);    -- (service_id, run_id, id)
 ```
 
-Indexes:
-```sql
-create index idx_process_output_command_name on process_output(command_name);
-create index idx_process_output_project_dir on process_output(project_dir);
-create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
-create index idx_process_output_run on process_output(project_dir, command_name, run_id);
-create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
-```
+`process_output` is a view joining the two, with the columns of the table that held logs before them. Monitors from the previous release still insert through it; candle's own queries use the tables.
 
 Critical points:
 - `timestamp` is **whole Unix seconds** (`strftime('%s','now')`), NOT milliseconds. Mixing with millisecond wall-clock time is a recurring foot-gun — see the `/1000` conversion in the filter (§7).
 - `content` is nullable. Lifecycle events (types 3 and 5) typically have no content; stdout/stderr always have content. `console_log_row` passes `row.content` even for `process_exited`/`process_start_failed`, so content for those carries a human message.
-- `id` is a monotonically increasing autoincrement integer and is the canonical ordering tiebreaker / cursor.
+- `id` is a monotonically increasing autoincrement integer: insertion order, the order every read uses (`order by l.id`), and the cursor.
 
 ### Runs (`run_id`)
 
 A **run** is one launch of a command. Its id is the id of its `process_start_initiated (3)` row, and every row belonging to it carries that id in `run_id` (the `processes` row has the same column). A command's latest run is simply its highest `run_id`.
 
 - `start_one_service` records the launch with `start_run(conn, command, project_dir) -> run_id` and passes the id to the monitor (`MonitorLaunchInfo.run_id`). The monitor writes every row with `save_run_log(conn, Some(run_id), ...)`, so rows a previous instance's monitor writes after a restart keep the old `run_id` whatever order they land in.
-- Rows inserted without a `run_id` (`save_process_log`, i.e. `save_run_log(.., None, ..)`) are assigned one by the trigger `process_output_assign_run`: the latest `process_start_initiated` at or before the row, by id (`run_of_row` in `rust/src/db/mod.rs`). That gives the launch marker its own id and covers a monitor from an older candle that is still running. Rows before a command's first launch stay `NULL`.
-- When migration rebuilds `process_output` to add the column, a one-time backfill applies the same positional rule to existing rows (see [database.md](database.md)).
+- A launch row gets its own id as `run_id` from the trigger `log_lines_launch_run`.
+- Rows inserted without a `run_id` (`save_process_log`, i.e. `save_run_log(.., None, ..)`, and a monitor from an older candle that is still running, through the view) join the service's latest run: `coalesce(run_id, latest_run_of(service))` (`latest_run_of` in `rust/src/db/mod.rs`). Rows before a command's first launch stay `NULL`.
+- Migration from a `process_output` table without the column assigns runs by position, the latest `process_start_initiated` at or before each row (see [database.md](database.md) §4).
 - The stale-process cleanup writes its `process_exited` "Process cleaned up" row with the `processes` row's `run_id`.
 
 Every reader selects by `run_id` rather than by row order, so a previous instance's late output never shows up as part of the new run. `formal/README.md` covers the models that check this.
@@ -80,39 +81,40 @@ In `rust/src/logs/process_logs.rs`:
 
 Insert (`save_run_log(conn, run_id, command_name, project_dir, log_type, content)`; `save_process_log` is the same with `run_id = NULL`):
 ```sql
-insert into process_output(command_name, project_dir, content, log_type, run_id) values(?, ?, ?, ?, ?)
+insert into log_lines(service_id, run_id, log_type, content)
+  select s.id, coalesce(?, <latest_run_of(s.id)>), ?, ? from services s where s.project_dir = ? and s.command_name = ?
 ```
-(`timestamp` and `id` use DB defaults; a `NULL` `run_id` is filled by the trigger, §1.)
+(`timestamp` and `id` use DB defaults.) Inserting nothing means the service has no `services` row yet: `insert_log` creates it and retries (§1, [database.md](database.md) §5).
 
-Other helpers: `start_run` (insert a `process_start_initiated` row, return its id as the run id) and `latest_run_ids(conn, project_dir, command_names) -> Vec<(command, run_id)>` (`select po.command_name, max(po.run_id) ... where <scope> and po.run_id is not null group by po.command_name`).
+Other helpers: `start_run` (insert a `process_start_initiated` row, return its id as the run id) and `latest_run_ids(conn, project_dir, command_names) -> Vec<(command, run_id)>` (`select s.command_name, <latest_run_of(s.id)> as run from services s where <scope> and run is not null`).
 
 ## 4. Query accumulator
 
-`build_log_search_query` in `rust/src/logs/process_logs.rs` accumulates the query as a `String` + `Vec<rusqlite::types::Value>` pair: each filter appends its SQL fragment and pushes its params. There is no spacing/escaping logic; fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and po.timestamp > ?'`). The project/command part of the WHERE clause comes from a separate `scope_clause(options)` helper (also reused by `latest_run_ids`, §3), and the log-type and latest-launch filters from `push_log_type_filter` / `push_latest_launch_filter`.
+`build_log_search_query` in `rust/src/logs/process_logs.rs` accumulates the query as a `String` + `Vec<rusqlite::types::Value>` pair: each filter appends its SQL fragment and pushes its params. There is no spacing/escaping logic; fragments are concatenated **verbatim**, so leading spaces in fragments matter (e.g. `' and l.timestamp > ?'`). The project/command part of the WHERE clause comes from a separate `scope_clause(options)` helper (also reused by `latest_run_ids`, §3), and the log-type and latest-launch filters from `push_log_type_filter` / `push_latest_launch_filter`.
 
 ## 5. build_log_search_query — exact SQL
 
-`build_log_search_query` in `rust/src/logs/process_logs.rs`. Base SELECT is always `select po.* from process_output po where <scope>`. `scope_clause` branch logic (`has names` = `!command_names.is_empty()`):
+`build_log_search_query` in `rust/src/logs/process_logs.rs`. Base SELECT is always `select l.id, s.command_name, s.project_dir, l.content, l.log_type, l.timestamp, l.run_id from services s join log_lines l on l.service_id = s.id where <scope>`. `scope_clause` branch logic (`has names` = `!command_names.is_empty()`):
 
-- `project_dir` set **and** has names: `... where po.project_dir = ? and po.command_name in (?, ?, ...)` params `[project_dir, ...names]` (one name is `in (?)`)
-- `project_dir` set, no names: `... where po.project_dir = ?` params `[project_dir]`
-- No `project_dir`, has names: `... where po.command_name in (?, ...)`
+- `project_dir` set **and** has names: `... where s.project_dir = ? and s.command_name in (?, ?, ...)` params `[project_dir, ...names]` (one name is `in (?)`)
+- `project_dir` set, no names: `... where s.project_dir = ?` params `[project_dir]`
+- No `project_dir`, has names: `... where s.command_name in (?, ...)`
 - Neither ⇒ the scope is `1 = 0`, so the query matches nothing (a caller error; it returns no rows rather than every row).
 
 Then appended in this fixed order:
-- if `since_timestamp` is set: `' and po.timestamp > ?'` (strictly greater)
-- if `after_log_id` is set: `' and po.id > ?'` (strictly greater; `LogIterator` relies on `current_log_id: Option<i64>`, with `None` omitting the filter)
-- if `min_log_id` is set: `' and po.id >= ?'`
-- if `log_types` is non-empty: `' and po.log_type in (?, ...)'`
-- if `run_id` is set: `' and po.run_id = ?'`
-- if `latest_launch_only`: `' and po.run_id is (select max(p2.run_id) from process_output p2 where p2.project_dir = po.project_dir and p2.command_name = po.command_name)'` (no params). `is` rather than `=` so a command that has never been launched (every `run_id` NULL) keeps its rows.
-- if `previous_launch_only`: `' and po.run_id = (select max(p2.run_id) from process_output p2 where <same command> and p2.run_id < (select max(p3.run_id) from process_output p3 where <same command>))'` (no params). `=` so a command with a single run keeps nothing. (A `select distinct … order by run_id desc limit 1 offset 1` subquery returned the latest run's rows for a single-run command under the bundled SQLite, so don't use that form.)
-- always: `' order by po.timestamp desc, po.id desc'` (**most recent first**)
+- if `since_timestamp` is set: `' and l.timestamp > ?'` (strictly greater)
+- if `after_log_id` is set: `' and l.id > ?'` (strictly greater; `LogIterator` relies on `current_log_id: Option<i64>`, with `None` omitting the filter)
+- if `min_log_id` is set: `' and l.id >= ?'`
+- if `log_types` is non-empty: `' and l.log_type in (?, ...)'`
+- if `run_id` is set: `' and l.run_id = ?'`
+- if `latest_launch_only`: `' and l.run_id is (select max(lr.run_id) from log_lines lr where lr.service_id = s.id)'` (no params). `is` rather than `=` so a command that has never been launched (every `run_id` NULL) keeps its rows.
+- if `previous_launch_only`: `' and l.run_id = (select max(l2.run_id) from log_lines l2 where l2.service_id = s.id and l2.run_id < (select max(lr.run_id) from log_lines lr where lr.service_id = s.id))'` (no params). `=` so a command with a single run keeps nothing. (A `select distinct … order by run_id desc limit 1 offset 1` subquery returned the latest run's rows for a single-run command under the bundled SQLite, so don't use that form.)
+- always: `' order by l.id desc'` (**most recent first**)
 - if `limit` is set: `' limit ?'`
 
 The IN-clause placeholder string is `'?, ?, ?'` (comma-space). Examples:
-- Single name + limit: `select po.* from process_output po where po.project_dir = ? and po.command_name in (?) order by po.timestamp desc, po.id desc limit ?`
-- All filters, 2 names: `... where po.project_dir = ? and po.command_name in (?, ?) and po.timestamp > ? and po.id > ? order by po.timestamp desc, po.id desc limit ?`
+- Single name + limit: `select <columns> from services s join log_lines l on l.service_id = s.id where s.project_dir = ? and s.command_name in (?) order by l.id desc limit ?`
+- All filters, 2 names: `... where s.project_dir = ? and s.command_name in (?, ?) and l.timestamp > ? and l.id > ? order by l.id desc limit ?`
 
 ## 6. get_process_logs / eviction info
 
@@ -215,9 +217,9 @@ CLI flags map to: `--count` (limit, default 100), `--previous` / `--all-runs` (`
 
 `handle_clear_logs_command(conn, project_dir, command_names)`:
 1. Print `Clearing logs for project: <project_dir>`.
-2. With no names: `DELETE FROM process_output WHERE project_dir = ?`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each name: `DELETE FROM process_output WHERE command_name = ? AND project_dir = ?` params `[command_name, project_dir]`. The rows-affected counts (`Connection::execute`) are summed into `cleared_count`.
+2. With no names: `DELETE FROM log_lines WHERE service_id IN (SELECT id FROM services WHERE project_dir = ?)`, which clears every service in the project, including transient ones and ones no longer in `.candle.json`. With names, for each name: the same with `command_name = ? AND project_dir = ?`. The rows-affected counts (`Connection::execute`) are summed into `cleared_count`.
 3. If `cleared_count > 0`: print `Cleared <n> log entries`. Else: print `No logs found to clear`.
-4. `VACUUM`.
+4. `reclaim_space`: `VACUUM`, then truncate the WAL.
 5. On a database error the handler returns `Err`; `cmd_clear_logs` in `main.rs` prints `Error: Could not clear logs: <e>` to stderr and exits 1.
 
 It deletes only what it names. Logs of other services, including stopped or crashed ones and ones in other projects, are left alone; old logs are bounded by retention cleanup (§13).
@@ -225,10 +227,11 @@ It deletes only what it names. Logs of other services, including stopped or cras
 ## 13. Eviction / retention (`rust/src/db/cleanup.rs`) — related subsystem
 
 Not strictly "logs command" but governs log lifetime. `maybe_run_cleanup(conn)` runs at most every `CLEANUP_INTERVAL_SECONDS = 600`s (gated by `process_last_cleanup.timestamp`). `run_cleanup(conn)` resolves the eviction config per `project_dir` (from that directory's `.candle.json`, cached per pass, defaults on any error):
-- Time eviction, per project dir: `delete from process_output where project_dir = ? and timestamp < ?` with `now - maxRetentionSeconds`.
+- Time eviction, per project dir: `delete from log_lines where service_id in (select id from services where project_dir = ?) and timestamp < ?` with `now - maxRetentionSeconds`.
 - `cleanup_stale_processes()`.
-- Per-service cap: group `process_output` by `(project_dir, command_name)` with `count(*)`, and skip (in Rust, not a SQL `having`) services at or under their project's `maxLogsPerService`; for each over-limit one, find `id` at `order by timestamp desc, id desc limit 1 offset maxLogsPerService`, then `delete ... where ... and id <= ?` (keeps newest `maxLogsPerService`).
-- `vacuum`; upsert `process_last_cleanup`.
+- Per-service cap: count each `services` row's `log_lines`, and skip (in Rust, not a SQL `having`) services at or under their project's `maxLogsPerService`; for each over-limit one, find `id` at `order by id desc limit 1 offset maxLogsPerService`, then `delete ... where service_id = ? and id <= ?` (keeps newest `maxLogsPerService`).
+- Delete `services` rows with no logs left.
+- `vacuum` and truncate the WAL; upsert `process_last_cleanup`.
 
 Defaults (`LOG_EVICTION_DEFAULTS` in `config/model.rs`): `maxLogsPerService = 1000`, `maxRetentionSeconds = 86400` (24h). Config overrides via `.candle.json` `logEviction.{maxLogsPerService,maxRetentionSeconds}`, validated as positive integers ≥ 1.
 

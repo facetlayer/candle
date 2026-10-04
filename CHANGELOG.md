@@ -3,6 +3,7 @@
  - `candle start` no longer restarts a running process (use `candle restart` instead). Removed `candle check-start`.
  - Add `--previous` and `--all-runs` options to `candle logs`
  - Improve the builtin docs
+ - Logs take about 1/20 of the disk space. Existing logs are migrated the first time the new version opens the database.
  - Various bug fixes
 
 # 0.15.0 (2026-09-23)

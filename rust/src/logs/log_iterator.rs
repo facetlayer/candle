@@ -1,4 +1,4 @@
-//! A forward cursor over `process_output` rows for a fixed query scope.
+//! A forward cursor over log rows for a fixed query scope.
 //!
 //! The polling loop lives in the caller ([`crate::start::start_one_service`]);
 //! this type just tracks the cursor position (`current_log_id`) and fetches the
@@ -8,7 +8,7 @@ use rusqlite::Connection;
 
 use crate::logs::process_logs::{get_process_logs, LogSearchOptions, ProcessLog};
 
-/// A cursor over the `process_output` table scoped to a `(project_dir,
+/// A cursor over the `log_lines` table scoped to a `(project_dir,
 /// command_names)` pair. Tracks the id of the last consumed row so repeated
 /// fetches only return newer rows.
 #[derive(Debug, Clone)]

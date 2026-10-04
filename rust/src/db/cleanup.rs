@@ -2,7 +2,8 @@
 //!
 //! Cleanup runs at most once per [`CLEANUP_INTERVAL_SECONDS`] and performs, in
 //! order: time-based log eviction, stale-process removal, per-service log
-//! eviction, `VACUUM`, and a single-row update of `process_last_cleanup`.
+//! eviction, removal of `services` rows with no logs left, `VACUUM` plus a WAL
+//! truncate, and a single-row update of `process_last_cleanup`.
 //!
 //! Eviction limits come from each project's `.candle.json` `logEviction` block,
 //! resolved per `project_dir` (falling back to [`crate::config::LOG_EVICTION_DEFAULTS`]
@@ -69,7 +70,7 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     // (1) Time-based eviction: per project_dir, delete logs older than that
     //     project's maxRetentionSeconds.
     let project_dirs: Vec<String> = {
-        let mut stmt = conn.prepare("select distinct project_dir from process_output")?;
+        let mut stmt = conn.prepare("select distinct project_dir from services")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
@@ -80,7 +81,8 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
             .or_insert_with(|| resolve_eviction_config(project_dir));
         let cutoff = now - cfg.max_retention_seconds as i64;
         conn.execute(
-            "delete from process_output where project_dir = ?1 and timestamp < ?2",
+            "delete from log_lines where service_id in \
+             (select id from services where project_dir = ?1) and timestamp < ?2",
             params![project_dir, cutoff],
         )?;
     }
@@ -89,16 +91,17 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     cleanup_stale_processes(conn)?;
 
     // (3) Per-service eviction: keep only maxLogsPerService logs per
-    //     (project_dir, command_name). The threshold is per-project, so the
-    //     over-limit filter is applied in Rust rather than in the SQL HAVING.
-    let services: Vec<(String, String, i64)> = {
+    //     service. The threshold is per-project, so the over-limit filter is
+    //     applied in Rust rather than in the SQL HAVING.
+    let services: Vec<(i64, String, i64)> = {
         let mut stmt = conn.prepare(
-            "select project_dir, command_name, count(*) as log_count \
-             from process_output group by project_dir, command_name",
+            "select s.id, s.project_dir, \
+             (select count(*) from log_lines l where l.service_id = s.id) as log_count \
+             from services s",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
-                row.get::<_, String>(0)?,
+                row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
             ))
@@ -106,7 +109,7 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
-    for (project_dir, command_name, log_count) in services {
+    for (service_id, project_dir, log_count) in services {
         let cfg = *config_cache
             .entry(project_dir.clone())
             .or_insert_with(|| resolve_eviction_config(&project_dir));
@@ -120,27 +123,33 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
         // sorted newest-first. Everything with id <= that is evicted.
         let cutoff_id: Option<i64> = conn
             .query_row(
-                "select id from process_output \
-                 where project_dir = ?1 and command_name = ?2 \
-                 order by timestamp desc, id desc limit 1 offset ?3",
-                params![project_dir, command_name, max_logs],
+                "select id from log_lines where service_id = ?1 \
+                 order by id desc limit 1 offset ?2",
+                params![service_id, max_logs],
                 |row| row.get(0),
             )
             .ok();
 
         if let Some(cutoff) = cutoff_id {
             conn.execute(
-                "delete from process_output \
-                 where project_dir = ?1 and command_name = ?2 and id <= ?3",
-                params![project_dir, command_name, cutoff],
+                "delete from log_lines where service_id = ?1 and id <= ?2",
+                params![service_id, cutoff],
             )?;
         }
     }
 
-    // (4) Reclaim space.
-    conn.execute_batch("vacuum")?;
+    // (4) Forget services with no logs left. A writer that races this recreates
+    //     the row (see `insert_log` in `logs/process_logs.rs`).
+    conn.execute(
+        "delete from services \
+         where not exists (select 1 from log_lines l where l.service_id = services.id)",
+        [],
+    )?;
 
-    // (5) Upsert the single-row process_last_cleanup timestamp (update-all, then
+    // (5) Reclaim space.
+    crate::db::reclaim_space(conn)?;
+
+    // (6) Upsert the single-row process_last_cleanup timestamp (update-all, then
     //     insert if the table was empty).
     let updated = conn.execute(
         "update process_last_cleanup set timestamp = ?1",

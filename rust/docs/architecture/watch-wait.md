@@ -1,28 +1,32 @@
 # Watch & wait-for-log
 
-This covers the `candle watch` and `candle wait-for-log` CLI commands and their supporting log-tailing infrastructure. Both poll a SQLite `process_output` table for new log rows; they differ in what they do when a new row appears.
+This covers the `candle watch` and `candle wait-for-log` CLI commands and their supporting log-tailing infrastructure. Both poll the SQLite `log_lines` table for new log rows; they differ in what they do when a new row appears.
 
 The Rust implementation lives in `rust/src/commands/{watch,wait_for_log}.rs`, with the shared tailing machinery in `rust/src/logs/log_iterator.rs`, `rust/src/logs/process_logs.rs`, `rust/src/logs/console_log.rs`, and the filters in `rust/src/log_filters/`.
 
 ## 1. Shared data model
 
-### 1.1 `process_output` table (SQLite)
-Defined in `rust/src/db/mod.rs`:
+### 1.1 `services` + `log_lines` tables (SQLite)
+Defined in `rust/src/db/mod.rs` (full detail in [database.md](database.md) §3):
 
 ```sql
-create table process_output(
-    id integer primary key autoincrement,
-    command_name text not null,
+create table services(
+    id integer primary key,
     project_dir text not null,
-    content text,                                  -- nullable
+    command_name text not null,
+    unique(project_dir, command_name)
+)
+create table log_lines(
+    id integer primary key autoincrement,
+    service_id integer not null,                   -- services.id
+    run_id integer,                                -- the run's process_start_initiated id
     log_type integer not null,
     timestamp integer not null default (strftime('%s', 'now')),  -- UNIX SECONDS, not ms
-    run_id integer                                 -- the run's process_start_initiated id
+    content text                                   -- nullable
 )
 ```
 `run_id` ties each row to one launch; see [logs.md](logs.md) §1 "Runs". A command's latest run is its highest `run_id`.
-Index used for tailing:
-`create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc)`.
+Index used for tailing: `create index idx_log_lines_service on log_lines(service_id)`, which is `(service_id, id)`, so `id > ?` for one service is a range scan.
 
 **Critical:** `timestamp` is stored in **whole seconds** (`strftime('%s','now')`), but all wall-clock math uses millisecond clocks. The one place this matters is the recency window — see §4.
 
@@ -43,20 +47,20 @@ process_exited          = 6
 
 `LogSearchOptions { project_dir, command_names, limit, since_timestamp, after_log_id, min_log_id, log_types, latest_launch_only, run_id }` (see [logs.md](logs.md) §3-6). The tailing `LogIterator` leaves them at their defaults; `wait-for-log` uses `log_types` + `latest_launch_only` for its one-off lifecycle check (§8.2) and `get_log_tail` for its recent-logs dump.
 
-Query construction (note the table alias `po`):
-- With command names: `select po.* from process_output po where po.project_dir = ? and po.command_name in (?, ?, …)` (a single name is `in (?)`)
-- No command names: `... where po.project_dir = ?`
-- If `since_timestamp` set: append ` and po.timestamp > ?`
-- If `after_log_id` is `Some(id)`: append ` and po.id > ?` (`Some(0)` is valid and applies the filter; `None` does not)
+Query construction (note the aliases `s` for `services`, `l` for `log_lines`):
+- With command names: `select <columns> from services s join log_lines l on l.service_id = s.id where s.project_dir = ? and s.command_name in (?, ?, …)` (a single name is `in (?)`)
+- No command names: `... where s.project_dir = ?`
+- If `since_timestamp` set: append ` and l.timestamp > ?`
+- If `after_log_id` is `Some(id)`: append ` and l.id > ?` (`Some(0)` is valid and applies the filter; `None` does not)
 - The `min_log_id`, `log_types`, `run_id` and `latest_launch_only` filters, when set (see [logs.md](logs.md) §4)
-- Always append: ` order by po.timestamp desc, po.id desc`
+- Always append: ` order by l.id desc`
 - If `limit` set: ` limit ?`
 
 So the DB returns **newest-first**. `get_process_logs` then reverses the rows to hand back **chronological (oldest-first)** order. Every consumer assumes oldest-first.
 
 `get_process_logs_with_eviction_info` also computes `logs_were_evicted`: when the limit was reached, it re-runs the query wrapped in `select count(*) as total from (<sql without limit>)` and compares to the returned count. The tailing loops use `get_process_logs`; eviction info backs `get_log_tail`'s `truncated`.
 
-Subtle ordering detail: ordering by `(timestamp desc, id desc)` then reversing is NOT the same as ordering by `id asc` when multiple rows share a timestamp (likely, since timestamps are 1-second granularity). The implementation orders descending by `(timestamp, id)`, then reverses the vector.
+Ordering is by `id` alone, which is insertion order. (It used to be `timestamp desc, id desc`; since the timestamp is the insert time in whole seconds, that was the same order, but it kept an index from serving the sort.)
 
 ## 3. `LogIterator` (`logs/log_iterator.rs`)
 

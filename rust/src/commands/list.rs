@@ -190,11 +190,12 @@ pub(crate) fn latest_run(
 ) -> Result<LatestRun, CandleError> {
     let row: Option<(i64, Option<String>)> = conn
         .query_row(
-            "select log_type, content from process_output \
-             where project_dir = ?1 and command_name = ?2 and log_type in (?3, ?4, ?5, ?6) \
-             and run_id is (select max(run_id) from process_output \
-                            where project_dir = ?1 and command_name = ?2) \
-             order by id desc limit 1",
+            &format!(
+                "select l.log_type, l.content from services s join log_lines l on l.service_id = s.id \
+                 where s.project_dir = ?1 and s.command_name = ?2 and l.log_type in (?3, ?4, ?5, ?6) \
+                 and l.run_id is {} order by l.id desc limit 1",
+                crate::db::latest_run_of("s.id")
+            ),
             rusqlite::params![
                 project_dir,
                 command_name,

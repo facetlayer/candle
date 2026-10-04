@@ -118,15 +118,16 @@ create table processes(
   root text,
   run_id integer
 );
-create table process_output(
+create table services(
+  id integer primary key,
+  project_dir text not null, command_name text not null,
+  unique(project_dir, command_name));
+create table log_lines(
   id integer primary key autoincrement,
-  command_name text not null,
-  project_dir text not null,
-  content text,
-  log_type integer not null,
+  service_id integer not null,  -- services.id
+  run_id integer, log_type integer not null,
   timestamp integer not null default (strftime('%s','now')),
-  run_id integer
-);
+  content text);
 create table process_last_cleanup( timestamp integer not null );
 create table stdin_messages(
   id integer primary key autoincrement,
@@ -136,26 +137,24 @@ create table stdin_messages(
   encoding text not null default 'utf8',
   created_at integer not null default (strftime('%s','now'))
 );
-create index idx_process_output_command_name on process_output(command_name);
-create index idx_process_output_project_dir on process_output(project_dir);
-create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
+create index idx_log_lines_service on log_lines(service_id);
+create index idx_log_lines_run on log_lines(service_id, run_id);
 create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id);
-create index idx_process_output_run on process_output(project_dir, command_name, run_id);
-create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
--- plus trigger process_output_assign_run, which fills a NULL run_id by position; see database.md
+-- plus trigger log_lines_launch_run and the view process_output
+-- (the old log table's columns); see database.md
 ```
-`run_id` (both tables) is the id of the run's `process_start_initiated` row; a command's latest run is its highest `run_id`. Tests that insert `process_output` rows with raw SQL and no `run_id` get one from the trigger.
+`run_id` (on `processes` and `log_lines`) is the id of the run's `process_start_initiated` row; a command's latest run is its highest `run_id`. Tests that write logs with raw SQL can insert into the `process_output` view with the old columns; a row without a `run_id` joins the service's latest run. `test/cli/db-migration.test.ts` covers moving an old `process_output` table into `log_lines`.
 
 Times are **unix seconds** (`SystemTime` seconds / `strftime('%s','now')`).
 
-### `ProcessLogType` enum — `process_output.log_type` integer values
+### `ProcessLogType` enum — `log_lines.log_type` integer values
 `stdout=1, stderr=2, process_start_initiated=3, process_start_failed=4, process_started=5, process_exited=6`.
 
 ### Stale-process cleanup semantics (tested by stale-cleanup/list/start)
 A `processes` row with `killed_at IS NULL` is treated as **stale** (and deleted) iff **both** `log_collector_pid` and `pid` are dead (signal-0 liveness check fails). Rows with `killed_at NOT NULL` are always deleted. Cleanup runs lazily: `maybe_run_cleanup()` is a no-op unless more than 10 min (`CLEANUP_INTERVAL_SECONDS = 600`) have passed since the `process_last_cleanup.timestamp`; it is invoked by most command handlers in `main.rs` right after opening the DB, and about every 60s inside each monitor (`candle --monitor`). Tests rely on stale detection happening on the next CLI invocation regardless of the 10-min gate via the alive-process filter in the start path's already-running check (it deletes dead rows inline).
 
 ### Log eviction
-Defaults `LOG_EVICTION_DEFAULTS = { maxLogsPerService: 1000, maxRetentionSeconds: 86400 }`. Config override via `.candle.json` `logEviction`. The `cli-log-eviction` workspace sets `maxLogsPerService: 10`. `run_cleanup`: delete `process_output` older than `now - maxRetentionSeconds`; delete stale processes; per `(project_dir, command_name)` keep the newest `maxLogsPerService` rows (ordered `timestamp desc, id desc`); `vacuum`; upsert `process_last_cleanup`.
+Defaults `LOG_EVICTION_DEFAULTS = { maxLogsPerService: 1000, maxRetentionSeconds: 86400 }`. Config override via `.candle.json` `logEviction`. The `cli-log-eviction` workspace sets `maxLogsPerService: 10`. `run_cleanup`: delete `log_lines` older than `now - maxRetentionSeconds`; delete stale processes; per service keep the newest `maxLogsPerService` rows (by id); delete `services` rows with no logs left; `vacuum` and truncate the WAL; upsert `process_last_cleanup`.
 
 ## 5. Sample servers (`test/sampleServers/*.js`) — log markers tests depend on
 

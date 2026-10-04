@@ -2,7 +2,7 @@
 # The start / kill / monitor protocol
 
 The CLI and the detached monitor of the *previous* instance share two tables:
-the `processes` row and the append-only `process_output` log. `start` writes a
+the `processes` row and the append-only `log_lines` log. `start` writes a
 `process_start_initiated` row that opens the new run, without waiting for the
 previous instance's monitor to finish. Every row is tagged with its run, and
 readers select a command's highest run (`RunFilter.lean`).

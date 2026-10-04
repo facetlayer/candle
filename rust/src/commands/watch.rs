@@ -1,6 +1,6 @@
 //! `watch` command handler.
 //!
-//! Streams live process logs to the console, polling the `process_output` table
+//! Streams live process logs to the console, polling the `log_lines` table
 //! until interrupted (Ctrl+C / SIGTERM) or an optional `exit_after_ms` deadline
 //! is reached. `watch` never launches processes — it only observes. It is also
 //! reused by `start`/`restart` in interactive mode to follow a fresh launch.

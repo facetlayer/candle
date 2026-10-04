@@ -115,25 +115,27 @@ create table processes(
   start_time integer not null,
   created_at integer not null default (strftime('%s','now')),
   killed_at integer, shell text, root text, run_id integer);
-create table process_output(
+create table services(
+  id integer primary key,
+  project_dir text not null, command_name text not null,
+  unique(project_dir, command_name));
+create table log_lines(
   id integer primary key autoincrement,
-  command_name text not null, project_dir text not null,
-  content text, log_type integer not null,
+  service_id integer not null,  -- services.id
+  run_id integer, log_type integer not null,
   timestamp integer not null default (strftime('%s','now')),
-  run_id integer);
+  content text);
 create table process_last_cleanup(timestamp integer not null);
 create table stdin_messages(
   id integer primary key autoincrement,
   command_name text not null, project_dir text not null,
   data text not null, encoding text not null default 'utf8',
   created_at integer not null default (strftime('%s','now')));
-create index idx_process_output_command_name on process_output(command_name);
-create index idx_process_output_project_dir on process_output(project_dir);
-create index idx_process_output_lookup on process_output(project_dir, command_name, timestamp desc, id desc);
+create index idx_log_lines_service on log_lines(service_id);
+create index idx_log_lines_run on log_lines(service_id, run_id);
 create index idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id);
-create index idx_process_output_run on process_output(project_dir, command_name, run_id);
-create index idx_process_output_launches on process_output(project_dir, command_name, log_type, id);
--- plus trigger process_output_assign_run; see database.md
+-- plus trigger log_lines_launch_run and the view process_output
+-- (the old log table's columns); see database.md
 ```
 ## 6. Serialization (write-back)
 
