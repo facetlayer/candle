@@ -8,6 +8,8 @@
  - Various bug fixes
  - The database and its directory are now created readable only by your user (`0600` / `0700`); an existing database is tightened the next time Candle opens it.
  - Add `--json` to `candle list-docs`
+ - Fix `candle wait-for-log` missing a message when the service printed more than 1000 lines after it. It now searches every line of the service's latest run.
+ - Developer docs are no longer compiled into the binary.
 
 # 0.15.0 (2026-09-23)
  - Lots of bug fixes and improvements.

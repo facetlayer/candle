@@ -179,6 +179,32 @@ pub fn latest_run_ids(
     rows.collect()
 }
 
+/// Whether any row of the latest run of the commands in scope, up to and
+/// including `max_log_id`, contains `message`. The search runs in SQL so a run
+/// of any length is covered without loading it.
+pub fn latest_run_contains(
+    conn: &Connection,
+    project_dir: &str,
+    command_names: &[String],
+    message: &str,
+    max_log_id: i64,
+) -> rusqlite::Result<bool> {
+    let (scope, mut params) = scope_clause(&LogSearchOptions {
+        project_dir: Some(project_dir.to_string()),
+        command_names: command_names.to_vec(),
+        ..Default::default()
+    });
+    let mut sql = format!(
+        "select 1 from services s join log_lines l on l.service_id = s.id \
+         where {scope} and l.id <= ? and instr(l.content, ?) > 0"
+    );
+    params.push(Value::Integer(max_log_id));
+    params.push(Value::Text(message.to_string()));
+    push_latest_launch_filter(&mut sql);
+    sql.push_str(" limit 1");
+    conn.prepare(&sql)?.exists(params_from_iter(params))
+}
+
 /// Build the log-search SQL + params.
 ///
 /// Returns rows in newest-first order (`id desc`, which is insertion order);

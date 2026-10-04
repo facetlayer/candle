@@ -17,6 +17,8 @@ candle wait-for-log [name] --message <message> [--timeout <seconds>]
 
 - `name` - Name of the service to monitor. If omitted, the logs of every service in the project are searched.
 
+Only the service's latest run is searched: every line it has printed since it was last started, plus anything it prints while `wait-for-log` is waiting. Output from earlier runs is ignored.
+
 ## Options
 
 - `--message <string>` - The exact log message substring to wait for (required)

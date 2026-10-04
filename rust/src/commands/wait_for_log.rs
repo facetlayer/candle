@@ -2,7 +2,8 @@
 //!
 //! Polls the `log_lines` table for a given substring, scoped to the most
 //! recent launch of the named service(s), until the message appears, the
-//! process exits, or a timeout is hit.
+//! process exits, or a timeout is hit. Every line of that launch is searched,
+//! however many there are; earlier launches are ignored.
 //!
 //! A service that isn't running fails at once rather than waiting out the
 //! timeout: nothing will ever write the message.
@@ -16,14 +17,14 @@ use crate::db::process_table::find_running_processes_by_project_dir;
 use crate::log_filters::LatestRunFilter;
 use crate::logs::console_log::{console_log_row, ConsoleLogOptions, OutputFormat};
 use crate::logs::process_logs::{
-    get_log_tail, get_process_logs, latest_run_ids, LogSearchOptions, ProcessLog,
+    get_log_tail, get_process_logs, latest_run_contains, latest_run_ids, LogSearchOptions,
+    ProcessLog,
 };
 use crate::logs::{LogIterator, ProcessLogType};
 use crate::output;
 use crate::process_alive::filter_alive_processes;
 
 const POLL_INTERVAL: u64 = 200;
-const LOG_COUNT_SEARCH_LIMIT: i64 = 1000;
 /// Lines of the latest run shown when waiting fails.
 const RECENT_LOG_LINES: i64 = 20;
 /// How often (in polls) to re-check that the service is still running.
@@ -134,22 +135,22 @@ pub fn handle_wait_for_log(
     message: &str,
     timeout_ms: u64,
 ) -> WaitForLogResult {
-    // Recent rows of each service's latest run. Every row carries its run, so
-    // this works even when the launch itself is older than the search window.
     let mut log_filter = LatestRunFilter::new(None);
     let _ = log_filter.seed_latest_runs(conn, project_dir, command_names);
-    let mut log_iterator = LogIterator::with_limit(
-        project_dir.to_string(),
-        command_names.to_vec(),
-        Some(LOG_COUNT_SEARCH_LIMIT),
-    );
-    let initial_logs =
-        log_filter.filter(&log_iterator.get_next_logs(conn, None).unwrap_or_default());
+
+    // Split the logs at the newest existing row: everything up to it is
+    // searched in the database, everything after it by the polling loop, which
+    // fetches without a limit. Between them no line of the latest run is
+    // skipped, however much the service prints.
+    let mut log_iterator = LogIterator::new(project_dir.to_string(), command_names.to_vec());
+    let _ = log_iterator.reset_to_latest_log_message(conn);
 
     // Look for the message in existing logs. A run that has already finished
     // still counts if it printed the message.
-    for log_event in &initial_logs {
-        if content_contains(&log_event.content, message) {
+    if let Some(newest_log_id) = log_iterator.current_log_id {
+        if latest_run_contains(conn, project_dir, command_names, message, newest_log_id)
+            .unwrap_or(false)
+        {
             output::out(&format!("Found message \"{message}\" in existing logs."));
             return WaitForLogResult { success: true };
         }
@@ -399,6 +400,45 @@ mod tests {
         assert!(!result.success);
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(captured.stderr[0].contains("Service 'echo' is not running"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finds_a_message_far_back_in_the_latest_run() {
+        let dir = temp_db_dir("wait-for-log-far-back");
+        let conn = get_database(Some(&dir)).unwrap();
+
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        save(&conn, ProcessLogType::Stdout, Some("only in the old run"));
+        save(
+            &conn,
+            ProcessLogType::ProcessExited,
+            Some("Process was stopped"),
+        );
+        save(&conn, ProcessLogType::ProcessStartInitiated, None);
+        save(&conn, ProcessLogType::Stdout, Some("READY-MARK"));
+        conn.execute_batch("begin").unwrap();
+        for i in 0..3000 {
+            save(&conn, ProcessLogType::Stdout, Some(&format!("noise {i}")));
+        }
+        conn.execute_batch("commit").unwrap();
+
+        let names = ["echo".to_string()];
+        let (result, captured) =
+            output::capture(|| handle_wait_for_log(&conn, "/proj", &names, "READY-MARK", 200));
+        assert!(result.success);
+        assert_eq!(
+            captured.stdout,
+            vec!["Found message \"READY-MARK\" in existing logs.".to_string()]
+        );
+
+        // A previous run's output never counts.
+        let (result, _) = output::capture(|| {
+            handle_wait_for_log(&conn, "/proj", &names, "only in the old run", 200)
+        });
+        assert!(!result.success);
 
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
