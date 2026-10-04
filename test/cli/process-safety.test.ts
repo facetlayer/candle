@@ -100,6 +100,24 @@ describe('process safety', () => {
       await workspace.runCli(['kill', 'slow']);
     }, 60000);
 
+    it('a restart does not stop an instance another restart is still starting', async () => {
+      // Staggered so each restart arrives while an earlier one is mid-launch.
+      // Its kill used to run outside the start lock and stop that instance,
+      // which the earlier restart then reported as a failed start.
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const results = await Promise.all(
+        Array.from({ length: 5 }, async (_, i) => {
+          await delay(i * 70);
+          return workspace.runCli(['restart', 'slow'], { ignoreExitCode: true });
+        })
+      );
+
+      expect(results.map(r => r.stderrAsString())).toEqual(['', '', '', '', '']);
+      expect(results.every(r => !r.failed())).toBe(true);
+
+      await workspace.runCli(['kill', 'slow']);
+    }, 60000);
+
     it('start launches once when raced', async () => {
       const results = await Promise.all(
         Array.from({ length: 5 }, () => workspace.runCli(['start', 'slow']))

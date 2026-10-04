@@ -17,6 +17,7 @@ use crate::db::process_table::{
 };
 use crate::errors::CandleError;
 use crate::kill::handle_kill_command;
+use crate::start::service_lock::{self, ServiceStartLock};
 use crate::start::start_each;
 use crate::start::start_one_service::{IfRunning, RunOptions};
 
@@ -42,6 +43,25 @@ fn all_project_services(conn: &Connection, project_dir: &str) -> Result<Vec<Stri
         }
     }
     Ok(names)
+}
+
+/// Take the start lock of every named service. Locks are taken in sorted
+/// order, so two restarts naming the same services in a different order can't
+/// deadlock.
+fn acquire_start_locks(
+    project_dir: &str,
+    names: &[String],
+) -> Result<Vec<ServiceStartLock>, CandleError> {
+    let mut sorted: Vec<&String> = names.iter().collect();
+    sorted.sort();
+    sorted.dedup();
+    sorted
+        .into_iter()
+        .map(|name| {
+            service_lock::acquire(project_dir, name)
+                .map_err(|e| CandleError::Generic(format!("Failed to acquire start lock: {e}")))
+        })
+        .collect()
 }
 
 /// Restart the given command(s), or every service in the project when none are
@@ -93,7 +113,15 @@ pub fn handle_restart(
 
         // Kill all existing processes (deduped inside handle_kill_command).
         // Services that aren't running are simply started, so don't report them.
-        handle_kill_command(conn, project_dir, &names, true, false)?;
+        //
+        // Held under each service's start lock: a concurrent restart that is
+        // mid-launch keeps the lock until its instance has reported a start,
+        // so this kill waits for that instead of stopping the instance while
+        // it starts (which the other restart would report as a failed start).
+        {
+            let _start_locks = acquire_start_locks(project_dir, &names)?;
+            handle_kill_command(conn, project_dir, &names, true, false)?;
+        }
 
         // Restart each service. An explicit --shell wins; otherwise
         // config-defined services pass shell/root as None so start_one_service

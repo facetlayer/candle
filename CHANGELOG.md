@@ -1,4 +1,5 @@
 # Unreleased
+ - Fix concurrent `candle restart` of the same service: one restart could stop the instance another was still starting, which then reported "failed to start".
  - Bug fixes for handling processes that have a lot of output (such as 100k+ lines at startup)
  - `candle start` no longer restarts a running process (use `candle restart` instead). Removed `candle check-start`.
  - Add `--previous` and `--all-runs` options to `candle logs`
