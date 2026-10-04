@@ -45,9 +45,9 @@ Effects of `is_run_by_agent()` in the CLI:
 Backs the `list-docs` / `get-doc` commands. The module has free functions, not a helper struct.
 
 ### Where docs come from
-The docs are **embedded at compile time** with `include_dir!("$CARGO_MANIFEST_DIR/../docs")` plus `include_str!("../../README.md")`, so the binary is relocatable and never reads the filesystem for docs.
+The docs are **embedded at compile time** with one `include_str!` per file (the `DOCS` list in `doc_files.rs`, plus `README.md`), so the binary is relocatable and never reads the filesystem for docs.
 - `all_docs()`: the embedded top-level `*.md` files **sorted by filename**, then `README.md` last.
-- Only files directly in `docs/` are served (`agents-intro.md`, `mcp-usage.md`, `project-setup.md`, `transient-processes.md`); developer docs under `docs/dev/` (e.g. `testing-strategy.md`) are excluded from both commands.
+- Only files directly in `docs/` are served (`agents-intro.md`, `mcp-usage.md`, `project-setup.md`, `transient-processes.md`); developer docs under `docs/dev/` (e.g. `testing-strategy.md`) are not embedded at all. A unit test fails if `DOCS` and the markdown files directly in `docs/` differ.
 
 ### Frontmatter parsing (`parse_frontmatter`)
 `parse_frontmatter(&str) -> (name, description, content)`, hand-written (no `regex`):

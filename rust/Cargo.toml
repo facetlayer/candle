@@ -26,7 +26,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 libc = "0.2"
-include_dir = "0.7"
 
 [profile.release]
 opt-level = "s"

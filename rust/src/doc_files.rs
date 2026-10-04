@@ -1,15 +1,29 @@
 //! Documentation files for the `list-docs` and `get-doc` commands.
 //!
 //! The binary is relocatable, so rather than reading markdown files from an install directory at
-//! runtime, the docs (the repo `docs/` directory plus the top-level `README.md`) are embedded at
-//! compile time.
+//! runtime, the docs (the markdown files directly inside the repo `docs/` directory plus the
+//! top-level `README.md`) are embedded at compile time.
 //!
-//! Only markdown files directly inside `docs/` are user-facing. Subdirectories such as `docs/dev/`
-//! hold developer docs for people working on Candle itself, and are left out of both commands.
+//! Each file is embedded by name in [`DOCS`], so nothing else under `docs/` ends up in the binary.
+//! Subdirectories such as `docs/dev/` hold developer docs for people working on Candle itself.
+//! A test checks that [`DOCS`] lists exactly the markdown files directly inside `docs/`.
 
-use include_dir::{include_dir, Dir};
-
-static DOCS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../docs");
+/// The user-facing docs as `(filename, raw_content)`, sorted by filename.
+const DOCS: &[(&str, &str)] = &[
+    (
+        "agents-intro.md",
+        include_str!("../../docs/agents-intro.md"),
+    ),
+    ("mcp-usage.md", include_str!("../../docs/mcp-usage.md")),
+    (
+        "project-setup.md",
+        include_str!("../../docs/project-setup.md"),
+    ),
+    (
+        "transient-processes.md",
+        include_str!("../../docs/transient-processes.md"),
+    ),
+];
 const README: &str = include_str!("../../README.md");
 
 /// The README has no frontmatter, so `list-docs` uses this description for it.
@@ -38,19 +52,11 @@ pub enum DocLookupError {
 
 /// All user-facing doc files as `(filename, raw_content)`, sorted by filename for stable output,
 /// with `README.md` appended last.
-/// `Dir::files()` only yields the top level of `docs/`, so `docs/dev/` is never included.
 fn all_docs() -> Vec<(String, &'static str)> {
-    let mut docs: Vec<(String, &'static str)> = DOCS_DIR
-        .files()
-        .filter(|f| f.path().extension().map(|e| e == "md").unwrap_or(false))
-        .map(|f| {
-            (
-                f.path().file_name().unwrap().to_string_lossy().into_owned(),
-                f.contents_utf8().unwrap_or(""),
-            )
-        })
+    let mut docs: Vec<(String, &'static str)> = DOCS
+        .iter()
+        .map(|(filename, raw)| (filename.to_string(), *raw))
         .collect();
-    docs.sort_by(|a, b| a.0.cmp(&b.0));
     docs.push(("README.md".to_string(), README));
     docs
 }
@@ -149,9 +155,25 @@ mod tests {
 
     #[test]
     fn excludes_dev_docs() {
-        assert!(DOCS_DIR.get_file("dev/testing-strategy.md").is_some());
         assert!(!list_docs().iter().any(|d| d.name == "testing-strategy"));
         assert_eq!(get_doc("testing-strategy"), Err(DocLookupError::NotFound));
+    }
+
+    /// A doc added to `docs/` has to be added to `DOCS` too, and nothing from a subdirectory
+    /// may be.
+    #[test]
+    fn docs_list_matches_the_docs_directory() {
+        let docs_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs");
+        let mut on_disk: Vec<String> = std::fs::read_dir(docs_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".md"))
+            .collect();
+        on_disk.sort();
+        let embedded: Vec<&str> = DOCS.iter().map(|(filename, _)| *filename).collect();
+        assert_eq!(embedded, on_disk);
     }
 
     #[test]

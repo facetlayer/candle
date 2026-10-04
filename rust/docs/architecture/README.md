@@ -60,8 +60,7 @@ use threads + channels; there is no async runtime.
 
 **Minimal, hand-rolled dependencies.** The crate depends only on `rusqlite` (bundled SQLite),
 `serde`/`serde_json` (with `preserve_order` for byte-identical, key-order-preserving config
-write-back), `libc` (signals, `setsid`, `flock`), and `include_dir` (embeds `docs/` for
-`list-docs`/`get-doc`). The CLI argument parser, the grouped help renderer, and
+write-back), and `libc` (signals, `setsid`, `flock`). The CLI argument parser, the grouped help renderer, and
 the MCP JSON-RPC server are all hand-rolled rather than pulled from crates, because each must produce
 exact output byte-for-byte (`Unknown argument` errors, grouped help
 section headers, MCP content shapes).

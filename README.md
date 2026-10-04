@@ -425,8 +425,7 @@ If no `service names` are provided: Delete the logs for every service in this pr
 
 ### `candle list-docs` and `candle get-doc <name>`
 
-List and print the documentation files built into the binary (the files directly in `./docs` plus this README;
-developer docs in `./docs/dev` are not included).
+List and print the documentation files built into the binary (the files directly in `./docs` plus this README).
 `get-doc` takes the name `list-docs` shows (for example `candle get-doc project-setup`) and matches it
 exactly. `list-docs --json` prints the list as a JSON array of `name` and `description`.
 
