@@ -76,7 +76,7 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         // System-wide, like list-all.
         "list-ports-all" => &[("json", false)],
         "kill" | "clear-logs" | "open-browser" => &[("project-dir", true)],
-        "find-orphans" => &[("json", false)],
+        "find-orphans" | "list-docs" => &[("json", false)],
         "erase-database" => &[("force", false)],
         _ => &[],
     }
@@ -250,9 +250,9 @@ mod tests {
 
     #[test]
     fn unknown_flag_error_keeps_dashes() {
-        let err = parse_command_args("list-docs", &["--json".to_string()]).unwrap_err();
+        let err = parse_command_args("get-doc", &["--json".to_string()]).unwrap_err();
         assert_eq!(err, "Unknown argument: --json");
-        let err = parse_command_args("list-docs", &["--json=1".to_string()]).unwrap_err();
+        let err = parse_command_args("get-doc", &["--json=1".to_string()]).unwrap_err();
         assert_eq!(err, "Unknown argument: --json");
         let err = parse_command_args("list", &["-x".to_string()]).unwrap_err();
         assert_eq!(err, "Unknown argument: -x");

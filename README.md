@@ -330,8 +330,8 @@ previous recent run has the same message.
 Uses the operating system to detect and list the active open ports for running services.
 
 This command searches Candle managed processes and also child processes, and finds TCP ports
-that are in a LISTEN state. It reads `/proc/net/tcp` on Linux, and uses `lsof` on macOS and
-`netstat` on Windows; if the needed tool is missing it prints an error saying what to install.
+that are in a LISTEN state. It reads `/proc/net/tcp` on Linux and uses `lsof` on macOS; if the needed tool is missing it prints
+an error saying what to install.
 
 If no `[names]` are provided: Show ports for all running services in the current project.
 A name that isn't a service in this project is an error. Pass `--json` for machine-readable output.
@@ -428,7 +428,7 @@ If no `service names` are provided: Delete the logs for every service in this pr
 List and print the documentation files built into the binary (the files directly in `./docs` plus this README;
 developer docs in `./docs/dev` are not included).
 `get-doc` takes the name `list-docs` shows (for example `candle get-doc project-setup`) and matches it
-exactly.
+exactly. `list-docs --json` prints the list as a JSON array of `name` and `description`.
 
 ### `candle erase-database`
 
@@ -490,6 +490,9 @@ Candle stores service state and logs in a SQLite database, `candle.db`, in its s
  - `$CANDLE_DATABASE_DIR` if set,
  - otherwise `$XDG_STATE_HOME/candle` if `XDG_STATE_HOME` is set,
  - otherwise `~/.local/state/candle`.
+
+Logs can contain whatever your services print, so Candle creates the state directory and the database
+readable only by your user (`0700` and `0600`).
 
 # License #
 

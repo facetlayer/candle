@@ -81,7 +81,7 @@ web      12400  8080  0.0.0.0    TCP
 
 - Only shows ports for services started from the current project directory
 - Recursively discovers ports opened by child processes
-- Detects listening ports using the operating system's own facilities: `/proc/net/tcp` on Linux (no extra tools needed), `lsof` on macOS, and `netstat` on Windows
+- Detects listening ports using the operating system's own facilities: `/proc/net/tcp` on Linux (no extra tools needed) and `lsof` on macOS
 - If the platform tool is missing (for example `lsof` on a Unix that isn't Linux), the command fails with `Error: Could not detect listening ports: ...` explaining what to install, rather than reporting that no ports are open
 - Services started from other directories are not shown
 - Use `candle list-ports-all` to see ports for all services globally

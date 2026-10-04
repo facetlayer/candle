@@ -51,7 +51,7 @@ candle kill
 
 ### Kill services in a project that has been deleted
 
-Unlike other commands, `kill` accepts a `--project-dir` that no longer exists, or that no longer has a config file. This is how you clean up services left running by a project you have since removed:
+`kill` accepts a `--project-dir` that no longer exists, or that no longer has a config file. This is how you clean up services left running by a project you have since removed:
 
 ```bash
 candle kill --project-dir /path/to/deleted-project api

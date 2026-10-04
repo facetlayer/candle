@@ -156,7 +156,7 @@ pub fn get_database(override_dir: Option<&Path>) -> rusqlite::Result<Connection>
         None => get_state_directory(),
     };
 
-    std::fs::create_dir_all(&state_dir).map_err(|e| {
+    create_private_dir(&state_dir).map_err(|e| {
         rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
             Some(format!(
@@ -169,6 +169,54 @@ pub fn get_database(override_dir: Option<&Path>) -> rusqlite::Result<Connection>
     open_database_at(&state_dir.join("candle.db"))
 }
 
+/// Create the state directory (and any missing parents) readable only by the
+/// owner. An existing directory is left as it is.
+pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(dir)
+}
+
+/// Make the database file readable and writable only by the owner: service
+/// logs can hold secrets. Creates the file if it is missing, because SQLite
+/// would create it with the umask's permissions (usually 0644), and tightens a
+/// database (and WAL/SHM files) left group- or world-readable by an older
+/// version. SQLite gives new WAL/SHM files the database file's permissions.
+/// Best-effort: a failure here surfaces when SQLite opens the file.
+#[cfg(unix)]
+fn restrict_database_permissions(db_path: &Path) {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    // `create_new` so an existing database is never opened here: closing any
+    // descriptor for a file drops every POSIX lock this process holds on it,
+    // which would silently unlock SQLite connections already open (the
+    // monitor opens a second one for stdin polling).
+    let _ = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(db_path);
+
+    for suffix in ["", "-wal", "-shm"] {
+        let mut path = db_path.as_os_str().to_owned();
+        path.push(suffix);
+        let path = Path::new(&path);
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.permissions().mode() & 0o077 != 0 {
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn restrict_database_permissions(_db_path: &Path) {}
+
 /// Largest size the WAL file is left at after a checkpoint resets it. Without
 /// a limit it stays at its high-water mark (80 MB after a 200k-line burst).
 const WAL_SIZE_LIMIT_BYTES: i64 = 4 * 1024 * 1024;
@@ -180,6 +228,7 @@ const WAL_SIZE_LIMIT_BYTES: i64 = 4 * 1024 * 1024;
 /// WAL journal mode and 30s busy timeout, then runs the additive, idempotent
 /// schema migration so the tables are guaranteed to exist.
 pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
+    restrict_database_permissions(db_path);
     let conn = Connection::open(db_path)?;
 
     // WAL + busy_timeout are mandatory for multi-process concurrency. journal_mode
@@ -468,6 +517,26 @@ pub(crate) fn temp_db_dir(label: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn state_dir_and_database_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        let dir = temp_db_dir("perms").join("state");
+        let conn = get_database(Some(&dir)).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(&dir.join("candle.db")), 0o600);
+        assert_eq!(mode(&dir.join("candle.db-wal")), 0o600);
+        drop(conn);
+
+        // A database left world-readable by an older version is tightened.
+        let db_path = dir.join("candle.db");
+        std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let _conn = get_database(Some(&dir)).unwrap();
+        assert_eq!(mode(&db_path), 0o600);
+    }
 
     #[test]
     fn opens_and_creates_schema() {

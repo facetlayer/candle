@@ -124,8 +124,8 @@ service's state:
 | `status` | `RUNNING`, `not running`, `EXITED (<code>)`, or `FAILED` |
 | `configChanged` | `true` if a running process was started from a since-edited definition; always `false` when not running |
 | `exitCode` | The latest run's exit code when it exited non-zero, otherwise `null` (including `FAILED`, which has no exit code) |
- Passing service names filters the JSON the same way
-it filters the detail view.
+
+Passing service names filters the JSON the same way it filters the detail view.
 
 ## See Also
 

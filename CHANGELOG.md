@@ -6,6 +6,8 @@
  - Improve the builtin docs
  - Logs take about 1/20 of the disk space. Existing logs are migrated the first time the new version opens the database.
  - Various bug fixes
+ - The database and its directory are now created readable only by your user (`0600` / `0700`); an existing database is tightened the next time Candle opens it.
+ - Add `--json` to `candle list-docs`
 
 # 0.15.0 (2026-09-23)
  - Lots of bug fixes and improvements.

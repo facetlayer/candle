@@ -38,7 +38,9 @@ pub fn database_lock_path(state_dir: &Path) -> PathBuf {
 
 fn open_lock_file(path: &Path) -> std::io::Result<File> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        // The lock can be taken before the database is first opened, so this
+        // may be what creates the state directory.
+        crate::db::create_private_dir(parent)?;
     }
     OpenOptions::new()
         .create(true)

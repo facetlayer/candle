@@ -154,7 +154,7 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "add-service" => cmd_add_service(args),
         "remove-service" => cmd_remove_service(args),
         "set-config" => cmd_set_config(args),
-        "list-docs" => cmd_list_docs(),
+        "list-docs" => cmd_list_docs(args),
         "get-doc" => cmd_get_doc(args),
         "kill" => cmd_kill(args),
         "kill-all" => cmd_kill_all(),
@@ -260,8 +260,19 @@ fn cmd_set_config(args: &CommandArgs) {
     print_or_exit(handle_set_config(&key, &value, &cwd()));
 }
 
-fn cmd_list_docs() {
+fn cmd_list_docs(args: &CommandArgs) {
     let docs = doc_files::list_docs();
+    if args.has("json") {
+        let entries: Vec<serde_json::Value> = docs
+            .iter()
+            .map(|d| serde_json::json!({ "name": d.name, "description": d.description }))
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&entries).unwrap_or_default()
+        );
+        return;
+    }
     let width = docs.iter().map(|d| d.name.len()).max().unwrap_or(0);
     println!("Available docs (show one with 'candle get-doc <name>'):\n");
     for doc in docs {

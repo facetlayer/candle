@@ -15,6 +15,8 @@ By default the database is stored at `~/.local/state/candle/candle.db`. The dire
 2. `$XDG_STATE_HOME/candle`, if `XDG_STATE_HOME` is set
 3. `~/.local/state/candle`
 
+Logs can contain whatever your services print, so Candle creates the directory and the database file readable only by your user (`0700` and `0600`). A database created by an older version is tightened to `0600` the next time Candle opens it.
+
 ## Commands
 
 The `candle erase-database` command is available if you want to erase your local database and start fresh. This is not commonly needed. It refuses to run while Candle-managed processes are still running, since erasing would leave them running untracked. Run `candle kill-all` first, or pass `--force` to erase anyway.

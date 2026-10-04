@@ -44,7 +44,7 @@ Logs:
 Configuration:
   setup-project             Create a new .candle.json in the current directory
   add-service <name>        Add a service to .candle.json (requires --shell <cmd>)
-  remove-service [name]     Remove a service from .candle.json
+  remove-service <name>     Remove a service from .candle.json
   set-config <key> <value>  Set a configuration option in .candle.json
 
 Documentation:
@@ -56,7 +56,7 @@ Troubleshooting & Maintenance:
   kill-all                  Kill all managed processes on this system
   find-orphans              List running processes whose project is gone
   list-ports-all            List currently active ports for all managed processes
-  clear-logs [name]         Clear logs for process(es)
+  clear-logs [name...]      Clear logs for process(es)
   erase-database            Erase the Candle database
 
 Other:
@@ -84,7 +84,7 @@ pub fn command_help(command: &str) -> String {
         "restart" => {
             "candle restart [name...]   Restart process(es)\n\nKills each service and starts it again; a service that isn't running is\nsimply started. With no name, restarts every service in .candle.json (plus\nany running transient processes). Configured services pick up edits to\n.candle.json.\n\nFollows the same interactive behavior as start: when run interactively,\nrestart watches the restarted process's logs; press Ctrl+C to stop watching.\n\nOptions:\n  --watch            Force interactive mode: watch logs after restarting\n  --bg               Force non-interactive mode: exit once restarted\n  --shell <cmd>      Replace the command of a transient process\n  --root <dir>       Root directory for a transient process\n  --project-dir <dir>  Act on this project instead of the current directory".to_string()
         }
-        "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory\n\nOptions:\n  --project-dir <dir>  Kill process(es) in this project instead\n\nUnlike other commands, kill accepts a --project-dir that no longer exists or\nhas no config file, so processes from a deleted project can still be cleaned\nup. Use 'candle find-orphans' to find them.".to_string(),
+        "kill" | "stop" => "candle kill [name...]   Kill process(es) in the current directory\n\nOptions:\n  --project-dir <dir>  Kill process(es) in this project instead\n\nThe --project-dir may be a directory that no longer exists or has no config\nfile, so processes from a deleted project can still be cleaned up. Use\n'candle find-orphans' to find them.".to_string(),
         "kill-all" => "candle kill-all   Kill all running processes".to_string(),
         "find-orphans" => "candle find-orphans   List running processes whose project is gone\n\nReports every live process Candle tracks whose project no longer accounts for\nit: the project directory was deleted, its config file was removed, or the\nservice was dropped from the config. Kill one with:\n\n  candle kill --project-dir <project> <service>\n\nOptions:\n  --json   Output as JSON".to_string(),
         "list" | "ls" => "candle list [names...]   Show details for the services in the current directory\n\nPrints a multiline entry per service with its status and the full command\nand directory. With one or more names, only those services are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
@@ -108,9 +108,9 @@ pub fn command_help(command: &str) -> String {
         }
         "remove-service" => "candle remove-service <name>   Remove a service from .candle.json".to_string(),
         "set-config" => "candle set-config <key> <value>   Set a configuration option in .candle.json\n\nKeys:\n  logEviction.maxLogsPerService     Log lines kept per service (default: 1000)\n  logEviction.maxRetentionSeconds   Seconds to keep log lines (default: 86400)\n\nBoth take a positive integer. Example:\n\n  candle set-config logEviction.maxLogsPerService 5000".to_string(),
-        "clear-logs" => "candle clear-logs [name]   Clear logs for process(es)\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
+        "clear-logs" => "candle clear-logs [name...]   Clear logs for process(es)\n\nWith no name, clears the logs of every service in the project.\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "erase-database" => "candle erase-database   Erase the Candle database\n\nRefuses while Candle-managed processes are still running, since erasing\nwould leave them running with no way for Candle to stop them.\nRun 'candle kill-all' first.\n\nOptions:\n  --force            Erase even if processes are still running".to_string(),
-        "list-docs" => "candle list-docs   List available documentation\n\nPrints the name and a one-line description of each doc built into the\nbinary. Show one with 'candle get-doc <name>'.".to_string(),
+        "list-docs" => "candle list-docs   List available documentation\n\nPrints the name and a one-line description of each doc built into the\nbinary. Show one with 'candle get-doc <name>'.\n\nOptions:\n  --json   Output as JSON".to_string(),
         "get-doc" => "candle get-doc <name>   Display a documentation file\n\n<name> is a name from 'candle list-docs', for example:\n\n  candle get-doc project-setup".to_string(),
         "mcp" => "candle mcp   Run as an MCP server\n\nSpeaks the Model Context Protocol over stdin/stdout. Meant to be launched by\nan MCP client, not run by hand. See 'candle get-doc mcp-usage'.".to_string(),
         _ => grouped_help(),

@@ -77,6 +77,17 @@ describe('CLI List-Docs Command', () => {
         });
     });
 
+    describe('list-docs --json', () => {
+        it('should print the same docs as a JSON array', async () => {
+            const text = await workspace.runCli(['list-docs']);
+            const json = await workspace.runCli(['list-docs', '--json']);
+
+            const parsed = JSON.parse(json.stdoutAsString());
+            expect(parsed).toEqual(listedDocs(text.stdoutAsString()));
+            expect(parsed.length).toBeGreaterThan(0);
+        });
+    });
+
     describe('list-docs content', () => {
         it('should include known documentation files', async () => {
             const result = await workspace.runCli(['list-docs']);
