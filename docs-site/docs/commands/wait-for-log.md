@@ -2,10 +2,10 @@
 
 Wait for a specific log message to appear.
 
-This is a convenience command that is really helpful for CI based build scripts. You can launch a service in CI and then use `wait-for-log` to block the job until the service has fully started up.
+This is a convenience command that blocks until the given service has printed an output line that contains a target string.
 
-The command is smart about checking for the most recent service launch, and not triggering from
-a log that happened on a previous launch. If you use `candle wait-for-log` immediately after `candle start` then it will do the right thing.
+The `wait-for-log` command is helpful for automated build jobs. For example you can launch a service, then use `wait-for-log` to wait
+until it has finished startup, and then actually use the service.
 
 ## Syntax
 
@@ -17,9 +17,7 @@ candle wait-for-log [name] --message <message> [--timeout <seconds>]
 
 - `name` - Name of the service to monitor. If omitted, the logs of every service in the project are searched.
 
-Only the service's latest run is searched: every line it has printed since it was last started, plus anything it prints while `wait-for-log` is waiting. Output from earlier runs is ignored.
-
-If the service is running and you can see it working, but its output never shows up, the program is probably buffering its output because it isn't writing to a terminal (Ruby and C programs do this; Candle sets `PYTHONUNBUFFERED=1` so Python doesn't). Run `candle get-doc project-setup` and see "a service is running but `candle logs` is empty" for the fix, such as `stdbuf -oL`.
+Only the service's latest run is searched. Output from earlier runs is ignored.
 
 ## Options
 
