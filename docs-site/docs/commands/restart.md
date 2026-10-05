@@ -65,4 +65,3 @@ candle restart server --shell "python -m http.server 9090"
 
 - [start](start) - Start a service
 - [kill](kill) - Stop a service
-- [run](run) - Start and watch a service

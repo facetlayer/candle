@@ -118,5 +118,5 @@ candle list-all
 ## Next Steps
 
 - [Configuration](configuration) - Learn about all configuration options
-- [Commands](commands/run) - Explore all available commands
+- [Commands](commands/start) - Explore all available commands
 - [MCP Integration](mcp-integration) - Use Candle with AI agents

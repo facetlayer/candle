@@ -67,4 +67,3 @@ The command will fail (exit code 1) if:
 
 - [list-ports](list-ports) - List open ports for running services
 - [start](start) - Start services
-- [run](run) - Run services in foreground

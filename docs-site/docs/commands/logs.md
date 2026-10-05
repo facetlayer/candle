@@ -133,5 +133,4 @@ candle logs api --json --start-at 512
 ## See Also
 
 - [watch](watch) - Watch live output (interactive)
-- [run](run) - Start and watch a service
 - [clear-logs](clear-logs) - Clear log history

@@ -18,38 +18,38 @@ const sidebars = {
     {type: 'doc', id: 'installation', label: 'Installation'},
     {type: 'doc', id: 'getting-started', label: 'Getting Started'},
     {type: 'doc', id: 'configuration', label: 'Configuration'},
+    // Command categories mirror the groups in `candle --help` (rust/src/cli/help.rs).
     {
       type: 'category',
-      label: 'Commands',
+      label: 'Process Management',
       items: [
-        {type: 'doc', id: 'commands/start', label: 'start'},
-        {type: 'doc', id: 'commands/run', label: 'run (alias for start)'},
-        {type: 'doc', id: 'commands/restart', label: 'restart'},
-        {type: 'doc', id: 'commands/kill', label: 'kill'},
         {type: 'doc', id: 'commands/list', label: 'list / ls'},
         {type: 'doc', id: 'commands/ps', label: 'ps / status'},
-        {type: 'doc', id: 'commands/logs', label: 'logs'},
-        {type: 'doc', id: 'commands/watch', label: 'watch'},
-        {type: 'doc', id: 'commands/wait-for-log', label: 'wait-for-log'},
+        {type: 'doc', id: 'commands/start', label: 'start / run'},
+        {type: 'doc', id: 'commands/restart', label: 'restart'},
+        {type: 'doc', id: 'commands/kill', label: 'kill / stop'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Port Detection',
+      items: [
+        {type: 'doc', id: 'commands/list-ports', label: 'list-ports'},
         {type: 'doc', id: 'commands/open-browser', label: 'open-browser'},
       ],
     },
     {
       type: 'category',
-      label: 'Maintenance',
+      label: 'Logs',
       items: [
-        {type: 'doc', id: 'commands/clear-logs', label: 'clear-logs'},
-        {type: 'doc', id: 'commands/erase-database', label: 'erase-database'},
-        {type: 'doc', id: 'commands/kill-all', label: 'kill-all'},
-        {type: 'doc', id: 'commands/find-orphans', label: 'find-orphans'},
-        {type: 'doc', id: 'commands/list-all', label: 'list-all'},
-        {type: 'doc', id: 'commands/list-ports', label: 'list-ports'},
-        {type: 'doc', id: 'commands/list-ports-all', label: 'list-ports-all'},
+        {type: 'doc', id: 'commands/logs', label: 'logs'},
+        {type: 'doc', id: 'commands/watch', label: 'watch'},
+        {type: 'doc', id: 'commands/wait-for-log', label: 'wait-for-log'},
       ],
     },
     {
       type: 'category',
-      label: 'Configuration Commands',
+      label: 'Configuration',
       items: [
         {type: 'doc', id: 'commands/setup-project', label: 'setup-project'},
         {type: 'doc', id: 'commands/add-service', label: 'add-service'},
@@ -59,7 +59,27 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Help & Utilities',
+      label: 'Documentation',
+      items: [
+        {type: 'doc', id: 'commands/list-docs', label: 'list-docs'},
+        {type: 'doc', id: 'commands/get-doc', label: 'get-doc'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Troubleshooting & Maintenance',
+      items: [
+        {type: 'doc', id: 'commands/list-all', label: 'list-all'},
+        {type: 'doc', id: 'commands/kill-all', label: 'kill-all'},
+        {type: 'doc', id: 'commands/find-orphans', label: 'find-orphans'},
+        {type: 'doc', id: 'commands/list-ports-all', label: 'list-ports-all'},
+        {type: 'doc', id: 'commands/clear-logs', label: 'clear-logs'},
+        {type: 'doc', id: 'commands/erase-database', label: 'erase-database'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Other',
       items: [
         {type: 'doc', id: 'commands/help', label: 'help'},
         {type: 'doc', id: 'commands/mcp', label: 'mcp'},

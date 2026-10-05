@@ -166,7 +166,6 @@ Error: 1 of 3 services failed to start: api
 
 ## See Also
 
-- [run](run) - Alias for `start`
 - [restart](restart) - Kill and relaunch a service
 - [logs](logs) - View logs from started services
 - [watch](watch) - Watch live output from running services
