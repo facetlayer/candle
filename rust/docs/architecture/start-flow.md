@@ -6,7 +6,7 @@ Scope: the `start` command path (and the per-service launch that `restart` reuse
 
 There are **two OS processes** per launched service:
 
-1. **CLI process** (`candle start ...`) — resolves config, leaves an already-running instance alone (`restart` kills it instead), spawns the monitor, then blocks watching the SQLite log table until it sees a success/failure marker and prints a result line. In non-interactive mode (or with `--bg`) it then prints a `Run 'candle logs ...' to see logs.` hint and exits; in interactive mode (or with `--watch`) it streams the new launch's logs until Ctrl+C (`watch_started_services`). Either way the service keeps running without it.
+1. **CLI process** (`candle start ...`) — resolves config, leaves an already-running instance alone (`restart` kills it instead), spawns the monitor, then blocks watching the SQLite log table until it sees a success/failure marker and prints a result line. In non-interactive mode (or with `--bg`) it then prints a `Run 'candle logs ...' to see logs.` hint and exits; in interactive mode (or with `--watch`) it streams the new launch's logs until Ctrl-C (`watch_started_services`). Either way the service keeps running without it.
 2. **Monitor process** (`candle --monitor`) — the same `candle` executable re-invoked in monitor mode: a detached, long-lived process that actually spawns the user's shell command, pipes its stdout/stderr into the SQLite `log_lines` table, owns the DB `processes` row lifecycle, optionally feeds stdin, and exits when the service exits.
 
 Communication between the two is **only** through the SQLite database (`candle.db`) plus a one-shot JSON handshake over the monitor's stdin.

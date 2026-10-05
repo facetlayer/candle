@@ -120,10 +120,10 @@ That exact stderr string and exit code 1 are load-bearing. Agent mode also hides
 3. **With names**: `cmd_watch` first rejects an unknown name with `assert_valid_command_names` (`No service '<name>' configured for directory: <dir>`); then each must be running (`is_service_running`: `killed_at is null` rows filtered through `filter_alive_processes`, which also deletes dead rows). Otherwise → `UsageError("Process '<name>' is not running. Start it with: candle start <name>")` (stderr, exit 1). Then print the header:
    - 1 name: `Watching process '<name>'`
    - N names: `Watching <N> processes:` then for each `  - '<name>'`
-4. Print `Press Ctrl+C to stop watching.` and a blank line.
+4. Print `Press Ctrl-C to stop watching.` and a blank line.
 5. Call `watch_process(conn, project_dir, command_names, exit_after_ms, Some(RECENT_LOG_WINDOW_MS))`.
 
-`watch_started_services(conn, project_dir, names, exit_after_ms)` is the same loop used by interactive `start`/`restart`: it prints `[Now watching console logs. Press Ctrl+C to stop watching.]` and a blank line, then calls `watch_process` with no recency window. The seeded filter shows the whole fresh launch (the latest run) and nothing from earlier runs.
+`watch_started_services(conn, project_dir, names, exit_after_ms)` is the same loop used by interactive `start`/`restart`: it prints `[Now watching console logs. Press Ctrl-C to stop watching.]` and a blank line, then calls `watch_process` with no recency window. The seeded filter shows the whole fresh launch (the latest run) and nothing from earlier runs.
 
 ### 7.4 `watch_process` — the tail loop
 Constants: `INITIAL_LOG_COUNT = 100`, `POLL_INTERVAL = 200` (ms), `RECENT_LOG_WINDOW_MS = 10_000`.

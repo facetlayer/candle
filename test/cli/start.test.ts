@@ -137,7 +137,7 @@ describe('CLI Start Command', () => {
             const output = result.stdoutAsString();
 
             // Watch-mode banner instead of the logs hint.
-            expect(output).toContain('Press Ctrl+C to stop watching');
+            expect(output).toContain('Press Ctrl-C to stop watching');
             expect(output).not.toContain("Run 'candle logs");
 
             // The new launch's output is streamed live.

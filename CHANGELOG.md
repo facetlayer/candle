@@ -6,6 +6,7 @@
  - Logs take about 1/20 of the disk space. Existing logs are migrated the first time the new version opens the database.
  - Bug fixes for services that print logs in a very tight loop.
  - Services now run with `PYTHONUNBUFFERED=1` in the env.
+ - `candle --help` no longer lists which commands take `--json`. Messages now say `Ctrl-C` instead of `Ctrl+C`.
  - Various other bug fixes
 
 # 0.15.0 (2026-09-23)

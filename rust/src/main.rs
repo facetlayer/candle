@@ -359,7 +359,7 @@ fn print_logs_hint(started: &[String]) {
 }
 
 /// Start services and watch their logs in interactive mode. Existing services
-/// are left running; Ctrl+C detaches without stopping them.
+/// are left running; Ctrl-C detaches without stopping them.
 fn cmd_start(args: &CommandArgs) {
     let project_dir = configured_project_dir_or_exit(&scope_of(args));
 

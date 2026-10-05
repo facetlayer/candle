@@ -16,7 +16,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(port, () => {
     console.log(`Test server listening on port ${port}`);
-    console.log('Press Ctrl+C to stop');
+    console.log('Press Ctrl-C to stop');
 });
 
 // Handle graceful shutdown

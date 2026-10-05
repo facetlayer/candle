@@ -182,7 +182,7 @@ pub fn handle_watch(
             }
         }
     }
-    output::out("Press Ctrl+C to stop watching.");
+    output::out("Press Ctrl-C to stop watching.");
     output::out("");
 
     watch_process(
@@ -197,14 +197,14 @@ pub fn handle_watch(
 }
 
 /// Follow newly launched services until interruption or deadline.
-/// Ctrl+C detaches, leaving services running.
+/// Ctrl-C detaches, leaving services running.
 pub fn watch_started_services(
     conn: &Connection,
     project_dir: &str,
     command_names: &[String],
     exit_after_ms: Option<u64>,
 ) -> Result<(), CandleError> {
-    output::out("[Now watching console logs. Press Ctrl+C to stop watching.]");
+    output::out("[Now watching console logs. Press Ctrl-C to stop watching.]");
     output::out("");
 
     watch_process(conn, project_dir, command_names, exit_after_ms, None)?;
