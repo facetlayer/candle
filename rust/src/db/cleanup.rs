@@ -1,14 +1,4 @@
-//! Periodic database cleanup and log eviction.
-//!
-//! Cleanup runs at most once per [`CLEANUP_INTERVAL_SECONDS`] and performs, in
-//! order: time-based log eviction, stale-process removal, per-service log
-//! eviction, removal of `services` rows with no logs left, `VACUUM` plus a WAL
-//! truncate, and a single-row update of `process_last_cleanup`.
-//!
-//! Eviction limits come from each project's `.candle.json` `logEviction` block,
-//! resolved per `project_dir` (falling back to [`crate::config::LOG_EVICTION_DEFAULTS`]
-//! of 1000 logs / 86400s when no config is found), so limits stay correct when
-//! the database holds logs from multiple projects.
+//! Periodic stale-process cleanup, per-project log eviction, and space reclamation.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,7 +14,6 @@ use crate::logs::process_logs::save_run_log;
 use crate::logs::ProcessLogType;
 use crate::process_alive::is_entry_alive;
 
-/// Minimum seconds between cleanup runs. Matches `CLEANUP_INTERVAL_SECONDS`.
 pub const CLEANUP_INTERVAL_SECONDS: i64 = 10 * 60;
 
 fn now_unix() -> i64 {
@@ -55,8 +44,6 @@ pub fn maybe_run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
 
 /// Delete all but the newest `keep` log rows of one service.
 fn evict_service_logs(conn: &Connection, service_id: i64, keep: i64) -> rusqlite::Result<()> {
-    // The id threshold: the row at offset = `keep` when sorted newest-first.
-    // Everything with id <= that is evicted.
     let cutoff_id: Option<i64> = conn
         .query_row(
             "select id from log_lines where service_id = ?1 \
@@ -75,9 +62,7 @@ fn evict_service_logs(conn: &Connection, service_id: i64, keep: i64) -> rusqlite
     Ok(())
 }
 
-/// Delete all but the newest `keep` log rows of `command_name` in
-/// `project_dir`. The monitor calls this while a service floods its output, so
-/// the database stays bounded between the periodic cleanups.
+/// Trim one service's logs between periodic cleanups to bound flooding output.
 pub fn evict_logs_of(
     conn: &Connection,
     project_dir: &str,
@@ -97,8 +82,7 @@ pub fn evict_logs_of(
     }
 }
 
-/// Resolve the log-eviction config for a project directory, falling back to the
-/// defaults on any error (missing/invalid config file).
+/// Read project eviction settings, using defaults on missing or invalid config.
 pub(crate) fn resolve_eviction_config(project_dir: &str) -> ResolvedLogEvictionConfig {
     match find_config_file(Path::new(project_dir)) {
         Ok(found) => get_log_eviction_config(Some(&found.config)),
@@ -111,8 +95,6 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     let now = now_unix();
     let mut config_cache: HashMap<String, ResolvedLogEvictionConfig> = HashMap::new();
 
-    // (1) Time-based eviction: per project_dir, delete logs older than that
-    //     project's maxRetentionSeconds.
     let project_dirs: Vec<String> = {
         let mut stmt = conn.prepare("select distinct project_dir from services")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -131,12 +113,9 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
-    // (2) Remove database entries for processes that are no longer alive.
     cleanup_stale_processes(conn)?;
 
-    // (3) Per-service eviction: keep only maxLogsPerService logs per
-    //     service. The threshold is per-project, so the over-limit filter is
-    //     applied in Rust rather than in the SQL HAVING.
+    // Per-project limits require filtering service counts outside SQL.
     let services: Vec<(i64, String, i64)> = {
         let mut stmt = conn.prepare(
             "select s.id, s.project_dir, \
@@ -166,19 +145,15 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
         evict_service_logs(conn, service_id, max_logs)?;
     }
 
-    // (4) Forget services with no logs left. A writer that races this recreates
-    //     the row (see `insert_log` in `logs/process_logs.rs`).
+    // Concurrent writers recreate deleted service rows.
     conn.execute(
         "delete from services \
          where not exists (select 1 from log_lines l where l.service_id = services.id)",
         [],
     )?;
 
-    // (5) Reclaim space.
     crate::db::reclaim_space(conn)?;
 
-    // (6) Upsert the single-row process_last_cleanup timestamp (update-all, then
-    //     insert if the table was empty).
     let updated = conn.execute(
         "update process_last_cleanup set timestamp = ?1",
         params![now],
@@ -193,21 +168,14 @@ pub fn run_cleanup(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Remove `processes` rows whose underlying OS processes are gone.
-///
-/// - For each running row (`killed_at is null`): keep it if the log collector OR
-///   the service pid is alive; otherwise write a `process_exited` log line and
-///   delete the row.
-/// - Delete any row that was marked killed (`killed_at` set) but never removed
-///   (the collector died before it could clean up).
+/// Reap unmarked rows when both service and monitor are dead, recording an
+/// exit for their run. Remove marked rows left behind by dead monitors.
 pub fn cleanup_stale_processes(conn: &Connection) -> rusqlite::Result<()> {
     for proc in find_all_running_processes(conn)? {
-        // The monitor is still managing it, or the service itself is alive.
         if is_entry_alive(&proc) {
             continue;
         }
 
-        // Both are dead -> stale entry. The exit belongs to that process's run.
         save_run_log(
             conn,
             proc.run_id,
@@ -219,7 +187,6 @@ pub fn cleanup_stale_processes(conn: &Connection) -> rusqlite::Result<()> {
         delete_process_entry(conn, &proc.command_name, &proc.project_dir, proc.pid)?;
     }
 
-    // Killed-but-not-deleted rows.
     for proc in find_all_killed_processes(conn)? {
         delete_process_entry(conn, &proc.command_name, &proc.project_dir, proc.pid)?;
     }
@@ -254,7 +221,6 @@ mod tests {
         let dir = temp_db_dir("cleanup-eviction");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // Insert 1005 rows; default limit is 1000.
         for i in 0..1005 {
             save_process_log(
                 &conn,
@@ -270,7 +236,6 @@ mod tests {
         run_cleanup(&conn).unwrap();
 
         assert_eq!(count_logs(&conn, "/proj", "api"), 1000);
-        // The newest line survived; the oldest did not.
         let logs = get_process_logs(
             &conn,
             &LogSearchOptions {
@@ -292,7 +257,6 @@ mod tests {
         let dir = temp_db_dir("cleanup-time");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // One ancient row (well past the 86400s default retention) and one fresh.
         let ancient = now_unix() - 90_000;
         conn.execute(
             "insert into process_output(command_name, project_dir, content, log_type, timestamp) values('api','/proj','old',1,?1)",
@@ -332,7 +296,6 @@ mod tests {
             .unwrap();
         assert_eq!(count, 1);
 
-        // A second run keeps it single-row (update-in-place).
         run_cleanup(&conn).unwrap();
         let count2: i64 = conn
             .query_row("select count(*) from process_last_cleanup", [], |r| {
@@ -350,14 +313,12 @@ mod tests {
         let dir = temp_db_dir("cleanup-gate");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // Seed a very recent cleanup timestamp.
         conn.execute(
             "insert into process_last_cleanup(timestamp) values(?1)",
             params![now_unix()],
         )
         .unwrap();
 
-        // Many over-limit logs, but cleanup should be skipped (recent timestamp).
         for i in 0..1005 {
             save_process_log(
                 &conn,
@@ -371,7 +332,6 @@ mod tests {
         maybe_run_cleanup(&conn).unwrap();
         assert_eq!(count_logs(&conn, "/proj", "api"), 1005);
 
-        // Force the timestamp into the past -> cleanup runs.
         conn.execute(
             "update process_last_cleanup set timestamp = ?1",
             params![now_unix() - CLEANUP_INTERVAL_SECONDS - 1],
@@ -391,7 +351,6 @@ mod tests {
 
         let me = std::process::id() as i64;
 
-        // Alive (this process).
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -407,7 +366,6 @@ mod tests {
         )
         .unwrap();
 
-        // Stale (both pids dead).
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -423,7 +381,6 @@ mod tests {
         )
         .unwrap();
 
-        // Killed-but-not-deleted.
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -446,7 +403,6 @@ mod tests {
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].command_name, "alive");
 
-        // Stale removal logged the exact process_exited message.
         let logs = get_process_logs(
             &conn,
             &LogSearchOptions {

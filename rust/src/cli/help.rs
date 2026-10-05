@@ -1,14 +1,8 @@
-// Help text rendering for the candle CLI.
-//
-// The Vitest help suite (test/cli/help.test.ts) asserts on section headers and command names via
-// substring checks, so keep the grouped layout stable. The `watch` line is hidden when running
-// under an agent (see `is_run_by_agent`).
+// CLI help. Hide `watch` for agent-driven sessions.
 
 use crate::run_context::is_run_by_agent;
 
-/// The candle version, injected at build time by Cargo from the workspace `version`
-/// field in Cargo.toml (`CARGO_PKG_VERSION`). This is the single source of truth for
-/// both `--version` and the header line of the grouped help output.
+/// Cargo package version, shared by --version and grouped help.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
@@ -74,8 +68,6 @@ Run 'candle <command> --help' for more information on a command."
     )
 }
 
-/// Per-command help. Kept simple: the help tests assert that the output contains the command name
-/// and its option flags, not an exact layout.
 pub fn command_help(command: &str) -> String {
     match command {
         "start" | "run" => {

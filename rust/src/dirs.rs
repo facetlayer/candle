@@ -1,16 +1,9 @@
-//! State / database directory resolution, plus service launch-directory resolution.
-//!
-//! Resolves the state directory where the SQLite database lives.
+//! State and service working directories.
 
 use std::path::{Component, Path, PathBuf};
 
-/// Resolve the directory a service runs in: `project_dir`, or the service's
-/// `root` joined onto it (an absolute `root` replaces it outright). The result
-/// is lexically normalized, so a `root` of `./sub` yields `<project>/sub`
-/// rather than `<project>/./sub`.
-///
-/// Both `start` (for its launch banner) and `list` go through this, so the
-/// directory the two report can never disagree.
+/// Resolve and lexically normalize the service working directory.
+/// An absolute `root` replaces `project_dir`.
 pub fn resolve_launch_dir(project_dir: &str, root: Option<&str>) -> String {
     let joined = match root.filter(|r| !r.is_empty()) {
         Some(root) if Path::new(root).is_absolute() => PathBuf::from(root),
@@ -20,13 +13,7 @@ pub fn resolve_launch_dir(project_dir: &str, root: Option<&str>) -> String {
     normalize_path(&joined).to_string_lossy().into_owned()
 }
 
-/// Lexically clean a path: drop `.` components and collapse `..` against a
-/// preceding normal component. Purely textual — it never touches the
-/// filesystem, since the directory may not exist yet.
-///
-/// A `..` that has nothing to pop (a leading `..`, or one directly after the
-/// root) is preserved rather than silently dropped, which would change which
-/// directory the path refers to.
+/// Fold `.` and `..` without filesystem access; preserve leading relative `..`.
 pub fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     // Tracks how many trailing components are `..`, which must not be popped.
@@ -36,14 +23,12 @@ pub fn normalize_path(path: &Path) -> PathBuf {
         match component {
             Component::CurDir => {}
             Component::ParentDir => match out.components().next_back() {
-                // Pop a real directory name, but never one we just pushed as `..`.
                 Some(Component::Normal(_)) if pending_parents == 0 => {
                     out.pop();
                 }
                 // The root is its own parent: `/..` is `/`, so drop the component.
                 Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
-                // Nothing to pop (a leading `..`, or a run of them): keep it, or
-                // the path would come to mean a different directory.
+                // Preserve leading relative parents.
                 _ => {
                     out.push("..");
                     pending_parents += 1;
@@ -59,14 +44,8 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     out
 }
 
-/// Resolve the state directory, given the relevant environment values.
-///
-/// This is a pure helper so it can be unit-tested without racing on process
-/// environment. Precedence:
-///
-/// 1. `CANDLE_DATABASE_DIR` -> used verbatim.
-/// 2. `XDG_STATE_HOME` -> `<XDG_STATE_HOME>/candle`.
-/// 3. Default -> `<home>/.local/state/candle`.
+/// State directory precedence: `CANDLE_DATABASE_DIR`, `XDG_STATE_HOME/candle`,
+/// then `<home>/.local/state/candle`.
 pub fn resolve_state_dir(
     candle_database_dir: Option<&str>,
     xdg_state_home: Option<&str>,
@@ -166,11 +145,8 @@ mod tests {
             "/proj/sub"
         );
         assert_eq!(resolve_launch_dir("/proj/", Some("sub/")), "/proj/sub");
-        // A root that walks up to and past the filesystem root keeps its meaning
-        // rather than silently resolving to something else.
         assert_eq!(resolve_launch_dir("/", Some("../..")), "/");
         assert_eq!(resolve_launch_dir("relative", Some("../..")), "..");
-        // The project dir itself is normalized too.
         assert_eq!(resolve_launch_dir("/proj/./nested", None), "/proj/nested");
     }
 }

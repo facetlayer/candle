@@ -1,15 +1,9 @@
-//! Process log type enum.
-//!
-//! Stored in the `log_lines.log_type` integer column.
+//! Log types stored as integers in `log_lines.log_type`.
 
-/// Content of the `process_start_failed` row the monitor writes when Candle
-/// itself stopped the process (`kill`, `restart`, or a `start` replacing it)
-/// during the startup grace period. `ps` / `list` read it to tell that
-/// deliberate stop apart from a failed start, which shows as `FAILED`.
+/// Startup stop marker distinguishing deliberate stops from failures.
 pub const STOPPED_WHILE_STARTING_MESSAGE: &str = "Process was stopped while starting";
 
-/// Marks a run that ended by a signal Candle didn't send (a segfault, the OOM
-/// killer); `ps` / `list` show such a run as `FAILED`.
+/// Signal crash marker; list/ps show these runs as FAILED.
 pub const KILLED_BY_SIGNAL: &str = "killed by signal";
 
 /// `Process was killed by signal <n>`, the exit row for a crash by signal.
@@ -23,13 +17,9 @@ pub fn killed_by_signal_message(signal: i32) -> String {
 pub enum ProcessLogType {
     Stdout = 1,
     Stderr = 2,
-    /// Saved immediately when we begin launching a subprocess.
     ProcessStartInitiated = 3,
-    /// Saved when the subprocess fails to start.
     ProcessStartFailed = 4,
-    /// Saved when the subprocess has successfully started.
     ProcessStarted = 5,
-    /// Saved when the subprocess exits.
     ProcessExited = 6,
 }
 

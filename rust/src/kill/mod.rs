@@ -1,12 +1,6 @@
-//! Process killing: signalling a process tree, the per-entry kill state machine,
-//! and the `kill` / `kill-all` command handlers.
-//!
+//! Signal service trees/groups and update process records.
+//! Successful kills mark killed_at; stale cleanup removes rows.
 //! See `rust/docs/architecture/kill-restart.md`.
-//!
-//! Kill is a *mark*, not a hard delete: the normal success path only sets
-//! `killed_at` so `candle list` immediately stops reporting the row as RUNNING;
-//! final deletion is done by the stale-cleanup reaper. The not-found and
-//! 5-minute-stale paths delete the row outright.
 
 use std::collections::HashSet;
 use std::thread;
@@ -23,16 +17,14 @@ use crate::output;
 use crate::process_alive::{is_monitor_alive, is_process_alive, is_service_process_alive};
 use crate::process_tree::get_process_tree;
 
-/// How long a signalled process gets to exit on `SIGTERM` before the tree is
-/// escalated to `SIGKILL`.
+/// SIGTERM grace period before SIGKILL.
 pub const KILL_GRACE_PERIOD: Duration = Duration::from_secs(5);
 /// How long to wait for a `SIGKILL`ed root to disappear before giving up.
 const SIGKILL_WAIT: Duration = Duration::from_secs(1);
 /// Poll interval while waiting for a signalled process to exit.
 const KILL_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
-/// How long after `killed_at` an entry is considered stale and hard-deleted on a
-/// repeat kill (5 minutes).
+/// Age after which a repeat kill deletes a marked row.
 const STALE_ENTRY_SECONDS: i64 = 5 * 60;
 
 /// Outcome of signalling a process tree.
@@ -50,18 +42,11 @@ fn now_unix_seconds() -> i64 {
         .unwrap_or(0)
 }
 
-/// Send `SIGTERM` to every process in the tree rooted at `pid`, children first.
-///
-/// - The whole tree is snapshotted up front; newly-forked grandchildren are not
-///   pursued.
-/// - Order is deepest-descendant-first, root shell last.
-/// - `ESRCH` (no such process) is ignored; any other errno is a warning + error.
-/// - There is **no wait/timeout** here; see [`kill_process_tree_and_wait`] for
-///   the grace-period + `SIGKILL` escalation used by `kill`.
+/// Signal a snapshot of the tree, children first, without waiting. Ignore ESRCH;
+/// report other signal errors. Newly forked descendants are outside the snapshot.
 ///
 /// # Panics
-/// Panics on `pid <= 0` (an internal-invariant violation; callers guard a
-/// falsy/zero PID before reaching here).
+/// Panics if `pid <= 0`.
 pub fn kill_process_tree(pid: i64) -> KillResult {
     if pid <= 0 {
         panic!("internal error: kill_process_tree called with invalid PID: {pid}");
@@ -75,7 +60,6 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
     let mut has_error = false;
     let mut all_not_found = true;
 
-    // Children first (reverse of discovery order), root last.
     for child_pid in pids.into_iter().rev() {
         let result = unsafe { libc::kill(child_pid as libc::pid_t, libc::SIGTERM) };
         if result == 0 {
@@ -85,7 +69,6 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
 
         let os_err = std::io::Error::last_os_error();
         if os_err.raw_os_error() == Some(libc::ESRCH) {
-            // Process already gone; ignore and continue.
             continue;
         }
 
@@ -104,12 +87,8 @@ pub fn kill_process_tree(pid: i64) -> KillResult {
     }
 }
 
-/// The process group led by `pid`, if `pid` is alive and leads one.
-///
-/// Services launched by a current monitor lead their own group (see
-/// `monitor::run`), which also holds descendants that were reparented away from
-/// the tree. Checking leadership first keeps an older service, which shares its
-/// monitor's group, from taking the monitor down with it.
+/// Return the group if pid is its live leader. Checking leadership avoids
+/// signalling the monitor group shared by legacy services.
 fn led_process_group(pid: i64) -> Option<i64> {
     let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
     (pgid as i64 == pid).then_some(pid)
@@ -137,8 +116,7 @@ fn signal_process_group(pgid: i64, signal: libc::c_int) {
     }
 }
 
-/// Wait until every PID in `pids` (and every member of `group`, if given) is
-/// gone or `timeout` elapses. Returns whether they all exited.
+/// Wait for all snapshot PIDs and optional group members to exit, or timeout.
 fn wait_for_all_to_exit(pids: &[i64], group: Option<i64>, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
@@ -152,19 +130,10 @@ fn wait_for_all_to_exit(pids: &[i64], group: Option<i64>, timeout: Duration) -> 
     }
 }
 
-/// `SIGTERM` the tree rooted at `pid`, wait up to `grace` for every process in
-/// it to exit, and `SIGKILL` whatever is left.
-///
-/// A service that traps or ignores `SIGTERM` would otherwise keep running while
-/// Candle's records said it was dead. The whole tree is waited on, not just the
-/// root: when the root shell exits on `SIGTERM`, a child that ignored it gets
-/// reparented to init and would drop out of any re-snapshot taken from the
-/// root. Returns `Escalated` when `SIGKILL` was needed, so callers can tell the
-/// user. Other outcomes match [`kill_process_tree`].
-///
-/// When `pid` leads its own process group, the group is signalled and waited
-/// on too. That reaches descendants the tree walk can't see, such as a
-/// double-forked child that was reparented to init.
+/// SIGTERM the tree and its own process group, then SIGKILL survivors after grace.
+/// Keep the original PID snapshot to reach children reparented when the shell
+/// exits; the group also covers descendants reparented before the snapshot.
+/// Return Escalated if SIGKILL was needed.
 pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
     let snapshot = get_process_tree(pid);
     // Before signalling: once the leader exits, getpgid on it fails.
@@ -183,8 +152,7 @@ pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
         return KillOutcome::Terminated;
     }
 
-    // Survivors from the snapshot, plus anything they've forked since. Kill
-    // children before parents so a dying parent can't respawn them.
+    // Include newly forked descendants; kill children before respawning parents.
     let mut targets: Vec<i64> = Vec::new();
     for survivor in snapshot.iter().copied().filter(|p| is_process_alive(*p)) {
         for p in get_process_tree(survivor) {
@@ -209,14 +177,8 @@ pub fn kill_process_tree_and_wait(pid: i64, grace: Duration) -> KillOutcome {
     }
 }
 
-/// `SIGTERM` every process in group `pgid`, wait up to `grace` for the group to
-/// empty, and `SIGKILL` whatever is left.
-///
-/// For a service whose shell has exited while processes it started in the
-/// background are still running: the shell's PID is gone, so there is no tree
-/// to walk, but its process group still holds them. The caller must know the
-/// group is the service's (see `leader_exited` on
-/// [`ProcessEntry`](crate::db::process_table::ProcessEntry)).
+/// Terminate a group whose shell has exited, escalating after grace.
+/// The caller must verify the group belongs to this service via leader_exited.
 pub fn kill_process_group_and_wait(pgid: i64, grace: Duration) -> KillOutcome {
     if !process_group_alive(pgid) {
         return KillOutcome::ProcessNotFound;
@@ -245,38 +207,19 @@ pub enum KillOutcome {
     Error,
 }
 
-/// Kill one process entry and update its database row accordingly.
-///
-/// A zero PID is a no-op. Otherwise the row is marked `killed_at = now`
-/// *before* the process is signalled (so the monitor can tell a deliberate stop
-/// from a failed start), and then:
-/// - **Success**: print `[Killed ...]` (unless `quiet`); then if the row was
-///   already marked killed over 5 minutes ago, warn + hard-delete it; otherwise
-///   mark `killed_at = now`.
-/// - **ProcessNotFound**: hard-delete the row (the OS process is gone, or its
-///   PID has since been given to an unrelated process, which is left alone). The
-///   warning is printed only for a row that still claimed to be running; a row
-///   already marked killed is expected to be gone (e.g. the second kill inside
-///   `restart`), so sweeping it is silent.
-/// - **Error**: print `Could not kill process ...` and undo the early mark,
-///   leaving the row as it was.
-///
-/// Returns whether this was a real kill — i.e. there was a live process to
-/// signal. Sweeping a leftover row whose OS process had already exited returns
-/// `false`, so callers do not mistake garbage collection for a kill.
+/// Mark killed before signalling so the monitor recognizes deliberate stops.
+/// Delete missing or stale rows; undo the mark on errors. Zero PID is a no-op.
+/// Return whether a live process was handled, excluding stale-row cleanup.
 pub fn kill_one_running_process(
     conn: &Connection,
     entry: &ProcessEntry,
     quiet: bool,
 ) -> rusqlite::Result<bool> {
-    // Zero PID: nothing to kill.
     if entry.pid == 0 {
         return Ok(false);
     }
 
-    // Mark the row killed *before* signalling. The monitor checks this when its
-    // process dies during the startup grace period, to tell a deliberate stop
-    // (kill / restart) from a failed start; marking afterwards would race it.
+    // Mark before signalling so startup exit classification cannot race the kill.
     if entry.killed_at.is_none() {
         update_process_killed_at(
             conn,
@@ -290,13 +233,10 @@ pub fn kill_one_running_process(
     let outcome = if is_service_process_alive(entry) {
         kill_process_tree_and_wait(entry.pid, KILL_GRACE_PERIOD)
     } else if entry.leader_exited && is_monitor_alive(entry) {
-        // The shell is gone; its monitor is still supervising what the shell
-        // left running in its process group.
+        // The monitor still supervises the exited shell's group.
         kill_process_group_and_wait(entry.pid, KILL_GRACE_PERIOD)
     } else {
-        // Nothing of the service is left. If the PID is alive it now belongs
-        // to an unrelated process (the row outlived a reboot or a killed
-        // monitor), which must not be signalled.
+        // A reused PID belongs to an unrelated process; never signal it.
         KillOutcome::ProcessNotFound
     };
 
@@ -360,13 +300,11 @@ pub fn kill_one_running_process(
                 ));
             }
 
-            // It is still running: undo the mark set above.
             if entry.killed_at.is_none() {
                 clear_process_killed_at(conn, &entry.command_name, &entry.project_dir, entry.pid)?;
             }
 
-            // The process was there but would not die; the error message above
-            // already told the user, so this counts as handled.
+            // A live process that resisted the kill still counts as handled.
             true
         }
     };
@@ -374,15 +312,9 @@ pub fn kill_one_running_process(
     Ok(killed)
 }
 
-/// Handle `candle kill [name...]`.
-///
-/// - With names: dedupe (first-occurrence order) and kill each name's entries,
-///   querying **all** matching rows (including already-killed). A name with no
-///   *live* process prints the per-service "No running processes" message unless
-///   `quiet_failure` — leftover rows swept along the way do not count as kills,
-///   so the message does not depend on how promptly the reaper has run.
-/// - Without names: kill every running row in the project; if none, print the
-///   project-wide "No running processes" message unless `quiet_failure`.
+/// Kill named services (deduped), or all running services in the project.
+/// Named queries include killed rows for cleanup; only live processes count
+/// toward suppressing the "No running processes" message.
 pub fn handle_kill_command(
     conn: &Connection,
     project_dir: &str,
@@ -444,11 +376,7 @@ fn kill_by_command_name(
     Ok(())
 }
 
-/// Handle `candle kill-all`: kill every row across every project, system-wide.
-///
-/// Uses `find_all_processes` (no project/killed filter) so
-/// already-killed-but-unreaped rows are cleaned up as a side effect. Prints
-/// `No running processes found` when there were no rows at all.
+/// Kill all process rows system-wide, also sweeping unreaped killed rows.
 pub fn handle_kill_all(conn: &Connection, quiet: bool) -> rusqlite::Result<()> {
     let processes = find_all_processes(conn)?;
     let mut killed = 0usize;
@@ -503,8 +431,7 @@ mod tests {
         );
     }
 
-    /// A row can outlive its process (a reboot, a killed monitor), and the OS
-    /// then hands the PID to something unrelated.
+    /// Reused PIDs must never be signalled.
     #[test]
     fn a_reused_pid_is_not_signalled() {
         let dir = temp_db_dir("kill-reused-pid");
@@ -548,8 +475,7 @@ mod tests {
             .spawn()
             .unwrap();
         insert(&conn, "svc", service.id() as i64);
-        // Reap the child as it dies, as a monitor would: a zombie still
-        // answers signal 0, and the kill waits for the PID to disappear.
+        // Reap the child: zombies still answer signal 0.
         let reaper = std::thread::spawn(move || service.wait().unwrap());
 
         let entry = find_all_processes(&conn).unwrap().pop().unwrap();
@@ -583,7 +509,6 @@ mod tests {
         let entry = find_all_processes(&conn).unwrap().pop().unwrap();
         let (_, captured) = capture(|| kill_one_running_process(&conn, &entry, false).unwrap());
 
-        // Dead PID -> process_not_found -> row deleted, "Cleaning up stale" on stderr.
         assert!(captured
             .stderr
             .iter()
@@ -661,10 +586,7 @@ mod tests {
 
     #[test]
     fn stale_rows_do_not_count_as_kills() {
-        // A leftover row for an already-exited process is swept, but the sweep is
-        // garbage collection, not a kill: the user still gets told nothing was
-        // running. Regression test for a flake where `kill <name>` printed nothing
-        // at all when a prior kill's row had not been reaped yet.
+        // Sweeping a dead row must still report that nothing was running.
         let dir = temp_db_dir("kill-stale-row");
         let conn = get_database(Some(&dir)).unwrap();
         insert(&conn, "svc", 2_000_000_000);
@@ -689,13 +611,10 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
         insert(&conn, "ghost", 2_000_000_000);
 
-        // "ghost" repeated: should only be processed once. Its single (dead) row
-        // is deleted on the first pass; the second pass would otherwise re-report.
+        // A duplicate name must not repeat the no-running-process report.
         let names = vec!["ghost".to_string(), "ghost".to_string()];
         let (_, captured) =
             capture(|| handle_kill_command(&conn, "/proj", &names, false, true).unwrap());
-        // quiet=true suppresses the cleanup warning, so the only line is the
-        // "nothing was running" report — emitted once, not once per duplicate.
         assert_eq!(
             captured.stdout,
             vec!["No running processes found for service 'ghost' in project '/proj'".to_string()]

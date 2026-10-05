@@ -1,13 +1,4 @@
-//! SQLite database bootstrap.
-//!
-//! Opens `candle.db` in the resolved state directory, sets WAL + busy_timeout
-//! pragmas, and runs an additive, idempotent schema migration.
-//!
-//! There is no process-wide singleton connection; a fresh connection is opened
-//! on each call. Candle is used by many processes at once (CLI, monitors, the
-//! MCP server), and each connection sets WAL + busy_timeout. The Vitest suite
-//! opens the same database with raw SQL, so the schema below is part of its
-//! contract.
+//! SQLite connections with WAL, busy timeout, and idempotent schema migration.
 
 pub mod cleanup;
 pub mod process_table;
@@ -18,13 +9,8 @@ use std::path::Path;
 
 use crate::dirs::get_state_directory;
 
-/// Table DDL. Run additively/idempotently with `if not exists` so it is safe
-/// on every startup.
-///
-/// Logs live in `log_lines`, keyed on a small `services` id rather than the
-/// full `(project_dir, command_name)` strings, which made every row and every
-/// index entry carry the project path. `process_output` is a view over the two
-/// with the old columns (see [`PROCESS_OUTPUT_VIEW`]).
+/// Idempotent table DDL. Logs use service ids to avoid repeating project paths;
+/// PROCESS_OUTPUT_VIEW exposes the legacy columns.
 const TABLE_STATEMENTS: &[(&str, &str)] = &[
     (
         "processes",
@@ -85,42 +71,27 @@ const TABLE_STATEMENTS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Index DDL, run after the tables exist (and after any table rebuild, which
-/// drops the old table's indexes).
-///
-/// Both `log_lines` indexes end in the rowid (`id`). `(service_id)` serves the
-/// id cursors (`id > ?`, newest-first scans) and eviction; `(service_id,
-/// run_id)` serves each service's latest run (`max(run_id)`) and reading one
-/// run in id order.
+/// Indexes recreated after table rebuilds. Service and service/run indexes
+/// support id cursors, latest-run queries, and eviction.
 const INDEX_STATEMENTS: &[&str] = &[
     "create index if not exists idx_log_lines_service on log_lines(service_id)",
     "create index if not exists idx_log_lines_run on log_lines(service_id, run_id)",
     "create index if not exists idx_stdin_messages_lookup on stdin_messages(project_dir, command_name, id)",
 ];
 
-/// A launch row (`process_start_initiated`) is the start of its own run, so its
-/// `run_id` is its own id. Set by trigger so the row is never visible without it.
+/// Atomically assign each launch marker its own row id as run_id.
 const LAUNCH_RUN_TRIGGER: &str = "create trigger if not exists log_lines_launch_run \
      after insert on log_lines when new.log_type = 3 begin \
      update log_lines set run_id = new.id where id = new.id; end";
 
-/// The run a row joins when its writer didn't say: the service's latest run.
-/// `service` is an SQL expression for the row's `services.id`.
-///
-/// Every row's `run_id` is the id of its run's `process_start_initiated` row
-/// (see [`LAUNCH_RUN_TRIGGER`]). The monitor stamps its rows explicitly, so rows
-/// a previous instance writes after a restart stay in the previous run
-/// whatever order they land in. This covers only the writers that don't know a
-/// run id: a monitor launched by an older candle that is still running, and
-/// rows written before the service's first launch (which get NULL).
+/// Latest run for writers without an explicit run id, or NULL before launch.
+/// `service` is an SQL expression for services.id. Monitors stamp runs explicitly
+/// so late output stays with its original launch.
 pub(crate) fn latest_run_of(service: &str) -> String {
     format!("(select max(lr.run_id) from log_lines lr where lr.service_id = {service})")
 }
 
-/// `process_output`: the log table's columns before `services` / `log_lines`
-/// replaced it, as a view. It keeps working for monitors started by an older
-/// candle, which insert into `process_output` for as long as they run, and for
-/// anyone reading the database by hand. Candle itself uses the tables.
+/// Legacy log view supporting reads and inserts by older running monitors.
 const PROCESS_OUTPUT_VIEW: &str = "create view if not exists process_output as \
      select l.id, s.command_name, s.project_dir, l.content, l.log_type, l.timestamp, l.run_id \
      from log_lines l join services s on s.id = l.service_id";
@@ -147,12 +118,7 @@ fn process_output_view_triggers() -> [String; 2] {
     ]
 }
 
-/// Open a connection to the candle database.
-///
-/// Resolves the state directory (using `override_dir` if given, else
-/// [`get_state_directory`]), creates it recursively, opens `candle.db`, sets the
-/// WAL journal mode and a 30s busy timeout, then runs the additive schema
-/// migration.
+/// Open candle.db in the resolved or overridden state directory and migrate it.
 pub fn get_database(override_dir: Option<&Path>) -> rusqlite::Result<Connection> {
     let state_dir = match override_dir {
         Some(dir) => dir.to_path_buf(),
@@ -172,8 +138,7 @@ pub fn get_database(override_dir: Option<&Path>) -> rusqlite::Result<Connection>
     open_database_at(&state_dir.join("candle.db"))
 }
 
-/// Create the state directory (and any missing parents) readable only by the
-/// owner. An existing directory is left as it is.
+/// Create a private state directory; leave existing permissions unchanged.
 pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -185,20 +150,15 @@ pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     builder.create(dir)
 }
 
-/// Make the database file readable and writable only by the owner: service
-/// logs can hold secrets. Creates the file if it is missing, because SQLite
-/// would create it with the umask's permissions (usually 0644), and tightens a
-/// database (and WAL/SHM files) left group- or world-readable by an older
-/// version. SQLite gives new WAL/SHM files the database file's permissions.
-/// Best-effort: a failure here surfaces when SQLite opens the file.
+/// Create or tighten private database and sidecar permissions; logs may contain
+/// secrets. SQLite inherits database permissions for new sidecars. Best-effort:
+/// open errors surface through SQLite.
 #[cfg(unix)]
 fn restrict_database_permissions(db_path: &Path) {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-    // `create_new` so an existing database is never opened here: closing any
-    // descriptor for a file drops every POSIX lock this process holds on it,
-    // which would silently unlock SQLite connections already open (the
-    // monitor opens a second one for stdin polling).
+    // Opening and closing an existing file would release this process's POSIX
+    // locks, including those held by other SQLite connections.
     let _ = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -220,27 +180,18 @@ fn restrict_database_permissions(db_path: &Path) {
 #[cfg(not(unix))]
 fn restrict_database_permissions(_db_path: &Path) {}
 
-/// Largest size the WAL file is left at after a checkpoint resets it. Without
-/// a limit it stays at its high-water mark (80 MB after a 200k-line burst).
+/// Cap WAL size after checkpoints; otherwise it retains its peak size.
 const WAL_SIZE_LIMIT_BYTES: i64 = 4 * 1024 * 1024;
 
-/// Open a connection to a candle database file at an explicit path.
-///
-/// Used by monitor mode, which is handed an absolute path to the
-/// `candle.db` file (rather than a state directory). Opens the file, sets the
-/// WAL journal mode and 30s busy timeout, then runs the additive, idempotent
-/// schema migration so the tables are guaranteed to exist.
+/// Open and migrate an explicit database path supplied to monitor mode.
 pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
     restrict_database_permissions(db_path);
     let conn = Connection::open(db_path)?;
 
-    // WAL + busy_timeout are mandatory for multi-process concurrency. journal_mode
-    // returns a row ("wal"); query_row consumes it, as does journal_size_limit.
+    // WAL and busy_timeout allow concurrent CLI and monitor connections.
     conn.query_row("PRAGMA journal_mode=WAL", [], |_row| Ok(()))?;
     conn.pragma_update(None, "busy_timeout", 30000)?;
-    // A trigger on the log table (`log_lines_launch_run`) makes every insert
-    // keep a statement journal, which the bundled SQLite writes to a temp file.
-    // On disk that made log inserts about 3x slower.
+    // Keep trigger statement journals in memory to avoid slow temp-file writes.
     conn.pragma_update(None, "temp_store", "MEMORY")?;
     conn.query_row(
         &format!("PRAGMA journal_size_limit={WAL_SIZE_LIMIT_BYTES}"),
@@ -253,13 +204,8 @@ pub fn open_database_at(db_path: &Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// Run the additive, idempotent schema migration on an open connection.
-///
-/// `create table if not exists` leaves an existing table alone, so a database
-/// written by a much older candle can lack columns the current code queries.
-/// Any table missing columns is rebuilt to the current schema, keeping its rows.
-/// A `process_output` table (the log table before `log_lines`) is moved into
-/// the new tables and replaced by the view.
+/// Migrate legacy schemas, preserving rows. Rebuild tables missing columns
+/// and replace the old process_output table with the compatibility view.
 fn run_migration(conn: &Connection) -> rusqlite::Result<()> {
     for (_, statement) in TABLE_STATEMENTS {
         conn.execute_batch(statement)?;
@@ -295,17 +241,9 @@ fn process_output_is_table(conn: &Connection) -> rusqlite::Result<bool> {
     )
 }
 
-/// Move the rows of a `process_output` table into `services` + `log_lines`,
-/// then drop it and create the `process_output` view in its place.
-///
-/// Row ids are kept (they are run ids, and `logs --start-at` cursors), and
-/// `log_lines` continues numbering after the old table's highest id ever
-/// issued. A table from before `run_id` existed gets each row's run by
-/// position: the latest `process_start_initiated` at or before it. A table
-/// from before `timestamp` existed stamps its rows with the migration time.
-///
-/// Runs in one `BEGIN IMMEDIATE` transaction, so another process never sees
-/// the logs half-moved or `process_output` missing.
+/// Atomically move legacy logs to services/log_lines and install the view.
+/// Preserve row ids and the highest issued id for run ids and cursors. Missing
+/// runs are assigned by launch position; missing timestamps use migration time.
 fn migrate_process_output(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
@@ -346,8 +284,7 @@ fn migrate_process_output(conn: &Connection) -> rusqlite::Result<()> {
                  order by po.id;"
         ))?;
 
-        // Explicit ids moved log_lines' sequence up to the highest copied id;
-        // ids of deleted rows above that must not be issued again either.
+        // Preserve the highest issued id, including deleted rows.
         let old_seq: Option<i64> = conn
             .query_row(
                 "select seq from sqlite_sequence where name = 'process_output'",
@@ -368,7 +305,6 @@ fn migrate_process_output(conn: &Connection) -> rusqlite::Result<()> {
             }
         }
 
-        // Drops the old indexes and the old run trigger with it.
         conn.execute_batch("drop table process_output")?;
         create_log_views_and_triggers(conn)
     })();
@@ -381,11 +317,8 @@ fn migrate_process_output(conn: &Connection) -> rusqlite::Result<()> {
     }
 }
 
-/// Give deleted rows' space back to the filesystem: `VACUUM`, then truncate the
-/// WAL, which `VACUUM` fills with a copy of the whole database.
-///
-/// The truncate is best-effort: a reader holding an old snapshot (a running
-/// `watch`) keeps the WAL in use, and `journal_size_limit` trims it later.
+/// Reclaim space with VACUUM and best-effort WAL truncation. Active readers
+/// can hold the WAL open; journal_size_limit trims it later.
 pub fn reclaim_space(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("VACUUM")?;
     conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_row| Ok(()))
@@ -413,8 +346,7 @@ fn table_columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<ColumnI
     rows.collect()
 }
 
-/// Columns of each table in the current schema, read once from an in-memory
-/// database built with the same DDL (so the list can't drift from it).
+/// Derive current columns from DDL so migration metadata cannot drift.
 fn expected_columns(table: &str) -> Vec<ColumnInfo> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
@@ -444,12 +376,8 @@ fn missing_columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<Colum
         .collect())
 }
 
-/// Rebuild `table` with the current DDL, copying rows across.
-///
-/// `ALTER TABLE ... ADD COLUMN` can't add a column whose default is an
-/// expression (`strftime(...)`), so the table is recreated instead. Columns the
-/// old table lacks take their schema default; a `not null` one with no default
-/// gets a zero value so old rows still fit.
+/// Rebuild using current DDL: ALTER cannot add expression defaults. Copy old
+/// columns, applying defaults or zero values for missing required columns.
 fn rebuild_table(conn: &Connection, table: &str, create_statement: &str) -> rusqlite::Result<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
@@ -489,7 +417,6 @@ fn rebuild_table(conn: &Connection, table: &str, create_statement: &str) -> rusq
             targets.join(", "),
             sources.join(", ")
         ))?;
-        // Dropping the old table drops its indexes; the caller recreates them.
         conn.execute_batch(&format!("DROP TABLE {old}"))?;
         Ok(())
     })();
@@ -546,7 +473,6 @@ mod tests {
         let dir = temp_db_dir("schema");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // All 5 tables exist.
         for table in [
             "processes",
             "services",
@@ -564,7 +490,6 @@ mod tests {
             assert_eq!(count, 1, "table {table} should exist");
         }
 
-        // Every index exists.
         for index in [
             "idx_log_lines_service",
             "idx_log_lines_run",
@@ -598,7 +523,6 @@ mod tests {
         let dir = temp_db_dir("columns");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // (name, type, notnull) for each column via PRAGMA table_info.
         let cols: Vec<(String, String, i64)> = {
             let mut stmt = conn.prepare("PRAGMA table_info(processes)").unwrap();
             let collected = stmt
@@ -761,7 +685,6 @@ mod tests {
         assert_eq!(content, "hello");
         assert!(ts > 0, "rebuilt rows take the schema default timestamp");
 
-        // The old table's indexes went with it.
         let idx: i64 = conn
             .query_row(
                 "select count(*) from sqlite_master where type='index' and name like 'idx_process_output%'",
@@ -771,7 +694,6 @@ mod tests {
             .unwrap();
         assert_eq!(idx, 0);
 
-        // New writes work against the upgraded tables.
         crate::logs::process_logs::save_process_log(
             &conn,
             "api",
@@ -789,17 +711,14 @@ mod tests {
     fn migration_is_idempotent() {
         let dir = temp_db_dir("idempotent");
         let conn = get_database(Some(&dir)).unwrap();
-        // Re-running migration on the same connection must not error.
         run_migration(&conn).unwrap();
-        // Opening a second time (reuses existing file) must also succeed.
         drop(conn);
         let conn2 = get_database(Some(&dir)).unwrap();
         drop(conn2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `process_output` as a table, the way the last candle before `log_lines`
-    /// wrote it: every column, index and the run trigger.
+    /// Legacy process_output schema, including indexes and run trigger.
     const LEGACY_PROCESS_OUTPUT: &str = "
         create table process_output(
             id integer primary key autoincrement,
@@ -849,7 +768,6 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
         assert!(!process_output_is_table(&conn).unwrap());
 
-        // Every row kept its id, run, type, timestamp and content.
         type MigratedRow = (i64, String, String, Option<String>, i64, i64, Option<i64>);
         let rows: Vec<MigratedRow> = {
             let mut stmt = conn
@@ -897,7 +815,6 @@ mod tests {
             .unwrap();
         assert_eq!(services, 3);
 
-        // Reads work as before.
         let tail = get_log_tail(
             &conn,
             &LogSearchOptions {
@@ -911,8 +828,7 @@ mod tests {
         let contents: Vec<_> = tail.logs.iter().filter_map(|l| l.content.clone()).collect();
         assert_eq!(contents, vec!["second run"]);
 
-        // New ids continue after the highest the old table ever issued (8, the
-        // deleted row), so they never collide with a stored run id or cursor.
+        // Preserve the sequence above deleted id 8 for run ids and cursors.
         let run = start_run(&conn, "api", "/proj").unwrap();
         assert_eq!(run, 9);
         assert_eq!(
@@ -920,7 +836,6 @@ mod tests {
             vec![("api".to_string(), 9)]
         );
 
-        // A second open finds nothing left to migrate.
         drop(conn);
         let conn = get_database(Some(&dir)).unwrap();
         let count: i64 = conn
@@ -940,8 +855,7 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
         let run = start_run(&conn, "api", "/proj").unwrap();
 
-        // The statement a monitor from the previous release runs, with and
-        // without a run id (a still older one never passes it).
+        // Exercise older monitor inserts, with and without run ids.
         let legacy_insert =
             "insert into process_output(command_name, project_dir, content, log_type, run_id) \
                              values(?1, ?2, ?3, ?4, ?5)";
@@ -955,7 +869,6 @@ mod tests {
             rusqlite::params!["api", "/proj", "unstamped", 2, None::<i64>],
         )
         .unwrap();
-        // A service's first line through the view creates its services row.
         conn.execute(
             legacy_insert,
             rusqlite::params!["new", "/proj", "first line", 1, None::<i64>],
@@ -994,7 +907,6 @@ mod tests {
         .unwrap();
         assert_eq!(tail.logs.len(), 2);
 
-        // An older monitor's cleanup deletes through the view.
         conn.execute("delete from process_output where content = 'stamped'", [])
             .unwrap();
         let left: i64 = conn
@@ -1046,8 +958,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        // About 40 bytes a line for 5-byte lines (row plus two index entries);
-        // the old schema took over 600 with this path.
+        // About 40 bytes per short line; the old schema exceeded 600 with this path.
         let per_line = bytes / lines;
         assert!(per_line < 50, "{per_line} bytes per log line");
 

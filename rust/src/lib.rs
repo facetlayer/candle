@@ -1,11 +1,5 @@
-//! candle: the whole implementation, as one crate.
-//!
-//! The `candle` binary (`src/main.rs`) is the only executable Candle ships. It has two
-//! modes: the normal CLI, and the monitor mode (`candle --monitor`) that supervises one
-//! service subprocess — see [`monitor`]. This library target exists so the integration
-//! tests under `tests/` can drive those internals directly.
-//!
-//! See `rust/docs/architecture/` for the per-subsystem reference docs.
+//! Candle implementation shared by the binary and integration tests.
+//! See `rust/docs/architecture/` for subsystem references.
 
 pub mod cli;
 pub mod commands;

@@ -1,5 +1,4 @@
-//! `erase-database` command — delete the candle SQLite database and its WAL/SHM
-//! sidecar files from the resolved state directory.
+//! Erase the SQLite database and WAL/SHM sidecars.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -11,10 +10,7 @@ use crate::output;
 use crate::process_alive::is_entry_alive;
 use crate::start::service_lock::acquire_database_lock_in;
 
-/// Services whose rows say they're running and whose shell or monitor is alive.
-///
-/// Read-only: unlike `filter_alive_processes` it deletes nothing, since the
-/// database may be about to go away anyway. A missing database has none.
+/// Read live services without pruning rows; missing databases have none.
 pub fn live_processes_in(state_dir: &Path) -> rusqlite::Result<Vec<ProcessEntry>> {
     if !state_dir.join("candle.db").exists() {
         return Ok(Vec::new());
@@ -32,16 +28,10 @@ pub enum EraseOutcome {
     RefusedLiveProcesses(Vec<ProcessEntry>),
 }
 
-/// Erase the database unless Candle-managed processes are still running.
-///
-/// Erasing under live processes orphans them: they keep running and nothing in
-/// Candle can see or stop them. So without `force` this refuses. If the
-/// database can't be read (corruption is a main reason to erase it), the check
-/// is skipped with a warning rather than blocking the erase.
+/// Refuse erasure with live services unless forced, avoiding orphaned processes.
+/// Warn and proceed if the database is unreadable.
 pub fn erase_database_guarded(state_dir: &Path, force: bool) -> std::io::Result<EraseOutcome> {
-    // Hold the database lock exclusively across the check and the erase. Every
-    // start holds it shared, so a start can't slip a new process in between
-    // "nothing is running" and the files going away.
+    // Exclude starts between the liveness check and erasure.
     let _lock = acquire_database_lock_in(state_dir, true)?;
     if !force {
         match live_processes_in(state_dir) {
@@ -83,14 +73,8 @@ pub fn handle_erase_database_command(force: bool) -> std::io::Result<EraseOutcom
     erase_database_guarded(&get_state_directory(), force)
 }
 
-/// Core logic, operating on an explicit state directory.
-///
-/// Missing files are reported but not an error; an unexpected I/O failure
-/// returns `Err` so the CLI can print `Error clearing database: <e>` and exit 1.
-///
-/// A file can also disappear between the `exists()` check and the removal — a
-/// monitor process shutting down lets SQLite checkpoint away its own WAL/SHM —
-/// so a `NotFound` from the removal itself counts as "already gone" too.
+/// Erase files in the state directory, tolerating absent files.
+/// Sidecars may disappear during concurrent SQLite checkpoints.
 pub fn erase_database_in(state_dir: &Path) -> std::io::Result<()> {
     let db_path = state_dir.join("candle.db");
     let wal_path = state_dir.join("candle.db-wal");
@@ -98,14 +82,13 @@ pub fn erase_database_in(state_dir: &Path) -> std::io::Result<()> {
 
     output::out(&format!("Clearing database at: {}", db_path.display()));
 
-    // Main database file: report whether it was present.
     if remove_if_present(&db_path)? {
         output::out("Removed database file");
     } else {
         output::out("Database file not found");
     }
 
-    // WAL / shared-memory sidecars: only reported when present.
+    // Report sidecars only when present.
     if remove_if_present(&wal_path)? {
         output::out("Removed WAL file");
     }
@@ -117,9 +100,7 @@ pub fn erase_database_in(state_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Delete `path`, returning whether it was actually there to delete.
-///
-/// Treats a `NotFound` as "already gone" rather than an error.
+/// Remove a file, returning false if already absent.
 fn remove_if_present(path: &Path) -> std::io::Result<bool> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(true),
@@ -148,7 +129,6 @@ mod tests {
             .stdout
             .iter()
             .any(|l| l == "Database erased. A new one will be created on next use."));
-        // No stderr on success.
         assert!(captured.stderr.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -156,8 +136,7 @@ mod tests {
 
     #[test]
     fn missing_state_dir_is_not_an_error() {
-        // The state dir itself never existing surfaces as ENOENT from the
-        // removal, the same way a concurrently-checkpointed WAL file does.
+        // A missing state directory also yields NotFound.
         let dir = temp_db_dir("erase-database-missing").join("never-created");
 
         let (res, captured) = capture(|| erase_database_in(&dir));
@@ -190,7 +169,6 @@ mod tests {
     #[test]
     fn refuses_while_a_tracked_process_is_alive() {
         let dir = temp_db_dir("erase-database-live");
-        // Our own PID is guaranteed alive.
         insert_process(&dir, std::process::id() as i64);
 
         let (res, _) = capture(|| erase_database_guarded(&dir, false));
@@ -218,7 +196,6 @@ mod tests {
     #[test]
     fn dead_rows_do_not_block_erase() {
         let dir = temp_db_dir("erase-database-dead");
-        // PIDs this large don't exist on macOS or Linux.
         insert_process(&dir, 99_999_999);
 
         let (res, _) = capture(|| erase_database_guarded(&dir, false));

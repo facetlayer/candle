@@ -1,26 +1,5 @@
-//! Listening-socket discovery, per platform.
-//!
-//! `list-ports` needs to know which TCP ports a set of PIDs are listening on.
-//! Each platform has a different way to answer that, so this module hides the
-//! differences behind [`listening_sockets_for_pids`]:
-//!
-//! - **Linux:** read `/proc/net/tcp` and `/proc/net/tcp6` for sockets in the
-//!   `LISTEN` state, then map each socket inode back to a PID by reading the
-//!   `/proc/<pid>/fd` links of the requested PIDs. No external tools needed, and
-//!   it works without root for processes owned by the current user (which is
-//!   all Candle ever manages). Falls back to `lsof` if `/proc/net/tcp` is
-//!   unreadable.
-//! - **macOS (and other Unixes):** `lsof -iTCP -sTCP:LISTEN -n -P`.
-//! - **Windows:** `netstat -ano -p TCP`, keeping `LISTENING` rows.
-//!
-//! Every parser is plain string handling with no platform dependency, so all of
-//! them are unit-tested on every host. Only the code that runs a tool or reads
-//! `/proc` is `cfg`-gated.
-//!
-//! When the platform's method is unavailable (tool not installed, `/proc`
-//! unreadable) the lookup fails with a [`PortLookupError`] that says what was
-//! missing and how to fix it, so `list-ports` reports that instead of a
-//! misleading "No open ports found".
+//! Discover listening TCP sockets via Linux /proc (falling back to lsof),
+//! Unix lsof, or Windows netstat. Report unavailable methods as errors.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -32,10 +11,9 @@ use std::process::{Command, Stdio};
 pub struct ListeningSocket {
     pub pid: i64,
     pub port: i64,
-    /// Local address. Wildcard IPv4 is `0.0.0.0`; IPv6 addresses are in
-    /// brackets, e.g. `[::1]` or `[::]`.
+    /// Local address with IPv6 in brackets; IPv4 wildcard is 0.0.0.0.
     pub address: String,
-    /// Always `TCP` today; kept as a field so the JSON shape can grow.
+    /// Currently TCP.
     pub protocol: String,
 }
 
@@ -90,14 +68,8 @@ const LSOF_HINT: &str = "Candle uses lsof to find which ports a service is liste
 const NETSTAT_HINT: &str = "Candle uses netstat to find which ports a service is listening on. \
     It ships with Windows in System32; check that it is on your PATH.";
 
-/// Find every listening TCP socket owned by one of `pids`.
-///
-/// Sockets are deduplicated by `pid:port`: a server that listens on both IPv4
-/// and IPv6 (or that `lsof` reports twice) is shown once, with whichever
-/// address came first.
-///
-/// An empty `pids` set returns `Ok(vec![])` without touching the system, so a
-/// project with nothing running never fails for a missing tool.
+/// Find sockets owned by pids, deduplicated by pid/port using the first address.
+/// Empty PID sets bypass system lookup.
 pub fn listening_sockets_for_pids(
     pids: &HashSet<i64>,
 ) -> Result<Vec<ListeningSocket>, PortLookupError> {
@@ -121,11 +93,8 @@ fn dedup_by_pid_port(sockets: Vec<ListeningSocket>) -> Vec<ListeningSocket> {
         .collect()
 }
 
-/// Run `command args` and return its stdout.
-///
-/// A missing executable becomes `ToolNotFound`; any other spawn failure becomes
-/// `ToolFailed`. A non-zero exit is *not* an error: `lsof` exits 1 when nothing
-/// matches, and `netstat` may warn on stderr while still printing the table.
+/// Capture tool stdout. Ignore non-zero exits: lsof uses 1 for no matches,
+/// and netstat can print usable output alongside warnings.
 fn run_capture_stdout(
     tool: &'static str,
     args: &[&str],
@@ -157,9 +126,7 @@ fn split_address_port(name: &str) -> Option<(String, i64)> {
     Some((address.to_string(), port))
 }
 
-// ---------------------------------------------------------------------------
 // Platform dispatch
-// ---------------------------------------------------------------------------
 
 #[cfg(target_os = "linux")]
 mod platform {
@@ -168,8 +135,7 @@ mod platform {
     pub fn listening_sockets(pids: &HashSet<i64>) -> Result<Vec<ListeningSocket>, PortLookupError> {
         match linux::listening_sockets_from_proc(pids) {
             Ok(sockets) => Ok(sockets),
-            // /proc/net unavailable (unusual container setups) — try lsof, and
-            // if that's missing too, report both problems.
+            // Try lsof when /proc is unavailable; report both failures if needed.
             Err(detail) => {
                 lsof::listening_sockets().map_err(|fallback| PortLookupError::ProcUnavailable {
                     detail,
@@ -202,9 +168,7 @@ mod platform {
     }
 }
 
-// ---------------------------------------------------------------------------
-// lsof (macOS, other Unixes, Linux fallback)
-// ---------------------------------------------------------------------------
+// lsof: Unix and Linux fallback
 
 #[cfg_attr(target_os = "windows", allow(dead_code))]
 mod lsof {
@@ -215,11 +179,7 @@ mod lsof {
         Ok(parse(&stdout))
     }
 
-    /// Parse `lsof -iTCP -sTCP:LISTEN -n -P` output.
-    ///
-    /// Only `LISTEN` lines with at least 9 whitespace-separated fields are
-    /// considered. PID is field 1; the address is the second-to-last field (the
-    /// last is `(LISTEN)`), split at its last `:`.
+    /// Parse lsof LISTEN rows; the address precedes the final (LISTEN) field.
     pub fn parse(output: &str) -> Vec<ListeningSocket> {
         let mut sockets = Vec::new();
         for line in output.lines() {
@@ -253,9 +213,7 @@ mod lsof {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Linux: /proc/net/tcp{,6} + /proc/<pid>/fd
-// ---------------------------------------------------------------------------
+// Linux /proc
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod linux {
@@ -266,8 +224,7 @@ mod linux {
     /// Socket state `LISTEN` in `/proc/net/tcp`'s `st` column.
     const TCP_LISTEN: &str = "0A";
 
-    /// Fails (with the I/O error text) only when `/proc/net/tcp` itself can't
-    /// be read; the caller may then fall back to another method.
+    /// Fail only if /proc/net/tcp is unreadable, allowing a fallback.
     pub fn listening_sockets_from_proc(
         pids: &HashSet<i64>,
     ) -> Result<Vec<ListeningSocket>, String> {
@@ -275,8 +232,7 @@ mod linux {
         // IPv6 may be disabled on the host; treat that file as optional.
         let tcp6 = std::fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
 
-        // IPv4 first so a dual-stack listener shows its 0.0.0.0 address after
-        // the pid:port dedup.
+        // Prefer the IPv4 address when deduplicating dual-stack listeners.
         let mut listeners = parse_proc_net_tcp(&tcp4);
         listeners.extend(parse_proc_net_tcp(&tcp6));
         if listeners.is_empty() {
@@ -306,12 +262,8 @@ mod linux {
         pub inode: u64,
     }
 
-    /// Parse the kernel's `/proc/net/tcp` / `tcp6` table, keeping `LISTEN` rows.
-    ///
-    /// Columns: `sl local_address rem_address st tx_queue:rx_queue tr:tm->when
-    /// retrnsmt uid timeout inode ...`. `local_address` is `HEXADDR:HEXPORT`
-    /// with the address in the kernel's in-memory byte order (little-endian on
-    /// every platform Candle ships for).
+    /// Parse LISTEN rows from /proc/net/tcp{,6}. Kernel addresses use
+    /// little-endian u32 words on supported platforms.
     pub fn parse_proc_net_tcp(contents: &str) -> Vec<ProcListener> {
         let mut out = Vec::new();
         for line in contents.lines().skip(1) {
@@ -360,8 +312,7 @@ mod linux {
         }
     }
 
-    /// Map socket inode → PID for the given PIDs by reading their
-    /// `/proc/<pid>/fd/*` links, which look like `socket:[12345]`.
+    /// Map socket inodes to PIDs using /proc/<pid>/fd links.
     fn socket_inodes_for_pids(pids: &HashSet<i64>) -> HashMap<u64, i64> {
         let mut map = HashMap::new();
         for pid in pids {
@@ -390,9 +341,7 @@ mod linux {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Windows: netstat
-// ---------------------------------------------------------------------------
+// Windows netstat
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 mod windows {
@@ -403,17 +352,8 @@ mod windows {
         Ok(parse(&stdout))
     }
 
-    /// Parse `netstat -ano -p TCP` output. Rows look like:
-    ///
-    /// ```text
-    ///   TCP    0.0.0.0:3000    0.0.0.0:0    LISTENING    1234
-    ///   TCP    [::]:3000       [::]:0       LISTENING    1234
-    /// ```
-    ///
-    /// The state column is localized on non-English Windows. We accept any
-    /// state token starting with `LISTEN` (English) or `ABH` (German
-    /// `ABHÖREN`), the two spellings seen in the wild; the row shape
-    /// `proto local foreign state pid` is the same everywhere.
+    /// Parse netstat rows: proto/local/foreign/state/pid. Accept English LISTEN
+    /// and German ABH state prefixes.
     pub fn parse(output: &str) -> Vec<ListeningSocket> {
         let mut sockets = Vec::new();
         for line in output.lines() {
@@ -455,7 +395,7 @@ mod tests {
         }
     }
 
-    // --- lsof -------------------------------------------------------------
+    // lsof
 
     #[test]
     fn lsof_parse_ipv4_and_star() {
@@ -486,7 +426,7 @@ short line LISTEN
         assert!(lsof::parse(out).is_empty());
     }
 
-    // --- Linux /proc --------------------------------------------------------
+    // Linux /proc
 
     #[test]
     fn proc_decode_ipv4_little_endian() {
@@ -559,7 +499,7 @@ short line LISTEN
         assert_eq!(linux::parse_socket_link("pipe:[7]"), None);
     }
 
-    // --- Windows netstat ----------------------------------------------------
+    // Windows netstat
 
     #[test]
     fn netstat_parse_listening_rows() {
@@ -585,7 +525,7 @@ Active Connections\r\n\
         );
     }
 
-    // --- errors -------------------------------------------------------------
+    // Errors
 
     #[test]
     fn missing_tool_is_reported_with_hint() {
@@ -620,7 +560,7 @@ Active Connections\r\n\
         );
     }
 
-    // --- shared -------------------------------------------------------------
+    // Shared helpers
 
     #[test]
     fn dedup_keeps_first_address_per_pid_port() {
@@ -642,7 +582,6 @@ Active Connections\r\n\
 
     #[test]
     fn finds_own_listening_socket() {
-        // End-to-end on the host: bind a port, then ask for our own PID.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port() as i64;
         let me = std::process::id() as i64;

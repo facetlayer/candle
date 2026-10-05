@@ -1,16 +1,6 @@
-//! MCP (Model Context Protocol) stdio server.
-//!
-//! Lets an LLM client manage local dev processes over a newline-delimited
-//! JSON-RPC stream on stdin/stdout. See `rust/docs/architecture/mcp.md` for the full spec.
-//!
-//! Architecture notes:
-//! - **Transport is hand-rolled**, not `rmcp`: the command handlers are
-//!   synchronous (rusqlite), so a blocking line reader matches exactly and keeps
-//!   the protocol under our control.
-//! - **stdout purity:** only JSON-RPC frames may reach real stdout. Command
-//!   handlers emit their human-readable output through [`crate::output`]; here we
-//!   run each handler inside [`crate::output::capture`] so nothing leaks to stdout
-//!   and the captured lines are surfaced inside the tool response instead.
+//! Synchronous stdio MCP server using newline-delimited JSON-RPC.
+//! Capture handler output so only protocol frames reach stdout.
+//! See `rust/docs/architecture/mcp.md`.
 
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -33,10 +23,8 @@ const DEFAULT_LOGS_LIMIT: i64 = 200;
 /// JSON-RPC "method not found" (also used for unknown tool names).
 const METHOD_NOT_FOUND: i64 = -32601;
 
-/// A tool handler: runs against the DB + cwd with the call's `arguments`,
-/// returning an optional structured result. Human-readable output is emitted via
-/// [`crate::output`] (captured by [`call_wrapped`]); a returned `Err` becomes an
-/// `isError: true` tool response.
+/// Synchronous handler returning optional structured output. call_wrapped
+/// captures emitted messages and maps errors to isError responses.
 type Handler = fn(&Connection, &Path, &Value) -> Result<Option<Value>, CandleError>;
 
 struct ToolDef {
@@ -170,7 +158,7 @@ fn resolve_project_dir(cwd: &Path) -> Result<String, CandleError> {
     Ok(find_project_dir(cwd)?.display().to_string())
 }
 
-// ---- tool handlers ---------------------------------------------------------
+// Tool handlers
 
 fn tool_list_services(
     conn: &Connection,
@@ -219,9 +207,7 @@ fn tool_get_logs(
         Some(v) if !v.is_null() => v.as_i64().unwrap_or(DEFAULT_LOGS_LIMIT),
         _ => DEFAULT_LOGS_LIMIT,
     };
-    // Same project resolution and name check as `candle logs [--project-dir]`:
-    // a name with stored logs or a process row (e.g. a finished transient
-    // service) is known even when it isn't configured.
+    // Share CLI log-name validation, including finished transient services.
     let scope = ProjectScope::new(cwd.to_path_buf(), arg_str(args, "projectDir"));
     let project_dir = scope.resolve()?;
     let names = [name];
@@ -315,7 +301,6 @@ fn tool_kill_service(
         .to_string();
     let project_dir = resolve_project_dir(cwd)?;
     let names = [name];
-    // Same check as `candle kill <name>`.
     assert_valid_command_names(conn, cwd, &names)?;
     crate::kill::handle_kill_command(conn, &project_dir, &names, false, false)?;
     Ok(None)
@@ -379,7 +364,7 @@ fn tool_open_browser(
     Ok(Some(serde_json::to_value(&output).unwrap_or(Value::Null)))
 }
 
-// ---- call wrapping ---------------------------------------------------------
+// Call wrapping
 
 struct CallOutcome {
     result: Option<Value>,
@@ -425,10 +410,9 @@ fn build_call_result(outcome: CallOutcome) -> Value {
     json!({ "content": content, "isError": false })
 }
 
-// ---- server loop -----------------------------------------------------------
+// Server loop
 
-/// Serve the MCP protocol over stdio, blocking until stdin closes. Exits the
-/// process with code 0 on EOF (the transport has no auto-shutdown).
+/// Serve until stdin closes, then exit 0.
 pub fn serve_mcp() -> ! {
     let conn = match crate::db::get_database(None) {
         Ok(conn) => conn,
@@ -494,7 +478,6 @@ fn handle_message(
     params: &Value,
     id: Option<Value>,
 ) -> Option<Value> {
-    // No id ⇒ notification (e.g. `notifications/initialized`): handle silently.
     let id = id?;
 
     let result_or_error = match method {
@@ -672,10 +655,8 @@ mod tests {
             .display()
             .to_string();
 
-        // Configured, never started.
         assert!(tool_get_logs(&conn, proj.path(), &json!({ "name": "web" })).is_ok());
 
-        // Not configured, but it has stored logs (a finished transient service).
         save_process_log(
             &conn,
             "tmp",

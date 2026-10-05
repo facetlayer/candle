@@ -1,13 +1,5 @@
-//! Argument handling for `candle --monitor`.
-//!
-//! Monitor mode is how the `candle` binary re-invokes itself to supervise one
-//! service subprocess (see [`crate::monitor`]). It is an internal entry point —
-//! the CLI launcher normally hands it a single JSON [`MonitorLaunchInfo`] object
-//! on stdin — but it also accepts explicit flags, which is handy for debugging:
-//!
-//! ```text
-//! candle --monitor --command-name api --project-dir . --shell 'npm run dev'
-//! ```
+//! Internal monitor entry point: JSON launch info on stdin, or explicit flags
+//! for debugging (`--command-name`, `--project-dir`, `--shell`).
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -16,13 +8,11 @@ use std::process::exit;
 use crate::dirs::candle_db_path;
 use crate::monitor::MonitorLaunchInfo;
 
-/// Read the launch info, run the supervision loop, and exit with the service's
-/// exit code. Never returns.
+/// Read launch info and supervise the service. Exits with its status.
 pub fn run_monitor_mode(args: &[String]) -> ! {
     let launch_info = match launch_info_from_flags(args) {
         Some(info) => info,
-        // No flags beyond `--monitor` → read a single JSON launch-info object
-        // from stdin (to EOF). This is the launcher's handshake.
+        // The launcher closes stdin after writing the JSON handshake.
         None => read_launch_info_from_stdin(),
     };
 
@@ -73,7 +63,6 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
-        // Accept `--flag value` and `--flag=value`.
         let (name, inline_value) = match arg.split_once('=') {
             Some((n, v)) => (n, Some(v.to_string())),
             None => (arg.as_str(), None),
@@ -137,7 +126,6 @@ fn launch_info_from_flags(args: &[String]) -> Option<MonitorLaunchInfo> {
         }
     };
 
-    // Resolve projectDir to an absolute path (the launcher always passes one).
     let project_dir = std::path::absolute(&project_dir)
         .unwrap_or_else(|_| PathBuf::from(&project_dir))
         .to_string_lossy()

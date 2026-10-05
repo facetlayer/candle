@@ -1,10 +1,4 @@
-//! `restart` command handler.
-//!
-//! Kills the named services (or, with no names, every service in the project),
-//! then starts each one again; a service that wasn't running is simply started.
-//! Config-defined services are reloaded from `.candle.json` so edits to
-//! `shell`/`root` take effect; transient (not-in-config) services reuse the
-//! `shell`/`root` captured on the stored DB row, unless `--shell` replaces it.
+//! Restart services, reloading configured commands and reusing transient commands.
 
 use std::path::Path;
 
@@ -21,10 +15,7 @@ use crate::start::service_lock::{self, ServiceStartLock};
 use crate::start::start_each;
 use crate::start::start_one_service::{IfRunning, RunOptions};
 
-/// Returns true if the named service has an entry in the project's
-/// `.candle.json`. Restart reloads config-defined services from the config
-/// file (picking up edits to `shell`/`root`) rather than relaunching with the
-/// captured command.
+/// Whether the service is configured and should be reloaded on restart.
 fn is_service_defined_in_config(project_dir: &str, name: &str) -> bool {
     find_config_file(Path::new(project_dir))
         .map(|f| find_service_by_name(&f.config, name).is_some())
@@ -45,9 +36,7 @@ fn all_project_services(conn: &Connection, project_dir: &str) -> Result<Vec<Stri
     Ok(names)
 }
 
-/// Take the start lock of every named service. Locks are taken in sorted
-/// order, so two restarts naming the same services in a different order can't
-/// deadlock.
+/// Lock services in sorted order to avoid deadlocks between restarts.
 fn acquire_start_locks(
     project_dir: &str,
     names: &[String],
@@ -64,15 +53,9 @@ fn acquire_start_locks(
         .collect()
 }
 
-/// Restart the given command(s), or every service in the project when none are
-/// named. `shell`/`root` replace the command of a single transient process.
-/// Returns the resolved list of restarted command names.
-///
-/// Usage errors (nothing to restart, `--shell` with other than one name) are
-/// raised before the kill+start work. A failure inside the kill+start loop is
-/// returned as `Failed to restart: <msg>`; with several services, the others
-/// are still restarted. Either way the CLI prints it to stderr and exits 1, so
-/// scripts and CI can tell a restart failed.
+/// Restart named services, or all project services; return their names.
+/// Validate usage before killing. Continue after individual failures and
+/// return an error if any restart fails.
 pub fn handle_restart(
     conn: &Connection,
     project_dir: &str,
@@ -103,7 +86,7 @@ pub fn handle_restart(
     }
 
     let result: Result<(), CandleError> = (|| {
-        // Fetch process info for all command names before killing.
+        // Capture transient commands before killing their process rows.
         let mut process_info: Vec<(String, Option<ProcessEntry>)> = Vec::new();
         for name in &names {
             let processes =
@@ -111,22 +94,13 @@ pub fn handle_restart(
             process_info.push((name.clone(), processes.into_iter().next()));
         }
 
-        // Kill all existing processes (deduped inside handle_kill_command).
-        // Services that aren't running are simply started, so don't report them.
-        //
-        // Held under each service's start lock: a concurrent restart that is
-        // mid-launch keeps the lock until its instance has reported a start,
-        // so this kill waits for that instead of stopping the instance while
-        // it starts (which the other restart would report as a failed start).
+        // Hold start locks so concurrent restarts finish launching before this kill.
         {
             let _start_locks = acquire_start_locks(project_dir, &names)?;
             handle_kill_command(conn, project_dir, &names, true, false)?;
         }
 
-        // Restart each service. An explicit --shell wins; otherwise
-        // config-defined services pass shell/root as None so start_one_service
-        // reloads from .candle.json, and transient processes reuse the
-        // captured shell/root.
+        // Explicit shell wins; otherwise reload config or reuse the transient command.
         start_each(conn, &names, |name| {
             let entry = process_info
                 .iter()

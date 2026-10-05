@@ -1,6 +1,4 @@
-//! Config subsystem: `.candle.json` parsing, discovery, validation, and the
-//! mutating commands (setup-project / add-service / remove-service / set-config).
-//!
+//! Config parsing, discovery, validation, and mutations.
 //! See `rust/docs/architecture/config.md`.
 
 pub mod commands;
@@ -12,7 +10,6 @@ pub mod validate;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-// Re-export the commonly used surface for CLI consumers.
 pub use commands::{
     add_server_config, handle_set_config, handle_setup_project, remove_server_config,
     AddServerConfigArgs,

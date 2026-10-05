@@ -1,8 +1,4 @@
-// Hand-rolled argument parser for the candle CLI.
-//
-// We deliberately do not use clap: the Vitest suite asserts on specific CLI behavior — the literal
-// substring `Unknown argument` for unrecognized flags, `Unrecognized command '<cmd>'`, exact grouped
-// help, and exit-code conventions. A small hand-rolled parser reproduces these precisely.
+// Custom CLI parser preserving Candle's help, errors, and exit conventions.
 
 use std::collections::{HashMap, HashSet};
 
@@ -60,7 +56,6 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
             ("project-dir", true),
         ],
         "list" | "ps" => &[("json", false), ("project-dir", true)],
-        // list-all is already system-wide, so a project has nothing to say here.
         "list-all" => &[("json", false)],
         "logs" => &[
             ("count", true),
@@ -73,7 +68,6 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         "watch" => &[("exit-after-ms", true), ("project-dir", true)],
         "wait-for-log" => &[("message", true), ("timeout", true), ("project-dir", true)],
         "list-ports" => &[("json", false), ("project-dir", true)],
-        // System-wide, like list-all.
         "list-ports-all" => &[("json", false)],
         "kill" | "clear-logs" | "open-browser" => &[("project-dir", true)],
         "find-orphans" | "list-docs" => &[("json", false)],
@@ -103,14 +97,8 @@ impl CommandArgs {
 /// (`candle --project-dir <dir> ps`).
 const LEADING_VALUE_OPTIONS: [&str; 1] = ["project-dir"];
 
-/// Split `argv` into the command's index and the options given before it.
-///
-/// The command is the first token that is neither a flag nor the value of a
-/// leading value-taking option, so the path in `candle --project-dir ~/app ps`
-/// is not mistaken for the command. The leading options are returned without
-/// the `--` terminator; the caller hands them to the command's own parser, so
-/// `candle --json ps` means `candle ps --json` and a flag the command doesn't
-/// take is rejected the same way in either position.
+/// Locate the command, skipping leading flags and their values. Return leading
+/// options for validation against the command spec, omitting the `--` terminator.
 pub fn split_leading_options(argv: &[String]) -> (Option<usize>, Vec<String>) {
     let mut leading = Vec::new();
     let mut i = 0;
@@ -141,11 +129,8 @@ pub struct MetaFlags {
     pub version: bool,
 }
 
-/// Find `--help` / `--version` among the tokens following a command, the way
-/// [`parse_command_args`] would read them: a token consumed as the value of a
-/// value-taking option (`--message --version`) is a value, not a flag, and nothing
-/// after a `--` terminator counts. Unknown flags are skipped rather than rejected,
-/// so `candle start --bogus --help` still shows help.
+/// Find meta flags, excluding option values and tokens after `--`.
+/// Ignore unknown flags so `--bogus --help` still shows help.
 pub fn scan_meta_flags(command: &str, tokens: &[String]) -> MetaFlags {
     let spec = option_spec(command);
     let mut out = MetaFlags::default();
@@ -171,10 +156,8 @@ pub fn scan_meta_flags(command: &str, tokens: &[String]) -> MetaFlags {
     out
 }
 
-/// Parse the tokens following a command, enforcing the command's option spec. Returns the
-/// `Unknown argument: <flag>` error string on an unrecognized flag, and rejects an inline value
-/// on a switch (`--force=false`) rather than silently treating it as set. Everything after a
-/// `--` terminator is positional.
+/// Parse command options; reject unknown flags and values on switches.
+/// Tokens after `--` are positional.
 pub fn parse_command_args(command: &str, tokens: &[String]) -> Result<CommandArgs, String> {
     let spec = option_spec(command);
     let mut out = CommandArgs::default();

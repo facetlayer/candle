@@ -1,9 +1,5 @@
-//! Lexical path validation and resolution helpers.
-//!
-//! All operations are purely lexical (string-level) and must NOT touch the
-//! filesystem — in particular do not use `canonicalize`, which resolves
-//! symlinks and requires the path to exist. `.` / `..` segments are folded
-//! textually.
+//! Lexical path resolution and validation. Avoid filesystem access: paths may
+//! not exist, and resolving symlinks would change their meaning.
 
 use std::path::{Path, PathBuf};
 
@@ -14,13 +10,8 @@ pub fn is_absolute(p: &str) -> bool {
     p.starts_with('/')
 }
 
-/// Lexically normalize a POSIX-style path, folding `.` and `..` segments and
-/// collapsing redundant separators.
-///
-/// Note the deliberate quirk: the validity check
-/// is a STRING `starts_with("..")` test on the normalized result, so a path
-/// segment literally named `..foo` normalizes to `..foo` and is therefore
-/// treated as escaping.
+/// Fold separators, `.` and `..` in a POSIX path.
+/// Validation uses a string prefix check, so `..foo` also counts as escaping.
 pub fn lexical_normalize(p: &str) -> String {
     let is_abs = p.starts_with('/');
     let mut out: Vec<&str> = Vec::new();
@@ -84,9 +75,7 @@ pub fn path_resolve(base: &Path, p: &str) -> PathBuf {
     }
 }
 
-/// Resolve a service's working directory given the config file path.
-/// The result is `dirname(configPath)` joined with `service.root`
-/// (absolute root wins), or just `dirname(configPath)` when no root is set.
+/// Resolve the service root relative to the config directory; absolute roots win.
 pub fn get_service_cwd(config_path: &Path, service: &ServiceConfig) -> PathBuf {
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new(""));
     match &service.root {

@@ -7,7 +7,7 @@ use std::fmt;
 pub enum CandleError {
     /// A user-facing usage error (bad arguments, etc.).
     UsageError(String),
-    /// A configuration file error. Notably NOT a usage error.
+    /// Configuration error, distinct from a usage error.
     ConfigFileError(String),
     /// No service with the given name is configured for a directory.
     MissingServiceWithName { command_name: String, cwd: String },
@@ -15,9 +15,7 @@ pub enum CandleError {
     /// `explicit` is set when the directory came from `--project-dir`, which
     /// never searches parent directories.
     MissingSetupFile { cwd: String, explicit: bool },
-    /// A service failed to start; carries the joined content of the recent log
-    /// lines captured during launch. `truncated` is set when earlier lines of
-    /// the run were left out.
+    /// Startup failure with recent output and a truncation flag.
     ProcessStartFailed {
         command_name: String,
         recent_logs: String,
@@ -28,11 +26,7 @@ pub enum CandleError {
 }
 
 impl CandleError {
-    /// The error every command reports for a service name it doesn't know:
-    /// `No service '<name>' configured for directory: <project_dir>`.
-    ///
-    /// All unknown-name checks (CLI commands and MCP tools alike) build their
-    /// error through this, so the text is identical everywhere.
+    /// Shared unknown-service error for CLI and MCP.
     pub fn unknown_service(name: &str, project_dir: impl fmt::Display) -> CandleError {
         CandleError::MissingServiceWithName {
             command_name: name.to_string(),
@@ -103,12 +97,7 @@ impl From<rusqlite::Error> for CandleError {
 /// The one prefix every fatal user-facing error carries on stderr.
 pub const ERROR_PREFIX: &str = "Error: ";
 
-/// Format a fatal user-facing error as `Error: <message>`.
-///
-/// Messages are written without a prefix; this adds it in one place. A message
-/// that already starts with the prefix is returned unchanged, so a caller can
-/// never produce `Error: Error: ...`. Only the first line is prefixed; any
-/// following lines (hints, recent logs) are kept as-is.
+/// Prefix the first error line once; preserve subsequent hints and log lines.
 pub fn error_line(message: &str) -> String {
     if message.starts_with(ERROR_PREFIX) {
         message.to_string()

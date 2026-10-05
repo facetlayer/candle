@@ -1,7 +1,4 @@
-//! `stdin_messages` table: a FIFO queue per service.
-//!
-//! `pop_stdin_message` wraps the select+delete in a transaction so it is atomic
-//! under concurrent access.
+//! Per-service FIFO stdin queue with atomic transactional pops.
 
 use rusqlite::{params, Connection};
 
@@ -45,8 +42,7 @@ pub fn create_stdin_message(
     Ok(conn.last_insert_rowid())
 }
 
-/// Pop the oldest (lowest id) pending message for a service, deleting it.
-/// Returns `None` if the queue is empty. The select+delete run in a transaction.
+/// Atomically remove the oldest pending message, or return None if empty.
 pub fn pop_stdin_message(
     conn: &mut Connection,
     command_name: &str,
@@ -100,7 +96,6 @@ mod tests {
         create_stdin_message(&conn, "api", "/proj", "second", Some("utf8")).unwrap();
         create_stdin_message(&conn, "api", "/proj", "third", None).unwrap();
 
-        // FIFO: oldest id first.
         let m1 = pop_stdin_message(&mut conn, "api", "/proj")
             .unwrap()
             .unwrap();
@@ -111,7 +106,6 @@ mod tests {
             .unwrap();
         assert_eq!(m2.data, "second");
 
-        // One left; clear empties it.
         clear_stdin_messages(&conn, "api", "/proj").unwrap();
         let after = pop_stdin_message(&mut conn, "api", "/proj").unwrap();
         assert!(after.is_none());
@@ -133,7 +127,6 @@ mod tests {
             .unwrap();
         assert_eq!(popped.data, "for-worker");
 
-        // api message still present.
         let api = pop_stdin_message(&mut conn, "api", "/proj")
             .unwrap()
             .unwrap();

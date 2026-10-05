@@ -1,20 +1,9 @@
-//! Process-tree discovery.
-//!
-//! Collects a root PID plus all of its transitive descendants by repeatedly
-//! querying for child PIDs with a platform-specific command:
-//! - macOS: `pgrep -P <pid>`
-//! - Linux: `ps -o pid --no-headers --ppid <pid>`
-//! - Windows: PowerShell `Get-CimInstance Win32_Process -Filter "ParentProcessId=<pid>"`
-//! - other platforms: no descendants (returns just the root).
-//!
-//! If the platform tool is missing or fails, the tree is just the root PID.
+//! Discover process descendants with platform tools; unavailable tools yield
+//! only the root PID.
 
 use std::process::{Command, Stdio};
 
-/// Get every PID in the process tree rooted at `root_pid`.
-///
-/// The root appears first, followed by descendants in discovery order. Callers
-/// that need children-first ordering (e.g. signalling) should reverse the result.
+/// Return root then descendants in discovery order; reverse for children-first signalling.
 pub fn get_process_tree(root_pid: i64) -> Vec<i64> {
     let mut all_pids = vec![root_pid];
     let mut to_visit = vec![root_pid];
@@ -29,12 +18,8 @@ pub fn get_process_tree(root_pid: i64) -> Vec<i64> {
     all_pids
 }
 
-/// The PIDs in process group `pgid`, via `pgrep -g`. Empty if the tool is
-/// missing or the group has no members.
-///
-/// For a service whose shell has exited (see `leader_exited` on
-/// [`ProcessEntry`](crate::db::process_table::ProcessEntry)): there is no root
-/// left to walk a tree from, but what it started is still in its group.
+/// Group members via pgrep -g, including children surviving an exited shell.
+/// Return empty if the tool is missing or the group is empty.
 pub fn get_process_group_members(pgid: i64) -> Vec<i64> {
     if pgid <= 1 {
         return Vec::new();
@@ -70,8 +55,7 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
     }
     #[cfg(target_os = "windows")]
     {
-        // `wmic` is deprecated and absent on recent Windows 11 builds, so use the
-        // CIM cmdlet. `-NoProfile` keeps startup fast and output predictable.
+        // CIM replaces deprecated wmic; NoProfile avoids startup configuration.
         let script = format!(
             "Get-CimInstance Win32_Process -Filter \"ParentProcessId={parent_pid}\" | \
              Select-Object -ExpandProperty ProcessId"
@@ -88,10 +72,7 @@ pub fn get_child_pids(parent_pid: i64) -> Vec<i64> {
     }
 }
 
-/// Run `command args`, parsing stdout as a newline-separated list of PIDs.
-///
-/// stdin and stderr are silenced; stdout is captured. Non-numeric and blank
-/// lines are dropped. On any spawn failure the result is an empty list.
+/// Parse tool stdout as PIDs, ignoring invalid lines; spawn failure yields none.
 #[cfg_attr(
     not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
     allow(dead_code)
@@ -110,7 +91,6 @@ fn run_command_for_pids(command: &str, args: &[&str]) -> Vec<i64> {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // `lines()` handles the `\r\n` endings PowerShell emits on Windows.
     stdout
         .lines()
         .filter_map(|line| line.trim().parse::<i64>().ok())
@@ -123,7 +103,6 @@ mod tests {
 
     #[test]
     fn tree_includes_root() {
-        // The current process always exists; its tree contains at least itself.
         let me = std::process::id() as i64;
         let tree = get_process_tree(me);
         assert!(tree.contains(&me));
@@ -132,7 +111,6 @@ mod tests {
 
     #[test]
     fn child_pids_of_unallocated_pid_is_empty() {
-        // A PID that is essentially never allocated has no children.
         assert!(get_child_pids(2_000_000_000).is_empty());
     }
 }

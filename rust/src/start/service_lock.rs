@@ -1,14 +1,6 @@
-//! Per-service start lock.
-//!
-//! `start` is kill-then-launch. Without serialization, two concurrent starts of
-//! the same service each see "nothing running" (or each kill the same old
-//! instance) and each launch a new one, leaving duplicate instances that only
-//! `list-all` can see. Coding agents running parallel subagents hit this easily.
-//!
-//! The lock is an advisory `flock` on a file under `<state dir>/locks/`, keyed by
-//! project directory + service name. It is held for the whole start sequence and
-//! released when the guard drops, or by the kernel if the CLI dies. Rust opens
-//! files close-on-exec, so the detached monitor never inherits it.
+//! Serialize launches with per-service flock files to prevent duplicate starts.
+//! Hold through startup; drop or process exit releases the lock. Close-on-exec
+//! prevents the monitor from inheriting it.
 
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::AsRawFd;
@@ -16,10 +8,8 @@ use std::path::{Path, PathBuf};
 
 use crate::dirs::get_state_directory;
 
-/// Holds the lock until dropped.
-///
-/// Also holds a shared lock on the database lock file, so `erase-database`
-/// (which takes it exclusively) can't erase while a start is in progress.
+/// Hold the service lock and shared database lock until dropped, preventing
+/// concurrent starts and database erasure.
 pub struct ServiceStartLock {
     _database: DatabaseLock,
     _file: File,
@@ -30,16 +20,14 @@ pub struct DatabaseLock {
     _file: File,
 }
 
-/// Path of the lock file that `erase-database` takes exclusively and every
-/// start takes shared.
+/// Database lock path: shared for starts, exclusive for erasure.
 pub fn database_lock_path(state_dir: &Path) -> PathBuf {
     state_dir.join("locks").join("database.lock")
 }
 
 fn open_lock_file(path: &Path) -> std::io::Result<File> {
     if let Some(parent) = path.parent() {
-        // The lock can be taken before the database is first opened, so this
-        // may be what creates the state directory.
+        // Lock acquisition can precede database creation.
         crate::db::create_private_dir(parent)?;
     }
     OpenOptions::new()
@@ -105,8 +93,7 @@ pub fn acquire_in(
     project_dir: &str,
     service_name: &str,
 ) -> std::io::Result<ServiceStartLock> {
-    // Always database lock first, then the service lock. Erase only ever takes
-    // the database lock, so this fixed order can't deadlock.
+    // Acquire database before service locks to prevent deadlocks.
     let database = acquire_database_lock_in(state_dir, false)?;
     let file = open_lock_file(&lock_path(state_dir, project_dir, service_name))?;
     flock_blocking(&file, libc::LOCK_EX)?;
@@ -148,8 +135,7 @@ mod tests {
         let flag = acquired.clone();
         let dir2 = dir.clone();
         let handle = std::thread::spawn(move || {
-            // flock locks belong to the open file description, so a second
-            // open in the same process contends like another process would.
+            // Separate opens contend even within the same process.
             let _second = acquire_in(&dir2, "/proj", "svc").unwrap();
             flag.store(true, Ordering::SeqCst);
         });

@@ -1,10 +1,4 @@
-//! Process output (log) storage and retrieval.
-//!
-//! Rows are written by the monitor process and read back by the CLI / MCP
-//! server. They live in `log_lines`, keyed on a `services` row per
-//! `(project_dir, command_name)`; see `db/mod.rs`. The `timestamp` column is
-//! populated by its SQLite `DEFAULT (strftime('%s','now'))`, so it is not
-//! supplied on insert.
+//! Log storage in `log_lines`, keyed by service and launch run.
 
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection};
@@ -20,9 +14,7 @@ pub struct ProcessLog {
     pub content: Option<String>,
     pub log_type: i64,
     pub timestamp: i64,
-    /// The run this row belongs to: the id of that run's
-    /// `process_start_initiated` row. `None` only for rows saved before the
-    /// service's first launch. See `latest_run_of` in `db/mod.rs`.
+    /// Launch marker id, or `None` before the first launch.
     pub run_id: Option<i64>,
 }
 
@@ -48,11 +40,9 @@ pub struct LogSearchOptions {
     pub run_id: Option<i64>,
 }
 
-/// Insert a new process log line belonging to `run_id`.
-///
-/// With `run_id: None` the row joins the service's latest run, which is only
-/// right for writers that can't be overtaken by a newer launch. `timestamp` is
-/// intentionally omitted so the column DEFAULT fills it in (unix seconds).
+/// Insert a row for `run_id`, or the latest run when omitted.
+/// Omit the run only if a newer launch cannot overtake this writer.
+/// SQLite supplies the timestamp.
 pub fn save_run_log(
     conn: &Connection,
     run_id: Option<i64>,
@@ -65,10 +55,7 @@ pub fn save_run_log(
     Ok(())
 }
 
-/// Save several output rows for one run in a single transaction.
-///
-/// A commit per line limits the monitor to roughly 10k lines/sec, so it
-/// writes whatever output has queued up in one go.
+/// Batch output rows in one transaction to avoid a commit per line.
 pub fn save_run_logs<'a>(
     conn: &Connection,
     run_id: Option<i64>,
@@ -90,12 +77,8 @@ pub fn save_run_logs<'a>(
     tx.commit()
 }
 
-/// Insert a log row and return its id.
-///
-/// The row is inserted in one statement that looks up its `services` row. The
-/// first log of a service finds none (`0` rows inserted), so the service row is
-/// created and the insert retried. Cleanup deletes service rows that have no
-/// logs, so the retry can in principle miss again; it loops until it lands.
+/// Insert a row, creating its service if absent. Retry if cleanup removes the
+/// service between creation and insertion.
 fn insert_log(
     conn: &Connection,
     run_id: Option<i64>,
@@ -139,9 +122,7 @@ pub fn save_process_log(
     save_run_log(conn, None, command_name, project_dir, log_type, content)
 }
 
-/// Record a new launch of `command_name` and return its run id: the id of the
-/// `process_start_initiated` row, which the database assigns as the row's own
-/// run (see `LAUNCH_RUN_TRIGGER` in `db/mod.rs`).
+/// Record a launch and return its row id, also assigned as its run id by trigger.
 pub fn start_run(
     conn: &Connection,
     command_name: &str,
@@ -179,9 +160,7 @@ pub fn latest_run_ids(
     rows.collect()
 }
 
-/// Whether any row of the latest run of the commands in scope, up to and
-/// including `max_log_id`, contains `message`. The search runs in SQL so a run
-/// of any length is covered without loading it.
+/// Search the latest runs through `max_log_id` in SQL, without loading logs.
 pub fn latest_run_contains(
     conn: &Connection,
     project_dir: &str,
@@ -205,11 +184,7 @@ pub fn latest_run_contains(
     conn.prepare(&sql)?.exists(params_from_iter(params))
 }
 
-/// Build the log-search SQL + params.
-///
-/// Returns rows in newest-first order (`id desc`, which is insertion order);
-/// callers that want chronological order should reverse the result (see
-/// [`get_process_logs`]).
+/// Build a newest-first log query; reverse results for chronological order.
 fn build_log_search_query(options: &LogSearchOptions) -> (String, Vec<Value>) {
     let (scope, mut params) = scope_clause(options);
     let mut sql = format!(
@@ -271,8 +246,7 @@ fn scope_clause(options: &LogSearchOptions) -> (String, Vec<Value>) {
         params.extend(options.command_names.iter().cloned().map(Value::Text));
     }
     if conditions.is_empty() {
-        // Neither a project nor names: a caller error. Match nothing rather
-        // than every row in the database.
+        // An unscoped query must not expose every log in the database.
         conditions.push("1 = 0".to_string());
     }
     (conditions.join(" and "), params)
@@ -287,9 +261,7 @@ fn push_latest_launch_filter(sql: &mut String) {
     ));
 }
 
-/// Keep only rows from the run before the row's command's latest one: the
-/// highest `run_id` below the highest. `=` rather than `is`, so a command with a
-/// single run (the subquery is null) keeps nothing.
+/// Select the previous run; `=` excludes NULL when no previous run exists.
 fn push_previous_launch_filter(sql: &mut String) {
     sql.push_str(&format!(
         " and l.run_id = (select max(l2.run_id) from log_lines l2 \
@@ -328,10 +300,7 @@ pub struct ProcessLogResult {
     pub logs_were_evicted: bool,
 }
 
-/// Fetch process logs in chronological (oldest-first) order.
-///
-/// The SQL fetches newest-first (so a `limit` keeps the
-/// most recent rows); the result is then reversed into chronological order.
+/// Fetch the newest matching rows, returned in chronological order.
 pub fn get_process_logs(
     conn: &Connection,
     options: &LogSearchOptions,
@@ -339,12 +308,7 @@ pub fn get_process_logs(
     Ok(get_process_logs_with_eviction_info(conn, options)?.logs)
 }
 
-/// Fetch process logs plus a flag indicating whether older logs were evicted.
-///
-/// When a `limit` is set and we got at
-/// least that many rows, re-run the same (limitless) query wrapped in a
-/// `count(*)` subquery; if the total exceeds what we returned, older logs were
-/// truncated.
+/// Fetch logs and, when the limit is reached, count matches to detect truncation.
 pub fn get_process_logs_with_eviction_info(
     conn: &Connection,
     options: &LogSearchOptions,
@@ -372,7 +336,6 @@ pub fn get_process_logs_with_eviction_info(
         }
     }
 
-    // Newest-first -> chronological.
     logs.reverse();
     Ok(ProcessLogResult {
         logs,
@@ -397,8 +360,7 @@ pub enum RunScope {
     /// The latest run only (the default for `candle logs`).
     #[default]
     Latest,
-    /// The run before the latest (`logs --previous`), e.g. the one that crashed
-    /// before the service was started again.
+    /// The previous run (`logs --previous`).
     Previous,
     /// Every stored run, oldest first (`logs --all-runs`).
     All,
@@ -414,12 +376,8 @@ pub struct LogTail {
     pub truncated: bool,
 }
 
-/// Fetch the last `limit` printable log rows of the latest run, for
-/// `candle logs --count`.
-///
-/// Marker rows and a previous run's rows never count against the limit: they
-/// made `--count 3` print two lines whenever `process_started` fell inside the
-/// window, or right after a restart.
+/// Fetch the latest run's last `limit` printable rows per command.
+/// Launch markers and previous runs do not count against the limit.
 pub fn get_log_tail(
     conn: &Connection,
     options: &LogSearchOptions,
@@ -566,12 +524,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(logs.len(), 3);
-        // Chronological: insertion order preserved.
         assert_eq!(logs[0].log_type, ProcessLogType::ProcessStarted.as_i64());
         assert_eq!(logs[0].content, None);
         assert_eq!(logs[1].content, Some("line one".to_string()));
         assert_eq!(logs[2].content, Some("line two".to_string()));
-        // Timestamp filled in by DEFAULT.
         assert!(logs[0].timestamp > 0);
 
         drop(conn);
@@ -594,7 +550,6 @@ mod tests {
             .unwrap();
         }
 
-        // after_log_id = 2 -> ids 3,4,5.
         let after = get_process_logs(
             &conn,
             &LogSearchOptions {
@@ -607,10 +562,8 @@ mod tests {
         .unwrap();
         assert_eq!(after.len(), 3);
         assert!(after.iter().all(|l| l.id > 2));
-        // Still chronological.
         assert!(after[0].id < after[2].id);
 
-        // limit keeps the newest N, reversed to chronological.
         let limited = get_process_logs(
             &conn,
             &LogSearchOptions {
@@ -645,7 +598,6 @@ mod tests {
             .unwrap();
         }
 
-        // limit 2 with 5 rows present -> eviction detected.
         let result = get_process_logs_with_eviction_info(
             &conn,
             &LogSearchOptions {
@@ -659,7 +611,6 @@ mod tests {
         assert_eq!(result.logs.len(), 2);
         assert!(result.logs_were_evicted);
 
-        // limit covering everything -> no eviction.
         let result = get_process_logs_with_eviction_info(
             &conn,
             &LogSearchOptions {

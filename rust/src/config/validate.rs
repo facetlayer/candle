@@ -1,7 +1,4 @@
 //! Config validation and normalization.
-//!
-//! Takes a parsed JSON value and returns a normalized, validated
-//! [`CandleSetupConfig`], or a `ConfigFileError` describing the problem.
 
 use std::collections::HashSet;
 
@@ -32,8 +29,7 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
     let obj: Map<String, Value> = match value {
         Value::Object(m) => m,
         other => {
-            // A non-object top level is not expected in practice. Treat it as invalid
-            // `services` for a clear, deterministic error.
+            // Report a non-object config as invalid services.
             return Err(CandleError::ConfigFileError(format!(
                 "Config file error: Invalid value for 'services': {}",
                 serde_json::to_string(&other).unwrap_or_default()
@@ -41,7 +37,6 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
         }
     };
 
-    // Normalize `services`: missing or falsy -> [].
     let services_value = match obj.get("services") {
         Some(v) if is_truthy(v) => v.clone(),
         _ => Value::Array(Vec::new()),
@@ -50,14 +45,12 @@ pub fn validate_config(value: Value) -> Result<CandleSetupConfig, CandleError> {
     let (services, service_raw) = parse_services(services_value)?;
     let log_eviction = parse_log_eviction(obj.get("logEviction"))?;
 
-    // Capture top-level key order. Normalization adds a `services` key when
-    // absent, so append it to the order.
+    // Include the services key added by normalization.
     let mut key_order: Vec<String> = obj.keys().cloned().collect();
     if !key_order.iter().any(|k| k == "services") {
         key_order.push("services".to_string());
     }
 
-    // Preserve unknown top-level keys verbatim.
     let mut extra = Map::new();
     for (k, v) in &obj {
         if !KNOWN_TOP_LEVEL_KEYS.contains(&k.as_str()) {
@@ -97,8 +90,7 @@ fn parse_services(services_value: Value) -> Result<ParsedServices, CandleError> 
             }
         }
         Value::Object(map) => {
-            // Object-map form: each [key, value] becomes { name: key, ...value }.
-            // The spread comes *after* `name`, so a `name` inside the value wins.
+            // In object-map form, an explicit name overrides the map key.
             for (key, value) in map {
                 let mut merged = Map::new();
                 merged.insert("name".to_string(), Value::String(key));
@@ -149,10 +141,7 @@ fn unknown_key_message(key: &str, location: &str, known: &[&'static str]) -> Str
     msg
 }
 
-/// Warnings for keys Candle ignores, at the top level and inside each service.
-///
-/// Unknown keys are kept on write-back, so these are warnings, not errors; the
-/// point is to catch typos like `"cwd"` for `"root"` that otherwise do nothing.
+/// Warn about ignored keys to catch typos; preserve them on write-back.
 pub fn unknown_key_warnings(value: &Value, filename: &str) -> Vec<String> {
     let Value::Object(obj) = value else {
         return Vec::new();
@@ -198,7 +187,6 @@ pub fn unknown_key_warnings(value: &Value, filename: &str) -> Vec<String> {
 }
 
 fn parse_service(value: &Value, seen: &mut HashSet<String>) -> Result<ServiceConfig, CandleError> {
-    // name: must be a non-empty string.
     let name = match value.get("name") {
         Some(Value::String(s)) if !s.is_empty() => s.clone(),
         _ => {
@@ -208,7 +196,6 @@ fn parse_service(value: &Value, seen: &mut HashSet<String>) -> Result<ServiceCon
         }
     };
 
-    // shell: must be a non-empty string.
     let shell = match value.get("shell") {
         Some(Value::String(s)) if !s.is_empty() => s.clone(),
         _ => {
@@ -225,7 +212,6 @@ fn parse_service(value: &Value, seen: &mut HashSet<String>) -> Result<ServiceCon
     }
     seen.insert(name.clone());
 
-    // root: only validate when present and truthy (non-empty string).
     let root = match value.get("root") {
         Some(Value::String(s)) => {
             if !s.is_empty() && !is_valid_root_path(s) {

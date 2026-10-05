@@ -1,11 +1,5 @@
-//! Filters a log stream down to each command's latest run.
-//!
-//! Every row carries the `run_id` of the launch it belongs to (see
-//! [`ProcessLog::run_id`]), so a row is in the latest run exactly when its
-//! `run_id` is the highest seen for its command. This doesn't depend on the
-//! order rows arrive in: output a previous instance writes after a restart
-//! keeps its old `run_id` and is dropped. `formal/Candle/RunFilter.lean` proves
-//! this for every input.
+//! Keep each command's highest run id, ignoring late output from older monitors.
+//! Proven in `formal/Candle/RunFilter.lean`.
 
 use std::collections::HashMap;
 
@@ -13,13 +7,9 @@ use rusqlite::Connection;
 
 use crate::logs::process_logs::{latest_run_ids, ProcessLog};
 
-/// Keeps only rows from each command's latest run, optionally also only rows
-/// within a recent time window.
-///
-/// Seed it with [`seed_latest_runs`](Self::seed_latest_runs) before filtering a
-/// batch of existing rows, so rows from a run that has since been superseded
-/// are dropped even if the newer run's rows aren't in the batch. While
-/// streaming, a row from a newer run moves the filter on to that run.
+/// Filter to the latest runs and an optional recent time window.
+/// Seed existing batches with [`Self::seed_latest_runs`] so superseded rows are
+/// dropped even when the newer run is absent from the batch.
 #[derive(Debug, Clone, Default)]
 pub struct LatestRunFilter {
     /// Highest `run_id` seen per command. `None` (the least `Option`) until a

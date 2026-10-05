@@ -1,8 +1,4 @@
-//! `open-browser` command.
-//!
-//! Resolves a service name (explicit or the sole running one), finds its lowest
-//! listening port via [`handle_list_ports`], opens `http://localhost:<port>` in
-//! the platform browser, and returns the chosen port/url.
+//! Open a service's lowest listening port in the platform browser.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -25,9 +21,8 @@ pub struct OpenBrowserOutput {
     pub url: String,
 }
 
-/// Resolve which service to open. An explicit name wins; otherwise there must be
-/// exactly one process row (running or killed — `find_processes_by_project_dir`
-/// includes killed) for the project.
+/// Use the explicit name, or require exactly one project process row
+/// (including killed rows).
 fn resolve_service_name(
     conn: &Connection,
     project_dir: &str,
@@ -63,8 +58,7 @@ fn resolve_service_name(
 
 /// Open a browser to the lowest listening port of a project service.
 ///
-/// `cwd` is needed because port detection re-resolves the project config; the
-/// caller passes the already-resolved `project_dir` for service-name resolution.
+/// cwd drives port config lookup; project_dir drives name resolution.
 pub fn handle_open_browser(
     conn: &Connection,
     cwd: &Path,
@@ -89,7 +83,6 @@ pub fn handle_open_browser(
         )));
     }
 
-    // Pick the numerically lowest port.
     let port = ports_output
         .ports
         .iter()
@@ -107,8 +100,7 @@ pub fn handle_open_browser(
     })
 }
 
-/// Launch the platform browser, fully detached so candle can exit without
-/// killing it.
+/// Launch the browser detached so it survives Candle exit.
 fn open_url(url: &str) -> Result<(), CandleError> {
     #[cfg(target_os = "macos")]
     let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
@@ -130,7 +122,6 @@ fn open_url(url: &str) -> Result<(), CandleError> {
     }
 }
 
-/// The user-facing line printed after a successful open.
 pub fn format_open_browser_output(output: &OpenBrowserOutput) -> String {
     format!("Opened {} in browser", output.url)
 }

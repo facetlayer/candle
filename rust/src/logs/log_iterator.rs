@@ -1,16 +1,10 @@
-//! A forward cursor over log rows for a fixed query scope.
-//!
-//! The polling loop lives in the caller ([`crate::start::start_one_service`]);
-//! this type just tracks the cursor position (`current_log_id`) and fetches the
-//! next batch on demand.
+//! Forward log cursor; callers handle polling.
 
 use rusqlite::Connection;
 
 use crate::logs::process_logs::{get_process_logs, LogSearchOptions, ProcessLog};
 
-/// A cursor over the `log_lines` table scoped to a `(project_dir,
-/// command_names)` pair. Tracks the id of the last consumed row so repeated
-/// fetches only return newer rows.
+/// Project-scoped cursor tracking the last consumed row id.
 #[derive(Debug, Clone)]
 pub struct LogIterator {
     project_dir: String,
@@ -48,9 +42,7 @@ impl LogIterator {
         }
     }
 
-    /// Seed `current_log_id` to the id of the newest existing matching row (or
-    /// `None` if there are none), so subsequent fetches only see rows produced
-    /// after this point.
+    /// Skip existing rows by seeding the cursor with the newest matching id.
     pub fn reset_to_latest_log_message(&mut self, conn: &Connection) -> rusqlite::Result<()> {
         self.current_log_id = None;
         let options = LogSearchOptions {
@@ -73,9 +65,7 @@ impl LogIterator {
         self.clone()
     }
 
-    /// Fetch rows with id greater than `current_log_id` WITHOUT advancing the
-    /// cursor. The effective limit is `limit_override` if set, otherwise the
-    /// constructor limit.
+    /// Fetch newer rows without advancing; use the override or default limit.
     pub fn peek_next_logs(
         &self,
         conn: &Connection,
@@ -85,9 +75,7 @@ impl LogIterator {
         get_process_logs(conn, &self.search_options(limit))
     }
 
-    /// Fetch rows with id greater than `current_log_id`, advancing the cursor to
-    /// the last returned row. The effective limit is `limit_override` if set,
-    /// otherwise the constructor limit.
+    /// Fetch newer rows and advance; use the override or default limit.
     pub fn get_next_logs(
         &mut self,
         conn: &Connection,
@@ -131,10 +119,8 @@ mod tests {
         it.reset_to_latest_log_message(&conn).unwrap();
         assert_eq!(it.current_log_id, Some(3));
 
-        // Nothing new yet.
         assert!(it.get_next_logs(&conn, None).unwrap().is_empty());
 
-        // Add two more; the cursor only returns those.
         seed(&conn, 2);
         let next = it.get_next_logs(&conn, None).unwrap();
         assert_eq!(next.len(), 2);
@@ -142,7 +128,6 @@ mod tests {
         assert_eq!(next[1].id, 5);
         assert_eq!(it.current_log_id, Some(5));
 
-        // Exhausted again.
         assert!(it.get_next_logs(&conn, None).unwrap().is_empty());
 
         drop(conn);
@@ -158,7 +143,6 @@ mod tests {
         it.reset_to_latest_log_message(&conn).unwrap();
         assert_eq!(it.current_log_id, None);
 
-        // A fresh cursor with no position returns everything.
         seed(&conn, 2);
         let all = it.get_next_logs(&conn, None).unwrap();
         assert_eq!(all.len(), 2);
@@ -178,13 +162,11 @@ mod tests {
         let initial = it.copy();
         assert_eq!(initial.current_log_id, Some(1));
 
-        // Advance the original; the copy stays put.
         seed(&conn, 2);
         it.get_next_logs(&conn, None).unwrap();
         assert_eq!(it.current_log_id, Some(3));
         assert_eq!(initial.current_log_id, Some(1));
 
-        // The copy, fetched from its frozen position, sees everything after id 1.
         let mut initial = initial;
         let from_initial = initial.get_next_logs(&conn, None).unwrap();
         assert_eq!(from_initial.len(), 2);
@@ -216,8 +198,7 @@ mod tests {
         let conn = get_database(Some(&dir)).unwrap();
         seed(&conn, 5);
 
-        // Constructor limit of 2: a fresh cursor returns only the newest 2 rows,
-        // in chronological order.
+        // The limit selects newest rows, returned chronologically.
         let mut it = LogIterator::with_limit("/proj".to_string(), vec!["api".to_string()], Some(2));
         let two = it.get_next_logs(&conn, None).unwrap();
         assert_eq!(two.len(), 2);
@@ -225,7 +206,6 @@ mod tests {
         assert_eq!(two[1].id, 5);
         assert_eq!(it.current_log_id, Some(5));
 
-        // A per-call override takes precedence over the constructor limit.
         let mut it2 =
             LogIterator::with_limit("/proj".to_string(), vec!["api".to_string()], Some(2));
         let one = it2.get_next_logs(&conn, Some(1)).unwrap();

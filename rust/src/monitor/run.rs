@@ -1,15 +1,5 @@
-//! The monitor-mode supervision lifecycle.
-//!
-//! Uses std threads (no tokio). The flow:
-//!
-//! 1. open the DB and spawn `sh -c <shell>` (cwd = projectDir[/root]);
-//! 2. register a `processes` row (pid = shell, log_collector_pid = self);
-//! 3. stream stdout/stderr lines into `log_lines`;
-//! 4. a 500ms grace period distinguishes a fast failure from a real start;
-//! 5. poll the stdin queue (when enabled) and run periodic cleanup;
-//! 6. when the shell exits, keep going while its process group still has
-//!    members (something it started in the background);
-//! 7. then log `process_exited` and delete the `processes` row.
+//! Supervise a service with std threads, recording output and lifecycle rows.
+//! Keep supervising background group members after the shell exits.
 
 use std::cell::Cell;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -43,15 +33,9 @@ use crate::monitor::MonitorLaunchInfo;
 const GRACE_PERIOD_MS: u64 = 500;
 const STDIN_POLL_INTERVAL_MS: u64 = 500;
 const CLEANUP_INTERVAL_MS: u128 = 60 * 1000;
-/// After the child exits, how long to keep collecting output the reader threads
-/// haven't forwarded yet. Normally both pipes close right after the exit and
-/// the drain ends at once; the timeout only matters when a background
-/// grandchild inherited the pipes and holds them open, possibly forever. Losing
-/// a few lines written after the timeout in that case is acceptable, and
-/// keeping it short means the exit (and `ps` / `kill`) isn't held up.
+/// Bound post-exit draining when descendants keep output pipes open.
 const POST_EXIT_DRAIN_MS: u64 = 500;
-/// Once the service's shell has exited, how often to check whether its
-/// process group has emptied.
+/// Poll interval for group members surviving the shell.
 const GROUP_POLL_INTERVAL_MS: u64 = 250;
 
 /// Events forwarded from the reader / wait threads to the supervisor.
@@ -69,9 +53,7 @@ struct ChildExit {
     signal: Option<i32>,
 }
 
-/// Human-readable message for a process exit after a successful start. A
-/// signal Candle sent (`kill` / `restart`) is a deliberate stop; any other
-/// signal (a segfault, the OOM killer) is a crash that `ps` shows as `FAILED`.
+/// Format the exit, distinguishing deliberate stops from signal crashes.
 fn exit_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     match (exit.code, exit.signal) {
         (Some(c), _) => format!("Process exited with code {c}"),
@@ -80,12 +62,8 @@ fn exit_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     }
 }
 
-/// Variables added to a service's environment unless it already has them
-/// (even set to an empty value, which is how to turn one off).
-///
-/// `PYTHONUNBUFFERED`: the service's stdout is a pipe, so Python would hold
-/// its output in a block buffer and `logs` / `wait-for-log` would see nothing
-/// until the buffer filled or the program exited.
+/// Environment defaults preserving even empty overrides. PYTHONUNBUFFERED
+/// prevents Python from buffering output piped to the monitor.
 const DEFAULT_SERVICE_ENV: [(&str, &str); 1] = [("PYTHONUNBUFFERED", "1")];
 
 /// The entries of [`DEFAULT_SERVICE_ENV`] that `is_set` doesn't report as set.
@@ -97,16 +75,10 @@ fn default_service_env(
         .filter(move |(name, _)| !is_set(name))
 }
 
-/// Longest line stored as one log row. Output with no newline for longer than
-/// this is split into rows of this size, so a service that never ends its line
-/// can't grow the monitor without limit.
+/// Split unterminated lines at this size to bound memory.
 const MAX_LINE_BYTES: usize = 64 * 1024;
 
-/// How many output lines can wait to be written to the database. When the
-/// queue is full the reader threads stop reading, the pipe fills, and the
-/// service blocks on its next write: a service that prints faster than the
-/// database can take it is slowed to that rate instead of the backlog piling
-/// up in the monitor's memory.
+/// Bound queued output; backpressure slows services to the database write rate.
 const OUTPUT_QUEUE_LINES: usize = 2 * MAX_BATCH;
 
 /// Where to cut `buf` so that a UTF-8 sequence left incomplete at its end
@@ -118,16 +90,11 @@ fn utf8_split_point(buf: &[u8]) -> usize {
     }
 }
 
-/// Forward each line of a child's output pipe as an event until EOF.
-///
-/// Reads bytes rather than `String`s so output that isn't valid UTF-8 is
-/// decoded lossily instead of ending the read: closing the pipe early would
-/// kill the child with SIGPIPE on its next write. A line longer than
-/// [`MAX_LINE_BYTES`] is forwarded in pieces.
+/// Forward output until EOF, splitting long lines and decoding invalid UTF-8
+/// lossily so a decoding error cannot close the pipe and cause SIGPIPE.
 fn forward_lines(pipe: impl Read, tx: mpsc::SyncSender<LineEvent>, event: fn(String) -> LineEvent) {
     let mut reader = BufReader::new(pipe);
-    // Holds the start of a line across iterations only when a split left an
-    // incomplete UTF-8 sequence to carry over.
+    // Carry incomplete UTF-8 bytes across chunks.
     let mut buf = Vec::new();
     loop {
         let room = (MAX_LINE_BYTES - buf.len()) as u64;
@@ -149,8 +116,7 @@ fn forward_lines(pipe: impl Read, tx: mpsc::SyncSender<LineEvent>, event: fn(Str
                     carry = buf.split_off(utf8_split_point(&buf));
                 }
                 let line = String::from_utf8_lossy(&buf).into_owned();
-                // If the supervisor is gone this fails at once; keep draining
-                // so the child never blocks or gets SIGPIPE.
+                // Keep draining after supervisor exit to avoid blocking the child or SIGPIPE.
                 let _ = tx.send(event(line));
                 buf = carry;
             }
@@ -182,9 +148,7 @@ fn split_events(
     (lines, exit)
 }
 
-/// `first` plus the events already queued behind it, up to [`MAX_BATCH`].
-/// Never waits: a lone line on a quiet service is written at once. Stops at
-/// an `Exit` so the caller sees it right after the lines that preceded it.
+/// Collect already-queued events up to MAX_BATCH or Exit, without waiting.
 fn take_queued(
     rx: &mpsc::Receiver<LineEvent>,
     first: LineEvent,
@@ -199,8 +163,7 @@ fn take_queued(
     split_events(events)
 }
 
-/// While a service floods its output, the monitor trims that service's logs
-/// each time it has written this many lines...
+/// Trim after this many lines...
 const TRIM_AFTER_LINES: usize = 100_000;
 /// ...or this many bytes, whichever comes first.
 const TRIM_AFTER_BYTES: usize = 32 * 1024 * 1024;
@@ -233,17 +196,9 @@ impl OutputWriter<'_> {
         self.trim_if_due(lines.len(), lines.iter().map(|(_, l)| l.len()).sum());
     }
 
-    /// Bound what a flooding service can put in the database.
-    ///
-    /// `maxLogsPerService` is applied by the periodic cleanup, which runs at
-    /// most every ten minutes; a service in a print loop can write gigabytes in
-    /// that time. So after every [`TRIM_AFTER_LINES`] lines (or
-    /// [`TRIM_AFTER_BYTES`]) the service's older rows are deleted, keeping what
-    /// was written since the previous trim (and never fewer rows than
-    /// `maxLogsPerService`). The database then holds at most about two such
-    /// stretches per service. Keeping the latest stretch rather than cutting
-    /// straight down to the limit gives `wait-for-log` and `watch`, which poll,
-    /// time to see every line before it goes.
+    /// Trim flooding output between periodic cleanups. Keep at least the
+    /// configured limit and the latest stretch, giving polling readers time
+    /// to observe lines before eviction.
     fn trim_if_due(&self, lines: usize, bytes: usize) {
         let (mut total_lines, mut total_bytes) = self.since_trim.get();
         total_lines += lines;
@@ -258,9 +213,7 @@ impl OutputWriter<'_> {
         self.since_trim.set((total_lines, total_bytes));
     }
 
-    /// Receive and write output until the `Exit` event, which the wait thread
-    /// sends after every line queued before the exit. Used once the exit is
-    /// already known, so this doesn't wait on a live process.
+    /// Write queued output through Exit after the child is known to have exited.
     fn write_until_exit(&self, rx: &mpsc::Receiver<LineEvent>) {
         while let Ok(first) = rx.recv() {
             let (lines, exit) = take_queued(rx, first);
@@ -282,19 +235,9 @@ impl OutputWriter<'_> {
     }
 }
 
-/// Keep supervising after the service's shell has exited, for as long as its
-/// process group (`pgid`, the shell's PID) still has members.
-///
-/// A command that starts something in the background and returns
-/// (`server & echo started`) leaves that process running in the service's
-/// group. Reporting the service as exited at that point would put the process
-/// out of reach of `ps` and `kill`. So the row stays, marked `leader_exited` so
-/// that `kill` signals the group instead of the shell's PID, and output keeps
-/// being collected until the group is empty. A process that has left the group
-/// (`setsid`) isn't covered. Returns whether the group outlived the shell.
-///
-/// A group id isn't reused while the group has members, so the check can't
-/// mistake another group for this one while the service is still around.
+/// Keep the row and collect output until the shell's process group is empty.
+/// Mark `leader_exited` so kill targets the group. Detached (`setsid`) children
+/// are outside this group. Return whether the group outlived the shell.
 fn supervise_remaining_group(
     conn: &Connection,
     writer: &OutputWriter<'_>,
@@ -331,11 +274,8 @@ fn supervise_remaining_group(
     true
 }
 
-/// The `process_exited` message for a service that had started. `outlived` is
-/// set when the process group outlived the shell (see
-/// [`supervise_remaining_group`]): the shell's own exit status then says
-/// nothing about how the rest of the service ended, so a stop by Candle is
-/// reported as one.
+/// Format a started service's exit. If the group outlived the shell, the shell
+/// status no longer describes the service; honor a later deliberate stop.
 fn final_exit_message(
     conn: &Connection,
     command_name: &str,
@@ -353,12 +293,8 @@ fn final_exit_message(
     }
 }
 
-/// Collect output still in flight after the `Exit` event.
-///
-/// The reader threads and the wait thread share one channel, so `Exit` can
-/// arrive before the last lines the child wrote. Keep receiving until every
-/// sender has dropped (both pipes hit EOF) or `timeout` elapses. Returns the
-/// number of lines passed to `save`.
+/// Drain late reader output until all senders close or timeout. Exit can arrive
+/// before the final pipe output. Return the number of saved lines.
 fn drain_after_exit(
     rx: &mpsc::Receiver<LineEvent>,
     timeout: Duration,
@@ -384,9 +320,7 @@ fn drain_after_exit(
     }
 }
 
-/// Human-readable message for a process that died during the startup grace
-/// period. `stopped_by_candle` is set when Candle itself signalled it (see
-/// [`stopped_by_candle`]); that is a deliberate stop, not a failed start.
+/// Format an early exit, distinguishing deliberate stops from startup failures.
 fn start_failed_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     match (exit.code, exit.signal) {
         (Some(c), _) => format!("Process failed to start: exited with code {c}"),
@@ -396,10 +330,8 @@ fn start_failed_message(exit: ChildExit, stopped_by_candle: bool) -> String {
     }
 }
 
-/// Whether Candle stopped this process on purpose. `kill` marks the row
-/// `killed_at` before it sends any signal, and cleanup / `erase-database`
-/// delete rows outright, so a row that is marked killed or already gone means
-/// a deliberate stop. Only this monitor otherwise removes its own row.
+/// A killed or deleted row indicates a deliberate stop: kill marks before
+/// signalling, and cleanup/erase may delete the row.
 fn stopped_by_candle(conn: &Connection, command_name: &str, project_dir: &str, pid: i64) -> bool {
     match find_process_entry(conn, command_name, project_dir, pid) {
         Ok(Some(entry)) => entry.killed_at.is_some(),
@@ -408,8 +340,7 @@ fn stopped_by_candle(conn: &Connection, command_name: &str, project_dir: &str, p
     }
 }
 
-/// Run the supervision lifecycle to completion, blocking until the child exits
-/// (or a startup failure short-circuits). Returns the child's exit code, if any.
+/// Supervise until exit or startup failure; return the child's exit code.
 pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     let MonitorLaunchInfo {
         command_name,
@@ -437,21 +368,13 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     };
 
-    // launchDir = root ? join(projectDir, root) : projectDir. `Path::join`
-    // replaces the base when `root` is absolute, so this is the same directory
-    // `resolve_launch_dir` reports in the start banner and `list`.
     let launch_dir = match &root {
         Some(r) => Path::new(&project_dir).join(r),
         None => Path::new(&project_dir).to_path_buf(),
     };
 
-    // Spawn the monitored service. On spawn failure: log process_start_failed,
-    // exit, do NOT create (or delete) a process row.
-    //
-    // The service leads its own process group (pgid == its pid), separate from
-    // the monitor's. Descendants stay in that group even after they're
-    // reparented (a double-forked `(daemon &)`), so `kill` can reach them with
-    // one group signal without also stopping the monitor.
+    // Give the service its own group so kill reaches reparented descendants
+    // without signalling the monitor. Spawn failures create no process row.
     let mut child = match Command::new("sh")
         .arg("-c")
         .arg(&shell)
@@ -507,8 +430,6 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         },
     );
 
-    // Reader + wait threads forward events over a bounded channel (see
-    // `OUTPUT_QUEUE_LINES`).
     let (tx, rx) = mpsc::sync_channel::<LineEvent>(OUTPUT_QUEUE_LINES);
 
     let stdout = child.stdout.take().expect("stdout piped");
@@ -519,8 +440,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
     let tx_err = tx.clone();
     thread::spawn(move || forward_lines(stderr, tx_err, LineEvent::Stderr));
 
-    // Stdin polling thread (own DB connection; pop needs &mut). The `done` flag
-    // lets us stop it once the child exits.
+    // Stdin polling needs its own mutable connection; stop when the child exits.
     let done = Arc::new(AtomicBool::new(false));
     let stdin_handle = if enable_stdin {
         let mut child_stdin = child.stdin.take();
@@ -561,10 +481,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         None
     };
 
-    // Wait thread: reports the exit once the child terminates. The exit also
-    // goes into `exit_slot`, because on the channel it can sit behind a large
-    // backlog of output; the start decision reads the slot so it never waits
-    // for that backlog to be written.
+    // Also publish exit directly so startup checks bypass any output backlog.
     let exit_slot = Arc::new(OnceLock::<ChildExit>::new());
     let tx_exit = tx;
     let wait_slot = Arc::clone(&exit_slot);
@@ -588,7 +505,6 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         since_trim: Cell::new((0, 0)),
     };
 
-    // Grace period: collect output until the deadline or an early exit.
     let grace_deadline = Instant::now() + Duration::from_millis(GRACE_PERIOD_MS);
     let mut exited_during_grace = false;
     let mut exit = ChildExit::default();
@@ -612,11 +528,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         }
     }
 
-    // The child may have exited within the window with its `Exit` event still
-    // queued behind output (a process that dies instantly still prints its
-    // error first). Ask the wait thread directly rather than writing out the
-    // queue first: a service that prints a lot at startup would otherwise hold
-    // up the start decision until its whole backlog was in the database.
+    // Consult the exit slot: a queued Exit may sit behind startup output.
     if !exited_during_grace {
         if let Some(e) = exit_slot.get() {
             exited_during_grace = true;
@@ -629,9 +541,6 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         writer.write_after_exit(&rx);
     }
 
-    // A nonzero exit within the grace period is a start failure: log it, delete
-    // the row, and stop. (Asymmetry vs the spawn-failure branch above, which
-    // never created a row.)
     if exited_during_grace && exit.code != Some(0) {
         debug_log(&format!(
             "[monitor] process failed during grace period, pid={child_pid}, {exit:?}"
@@ -649,8 +558,7 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
             )),
         );
         let _ = delete_process_entry(&conn, &command_name, &project_dir, child_pid);
-        // A failed start leaves nothing running: stop whatever the shell had
-        // already put in the background.
+        // Stop background children left by the failed start.
         let _ = kill_process_group_and_wait(child_pid, KILL_GRACE_PERIOD);
         done.store(true, Ordering::Relaxed);
         if let Some(handle) = stdin_handle {
@@ -669,7 +577,6 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         None,
     );
 
-    // Exited cleanly (code 0) within the grace period.
     if exited_during_grace {
         let outlived = supervise_remaining_group(&conn, &writer, &rx, child_pid);
         writer.write_after_exit(&rx);
@@ -696,7 +603,6 @@ pub fn run(launch_info: MonitorLaunchInfo) -> Option<i32> {
         return exit.code;
     }
 
-    // Main loop: stream output until the process exits, running cleanup ~60s.
     let mut last_cleanup = Instant::now();
     loop {
         match rx.recv_timeout(Duration::from_secs(60)) {
@@ -771,8 +677,7 @@ mod tests {
         let reader = tx.clone();
         tx.send(LineEvent::Exit(ChildExit::default())).unwrap();
         drop(tx);
-        // A reader thread that forwards its last lines after the wait thread
-        // has already reported the exit.
+        // Simulate output arriving after Exit.
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(50));
             reader.send(LineEvent::Stderr("late error".into())).unwrap();
@@ -781,7 +686,6 @@ mod tests {
                 .unwrap();
         });
 
-        // The supervisor has already consumed the Exit event.
         assert!(matches!(rx.recv().unwrap(), LineEvent::Exit(_)));
 
         let mut lines = Vec::new();
@@ -820,7 +724,6 @@ mod tests {
                 signal: None
             })
         );
-        // The line after the exit is left for the post-exit drain.
         assert!(matches!(rx.try_recv(), Ok(LineEvent::Stdout(_))));
     }
 
@@ -934,7 +837,6 @@ mod tests {
 
     #[test]
     fn forward_lines_splits_an_overlong_line() {
-        // Two and a half rows' worth with no newline, then a normal line.
         let mut input = vec![b'x'; MAX_LINE_BYTES * 2 + MAX_LINE_BYTES / 2];
         input.extend_from_slice(b"\nshort\n");
         let lines = forwarded(&input);
@@ -944,7 +846,6 @@ mod tests {
         );
         assert_eq!(lines[3], "short");
 
-        // A line of exactly the maximum isn't followed by an empty row.
         let mut exact = vec![b'y'; MAX_LINE_BYTES - 1];
         exact.extend_from_slice(b"\nnext\n");
         assert_eq!(forwarded(&exact).len(), 2);
@@ -967,7 +868,6 @@ mod tests {
         let input = b"1\n2\n3\n4\n5\n".to_vec();
         let handle = thread::spawn(move || forward_lines(&input[..], tx, LineEvent::Stdout));
         thread::sleep(Duration::from_millis(100));
-        // Nothing has been received, so the reader is parked with the queue full.
         assert!(!handle.is_finished());
         assert_eq!(rx.iter().count(), 5);
         handle.join().unwrap();
@@ -1004,7 +904,6 @@ mod tests {
         }
         assert!(most <= 2 * TRIM_AFTER_LINES as i64 + 1, "{most}");
         assert_eq!(count(&conn), TRIM_AFTER_LINES as i64);
-        // The newest line is still there.
         let last: String = conn
             .query_row(
                 "select content from log_lines order by id desc limit 1",

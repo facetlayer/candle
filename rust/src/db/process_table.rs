@@ -1,7 +1,4 @@
-//! `processes` table CRUD.
-//!
-//! Updates and deletes are keyed on `(command_name, project_dir, pid)` (the real
-//! PK column `id` is exposed but not used as the mutation key).
+//! Process rows, mutated by (command_name, project_dir, pid).
 
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,20 +18,15 @@ pub struct ProcessEntry {
     pub killed_at: Option<i64>,
     pub shell: Option<String>,
     pub root: Option<String>,
-    /// The run this process belongs to: see `run_id` on
-    /// [`ProcessLog`](crate::logs::process_logs::ProcessLog).
+    /// Launch marker id for this process.
     pub run_id: Option<i64>,
-    /// Started with `--shell` rather than from `.candle.json`. Rows written
-    /// by an older candle read as `false`.
+    /// Transient --shell launch; false for legacy rows.
     pub transient: bool,
-    /// OS start time of `pid` when the row was written (see
-    /// [`crate::process_identity`]). `None` on rows written by an older candle.
+    /// Recorded OS start time; None for legacy rows. See [`crate::process_identity`].
     pub pid_identity: Option<i64>,
     /// The same for `log_collector_pid`.
     pub monitor_identity: Option<i64>,
-    /// The service's shell (`pid`) has exited but its process group still has
-    /// members, which the monitor is still supervising. `pid` is then only the
-    /// id of that group.
+    /// Shell exited; pid now identifies its still-supervised process group.
     pub leader_exited: bool,
 }
 
@@ -80,9 +72,7 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessEntry> {
 
 const SELECT_COLS: &str = "id, command_name, project_dir, pid, log_collector_pid, start_time, created_at, killed_at, shell, root, run_id, transient, pid_identity, monitor_identity, leader_exited";
 
-/// Insert a new process row. Sets `start_time` to the current unix seconds,
-/// records the identity of both PIDs (see [`crate::process_identity`]), and
-/// leaves `created_at`/`killed_at` to default/NULL. Returns the new row id.
+/// Insert a process, recording start time and both PID identities. Return its id.
 pub fn create_process_entry(
     conn: &Connection,
     entry: &CreateProcessEntry,
@@ -107,8 +97,7 @@ pub fn create_process_entry(
     Ok(conn.last_insert_rowid())
 }
 
-/// Record that the service's shell has exited while its process group still
-/// has members (see [`ProcessEntry::leader_exited`]).
+/// Mark the shell exited while its process group remains alive.
 pub fn mark_leader_exited(
     conn: &Connection,
     command_name: &str,
@@ -137,8 +126,7 @@ pub fn update_process_killed_at(
     Ok(())
 }
 
-/// Clear `killed_at` on a row, undoing [`update_process_killed_at`] when the
-/// kill it announced did not happen.
+/// Undo the killed mark when signalling failed.
 pub fn clear_process_killed_at(
     conn: &Connection,
     command_name: &str,
@@ -294,7 +282,6 @@ mod tests {
         assert!(entry.start_time > 0);
         assert!(entry.created_at > 0);
 
-        // Running query sees it.
         assert_eq!(find_all_running_processes(&conn).unwrap().len(), 1);
         assert_eq!(
             find_running_processes_by_project_dir(&conn, "/proj")
@@ -303,14 +290,12 @@ mod tests {
             1
         );
 
-        // Mark killed.
         update_process_killed_at(&conn, "api", "/proj", 100, 12345).unwrap();
         let after = find_processes_by_command_name_and_project_dir(&conn, "api", "/proj").unwrap();
         assert_eq!(after[0].killed_at, Some(12345));
         assert_eq!(find_all_running_processes(&conn).unwrap().len(), 0);
         assert_eq!(find_all_killed_processes(&conn).unwrap().len(), 1);
 
-        // Delete keyed on (command_name, project_dir, pid).
         delete_process_entry(&conn, "api", "/proj", 100).unwrap();
         assert_eq!(find_all_processes(&conn).unwrap().len(), 0);
 

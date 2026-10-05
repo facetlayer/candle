@@ -1,8 +1,4 @@
-//! The `start` command handler.
-//!
-//! Resolves which services to start (all configured ones when none are named),
-//! enforces the transient `--shell` rules, and starts each service sequentially.
-//! Services that are already running are left alone.
+//! Start configured or transient services sequentially.
 
 use std::path::Path;
 
@@ -23,10 +19,8 @@ pub struct StartCommandOptions {
     pub enable_stdin: bool,
 }
 
-/// Start each named service in order, continuing past failures so one broken
-/// service doesn't keep the rest from starting. With a single name its error is
-/// returned as-is; with several, each failure is printed as it happens and a
-/// summary error naming the failed services is returned at the end.
+/// Start services in order, continuing after failures. Return a single error
+/// unchanged; for multiple services, print each failure and return a summary.
 pub fn start_each(
     conn: &Connection,
     names: &[String],
@@ -55,23 +49,19 @@ pub fn start_each(
     )))
 }
 
-/// Start one or more services and return the started service names once each
-/// has reported a start result.
+/// Start services and return their names after startup is confirmed.
 pub fn handle_start_command(
     conn: &Connection,
     opts: StartCommandOptions,
 ) -> Result<Vec<String>, CandleError> {
     let mut command_names = opts.command_names.clone();
 
-    // With no --shell, default to all configured services when none are named.
     if opts.shell.is_none() {
         command_names = resolve_command_names_or_all(Path::new(&opts.project_dir), &command_names)?;
     }
 
-    // --root sets the directory of a transient service. A configured service's
-    // directory comes from its `root` in the config, so rather than silently
-    // drop the flag, reject it. Unknown names are reported first, so a typo
-    // gets the "No service configured" error rather than this one.
+    // --root applies only to transient services. Validate names first so typos
+    // receive the unknown-service error.
     if opts.shell.is_none() && opts.root.is_some() {
         for name in &command_names {
             get_service_config_by_name(name, Some(Path::new(&opts.project_dir)))?;
@@ -83,7 +73,6 @@ pub fn handle_start_command(
         )));
     }
 
-    // Transient: exactly one name, with the provided shell/root/enable-stdin.
     if let Some(shell) = &opts.shell {
         if command_names.len() != 1 {
             return Err(CandleError::UsageError(
@@ -104,8 +93,6 @@ pub fn handle_start_command(
         return Ok(command_names);
     }
 
-    // Configured: start each resolved name sequentially. Transient flags are not
-    // forwarded in this branch.
     start_each(conn, &command_names, |name| RunOptions {
         command_name: name.to_string(),
         project_dir: opts.project_dir.clone(),

@@ -1,7 +1,4 @@
-//! Mutating config commands: setup-project, add-service, remove-service, set-config.
-//!
-//! Each function returns the success message string(s) the CLI layer should
-//! print (rather than printing directly), or a [`CandleError`].
+//! Config mutations returning messages for the CLI to print.
 
 use std::path::{Path, PathBuf};
 
@@ -20,9 +17,7 @@ pub struct AddServerConfigArgs {
     pub enable_stdin: bool,
 }
 
-/// Re-run validation over a (possibly mutated) config by round-tripping it
-/// through [`validate_config`]. Catches invalid
-/// roots, duplicate names, etc. introduced by mutations.
+/// Revalidate after mutation via the serialized config.
 fn revalidate(config: &CandleSetupConfig) -> Result<(), CandleError> {
     validate_config(config.to_value()).map(|_| ())
 }
@@ -113,8 +108,7 @@ pub fn add_server_config(
     ))
 }
 
-/// Service names are typed on the command line and used as-is in every later
-/// command, so keep them to characters that never need quoting.
+/// Restrict names to characters that need no shell quoting.
 fn validate_service_name(name: &str) -> Result<(), CandleError> {
     let ok = !name.is_empty()
         && name
@@ -152,7 +146,6 @@ pub fn remove_server_config(name: &str, start_dir: &Path) -> Result<String, Cand
 
 /// `set-config`: set a single config key.
 pub fn handle_set_config(key: &str, value: &str, cwd: &Path) -> Result<String, CandleError> {
-    // Validate the key/value first, before reading the file.
     let parsed = parse_config_value(key, value)?;
 
     let found = find_config_file(cwd)?;
@@ -221,12 +214,8 @@ fn apply_config_value(config: &mut CandleSetupConfig, parsed: &ParsedConfigValue
     }
 }
 
-/// Parse `value` with JavaScript `Number()`-style coercion and require an
-/// integer `>= 1`.
-///
-/// Coercion rules: leading/trailing whitespace is trimmed,
-/// empty string -> 0 (rejected), `1e3` and `0x10` are accepted, `3.5` / `3abc`
-/// are rejected.
+/// Require a positive integer using JavaScript Number-style coercion
+/// (including exponent and radix notation).
 fn js_positive_int(value: &str) -> Option<u64> {
     let num = js_number(value)?;
     if num.is_finite() && num.fract() == 0.0 && num >= 1.0 {
@@ -266,8 +255,7 @@ fn js_number(input: &str) -> Option<f64> {
         _ => {}
     }
 
-    // Reject spellings of inf/nan that Rust's float parser accepts. Any remaining
-    // valid decimal (including `1e3`) parses here.
+    // Reject Rust-only inf/nan spellings before parsing decimals.
     let lower = s.to_ascii_lowercase();
     if lower.contains("inf") || lower.contains("nan") {
         return None;

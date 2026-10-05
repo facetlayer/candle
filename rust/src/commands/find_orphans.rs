@@ -1,17 +1,5 @@
-//! `find-orphans` command — report tracked processes whose project has gone
-//! away underneath them.
-//!
-//! Candle keys every `processes` row on the project directory it was started
-//! from. Nothing stops that project from being deleted, reconfigured, or having
-//! the service removed from its config while the process keeps running, and
-//! when that happens the row becomes unreachable from the project it belongs to:
-//! `candle list` in the old directory can no longer find it, because there is no
-//! longer a directory to run `candle list` in.
-//!
-//! This is a rarely-used diagnostic in the same family as `kill-all` — it looks
-//! across every project rather than the current one. The companion cleanup is
-//! `candle kill --project-dir <dir>`, which accepts a directory that no longer
-//! exists.
+//! Find live services whose project directory, config, or service entry is gone.
+//! Cleanup uses `candle kill --project-dir <dir>`, even for deleted directories.
 
 use std::path::Path;
 
@@ -62,24 +50,15 @@ pub struct FindOrphansOutput {
     pub orphans: Vec<OrphanedProcess>,
 }
 
-/// Classify one running process against the project it claims to belong to.
-///
-/// Returns `None` when the project still vouches for the service. A config file
-/// that exists but cannot be read or parsed is *not* treated as orphaning: the
-/// service is very likely still configured, and reporting it as an orphan would
-/// invite killing a healthy process over a typo in the JSON.
-///
-/// A transient process (started with `--shell`) was never in the config, so its
-/// absence from it proves nothing; only a missing directory or config file
-/// orphans one.
+/// Classify a service against its project. Unreadable or invalid configs do
+/// not establish orphanhood. Transient services need no config entry.
 fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<OrphanReason> {
     let dir = Path::new(project_dir);
     if !dir.is_dir() {
         return Some(OrphanReason::MissingProjectDir);
     }
 
-    // Only the project directory itself counts. A config file in some ancestor
-    // describes a different project, not this one.
+    // An ancestor config belongs to another project.
     let config_path = dir.join(CONFIG_FILENAME);
     if !config_path.exists() {
         return Some(OrphanReason::MissingConfigFile);
@@ -89,7 +68,6 @@ fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<Or
         return None;
     }
 
-    // A config that will not parse is left alone — see the doc comment.
     let config = read_config_file(&config_path).ok()?;
 
     match find_service_by_name(&config, service_name) {
@@ -98,10 +76,7 @@ fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<Or
     }
 }
 
-/// Find every live tracked process whose project no longer accounts for it.
-///
-/// Only processes that are actually alive are considered — a dead row is stale
-/// bookkeeping for the reaper to clear, not an orphan anyone needs to kill.
+/// Find live orphaned services; leave dead rows for stale cleanup.
 pub fn handle_find_orphans(conn: &Connection) -> Result<FindOrphansOutput, CandleError> {
     let running = find_all_running_processes(conn)?;
     let alive = filter_alive_processes(conn, running)?;
@@ -142,8 +117,6 @@ pub fn format_find_orphans(output: &FindOrphansOutput) -> String {
         lines.push(format!("  Orphaned: {}", orphan.reason.describe()));
     }
 
-    // The cleanup is not obvious — `kill` normally works off the CWD, and these
-    // projects may have no directory left to cd into.
     lines.push(String::new());
     lines.push("Clean up with: candle kill --project-dir <project> <service>".to_string());
 
@@ -187,8 +160,6 @@ mod tests {
 
     #[test]
     fn transient_process_missing_from_config_is_not_an_orphan() {
-        // Transient processes are never in the config; that is not a sign the
-        // project has forgotten them.
         let dir = TempDir::new();
         write_config(dir.path(), r#"{"name": "other", "shell": "true"}"#);
 
@@ -224,8 +195,7 @@ mod tests {
 
     #[test]
     fn ancestor_config_does_not_rescue_a_child_project() {
-        // The row names <parent>/child as its project. A config in <parent>
-        // describes the parent project, so it must not count for the child.
+        // An ancestor config cannot vouch for the child project.
         let parent = TempDir::new();
         write_config(parent.path(), r#"{"name": "svc", "shell": "true"}"#);
         let child = parent.path().join("child");
@@ -239,8 +209,7 @@ mod tests {
 
     #[test]
     fn unreadable_config_is_not_reported_as_an_orphan() {
-        // A malformed config almost certainly still lists the service; calling it
-        // an orphan would invite killing a healthy process over a JSON typo.
+        // Invalid JSON does not establish that the service was removed.
         let dir = TempDir::new();
         std::fs::write(dir.path().join(".candle.json"), "{ not json").unwrap();
 

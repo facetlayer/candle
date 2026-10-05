@@ -1,18 +1,10 @@
-//! `clear-logs` command handler.
-//!
-//! Deletes stored process output for the named command(s) within the project,
-//! then vacuums the database. Other services' logs are never touched; old logs
-//! are bounded by retention cleanup (`db/cleanup.rs`).
+//! Clear project logs and reclaim database space.
 
 use rusqlite::Connection;
 
 use crate::output;
 
-/// Clear logs for the given command(s) in the project, or for every service in
-/// the project when `command_names` is empty.
-///
-/// Returns the `rusqlite::Result` so the CLI layer can report a database error
-/// on stderr and exit 1.
+/// Clear logs for named services, or all project services when names are empty.
 pub fn handle_clear_logs_command(
     conn: &Connection,
     project_dir: &str,
@@ -22,8 +14,7 @@ pub fn handle_clear_logs_command(
 
     let mut cleared_count: usize = 0;
 
-    // No names: every service with logs in this project, including transient
-    // services and ones since removed from .candle.json.
+    // Include transient and removed services with stored logs.
     if command_names.is_empty() {
         cleared_count += conn.execute(
             "DELETE FROM log_lines WHERE service_id IN \
@@ -33,7 +24,6 @@ pub fn handle_clear_logs_command(
     }
 
     for command_name in command_names {
-        // Clear logs for this specific project directory and command.
         let changes = conn.execute(
             "DELETE FROM log_lines WHERE service_id IN \
              (SELECT id FROM services WHERE command_name = ?1 AND project_dir = ?2)",
@@ -163,7 +153,6 @@ mod tests {
         let dir = temp_db_dir("clear-logs-keep-others");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // None of these have a `processes` row, like a crashed or stopped service.
         save_process_log(&conn, "svc", "/proj", ProcessLogType::Stdout, Some("1")).unwrap();
         save_process_log(&conn, "other", "/proj", ProcessLogType::Stdout, Some("2")).unwrap();
         save_process_log(

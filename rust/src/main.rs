@@ -1,11 +1,4 @@
-// candle — the only binary Candle ships.
-//
-// Three modes, decided here:
-//   - `--monitor`: supervise one service subprocess (see cli/monitor_mode.rs). The CLI
-//     re-invokes itself this way for every service it launches.
-//   - `mcp`: stdio MCP server.
-//   - anything else: the normal CLI. Hand-rolled command dispatch; see cli/help.rs and
-//     cli/parser.rs for the help text and argument parsing.
+// Dispatch the CLI, internal --monitor mode, or stdio MCP server.
 
 use std::path::PathBuf;
 use std::process::exit;
@@ -45,9 +38,7 @@ use candle::start::{handle_start_command, StartCommandOptions};
 use rusqlite::Connection;
 
 fn main() {
-    // Rust ignores SIGPIPE by default, which turns `candle watch | head` into a
-    // "failed printing to stdout: Broken pipe" panic. Restore the conventional
-    // Unix behavior: exit quietly when the reader goes away.
+    // Restore SIGPIPE so a closed output pipe exits quietly.
     #[cfg(unix)]
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
@@ -55,24 +46,18 @@ fn main() {
 
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
-    // `candle --monitor` makes this process a service monitor; it never returns to
-    // the CLI path. Only the leading position counts, so a literal `--monitor`
-    // elsewhere (say, a `--message` value) can't hijack a normal command.
+    // Only a leading --monitor selects monitor mode; option values must not.
     if argv.first().map(String::as_str) == Some("--monitor") {
         run_monitor_mode(&argv);
     }
 
-    // No arguments at all → grouped help on stdout.
     if argv.is_empty() {
         println!("{}", help::grouped_help());
         return;
     }
 
-    // The command is the first token that isn't an option (or a leading option's
-    // value). Options before it belong to the command, so `candle --project-dir
-    // <dir> ps` is `candle ps --project-dir <dir>`. The combined tokens are
-    // scanned with the command's option spec, so a `--version` or `--help` given
-    // as an option value (`--message --version`) stays a value.
+    // Combine leading and trailing options using the command spec, preserving
+    // flag-like values such as `--message --version`.
     let (cmd_index, leading) = split_leading_options(&argv);
     let rest: Vec<String> = match cmd_index {
         Some(i) => leading
@@ -85,13 +70,11 @@ fn main() {
     let known_command = command_token.as_deref().and_then(canonical_command);
     let meta = scan_meta_flags(known_command.unwrap_or(""), &rest);
 
-    // --version / -v short-circuits everything else.
     if meta.version {
         println!("{}", help::version());
         return;
     }
 
-    // --help / -h → grouped help, or command-specific help when a command is named.
     if meta.help {
         match known_command {
             Some(cmd) => println!("{}", help::command_help(cmd)),
@@ -103,7 +86,6 @@ fn main() {
     let command_token = match command_token {
         Some(c) => c,
         None => {
-            // Only unrecognized flags, no command — fall back to help.
             println!("{}", help::grouped_help());
             return;
         }
@@ -119,7 +101,6 @@ fn main() {
     };
 
     if canonical == "help" {
-        // `candle help <command>` is the same as `candle <command> --help`.
         if let Some(topic) = rest.iter().find(|a| !a.starts_with('-')) {
             match canonical_command(topic) {
                 Some(cmd) => println!("{}", help::command_help(cmd)),
@@ -135,7 +116,6 @@ fn main() {
         return;
     }
 
-    // `mcp` → MCP server mode (never returns).
     if canonical == "mcp" {
         run_mcp();
     }
@@ -185,8 +165,7 @@ fn scope_of(args: &CommandArgs) -> ProjectScope {
     ProjectScope::new(cwd(), args.value("project-dir"))
 }
 
-/// Resolve a command's project directory, exiting with the usage error if the
-/// CWD is not inside a project.
+/// Resolve the project directory or exit with a usage error.
 fn project_dir_or_exit(scope: &ProjectScope) -> String {
     match scope.resolve() {
         Ok(dir) => dir,
@@ -194,9 +173,7 @@ fn project_dir_or_exit(scope: &ProjectScope) -> String {
     }
 }
 
-/// Same, for commands that need the project's service definitions: an explicit
-/// `--project-dir` must be a project in its own right. See
-/// [`ProjectScope::require_own_config`].
+/// Resolve a project with its own service config.
 fn configured_project_dir_or_exit(scope: &ProjectScope) -> String {
     if let Err(e) = scope.require_own_config() {
         fail_with(&e);
@@ -299,8 +276,7 @@ fn cmd_get_doc(args: &CommandArgs) {
     }
 }
 
-/// Open the candle database (resolving the state dir from the environment), or
-/// print an error and exit.
+/// Open the database or exit with an error.
 fn open_db() -> Connection {
     match get_database(None) {
         Ok(conn) => conn,
@@ -308,17 +284,13 @@ fn open_db() -> Connection {
     }
 }
 
-/// Print a fatal error to stderr as `Error: <message>` and exit 1. Every fatal
-/// user-facing error in the CLI goes through here, so the prefix is added in
-/// exactly one place (see [`error_line`]).
+/// Print a fatal error with the shared prefix and exit 1.
 fn fatal(message: impl std::fmt::Display) -> ! {
     eprintln!("{}", error_line(&message.to_string()));
     exit(1);
 }
 
-/// The value of a numeric flag, or `None` when it isn't given. A value that
-/// doesn't parse (`--count abc`, `--exit-after-ms -5`) is a fatal usage error
-/// rather than silently falling back to the default.
+/// Parse an optional numeric flag, rejecting invalid values.
 fn numeric_flag<T: std::str::FromStr>(args: &CommandArgs, name: &str) -> Option<T> {
     let raw = args.value(name)?;
     match raw.parse() {
@@ -332,12 +304,8 @@ fn fail_with(err: &CandleError) -> ! {
     fatal(err)
 }
 
-/// `kill` / `stop`: resolve the project dir, validate names, then mark/kill.
-///
-/// With an explicit `--project-dir`, name validation is skipped: that form
-/// exists to clean up after a project that is gone, so there is no config left
-/// to validate against. An unrecognized name simply reports that nothing by
-/// that name is running.
+/// Kill named services. Explicit projects skip config validation so deleted
+/// projects can still be cleaned up.
 fn cmd_kill(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = project_dir_or_exit(&scope);
@@ -356,7 +324,6 @@ fn cmd_kill(args: &CommandArgs) {
     }
 }
 
-/// `kill-all`: kill every process across every project. No validation, no config.
 fn cmd_kill_all() {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -365,10 +332,7 @@ fn cmd_kill_all() {
     }
 }
 
-/// Decide whether a launch-style command (`start` / `restart`) should stay
-/// attached and watch logs. `--watch` forces interactive, `--bg` forces
-/// non-interactive; otherwise auto-detect (human at a TTY → watch; agent,
-/// script, or pipe → return immediately).
+/// Select launch watching: `--watch`, `--bg`, then session detection.
 fn should_watch_after_launch(args: &CommandArgs) -> bool {
     let force_bg = args.has("bg");
     let force_watch = args.has("watch");
@@ -394,13 +358,8 @@ fn print_logs_hint(started: &[String]) {
     println!("{hint}");
 }
 
-/// `start` / `run`: resolve the project dir, then launch the requested
-/// service(s). Services that are already running are left alone.
-///
-/// In interactive mode, `start` stays attached and streams the process's logs
-/// until Ctrl+C (the process keeps running), including for a service that was
-/// already running. In non-interactive mode, it exits as soon as the launch is
-/// confirmed.
+/// Start services and watch their logs in interactive mode. Existing services
+/// are left running; Ctrl+C detaches without stopping them.
 fn cmd_start(args: &CommandArgs) {
     let project_dir = configured_project_dir_or_exit(&scope_of(args));
 
@@ -444,8 +403,6 @@ enum ListView {
     FullTable,
 }
 
-/// `list` / `ls`, `ps` / `status` (`show_all = false`) and `list-all`
-/// (`show_all = true`).
 fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
     let scope = scope_of(args);
     if let Err(e) = scope.require_own_config() {
@@ -478,13 +435,11 @@ fn cmd_list(args: &CommandArgs, show_all: bool, view: ListView) {
     }
 }
 
-/// `wait-for-log`: poll the named command's logs for a substring until it
-/// appears, the process exits, or the timeout elapses.
+/// Wait for a log substring, process exit, or timeout.
 fn cmd_wait_for_log(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = project_dir_or_exit(&scope);
 
-    // --message is required.
     let message = match args.value("message") {
         Some(m) => m,
         None => {
@@ -492,7 +447,6 @@ fn cmd_wait_for_log(args: &CommandArgs) {
         }
     };
 
-    // --timeout is in seconds, default 30; convert to ms.
     let timeout_secs: f64 = numeric_flag(args, "timeout").unwrap_or(30.0);
     if !(timeout_secs.is_finite() && timeout_secs >= 0.0) {
         fatal(format!(
@@ -512,9 +466,7 @@ fn cmd_wait_for_log(args: &CommandArgs) {
     }
 }
 
-/// Exit with `No service '<name>' configured` if a name has neither stored
-/// logs, a process row, nor a config entry. See
-/// [`candle::commands::assert_known_service_names`].
+/// Reject names without stored logs, a process row, or a config entry.
 fn exit_on_unknown_service_names(
     conn: &Connection,
     scope: &ProjectScope,
@@ -556,7 +508,6 @@ fn cmd_logs(args: &CommandArgs) {
     handle_logs_command(&conn, &project_dir, &args.positionals, &options);
 }
 
-/// `clear-logs`: delete stored output for the named command(s) in the project.
 fn cmd_clear_logs(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = project_dir_or_exit(&scope);
@@ -564,7 +515,6 @@ fn cmd_clear_logs(args: &CommandArgs) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
 
-    // Same rule as `logs`: stored logs, a process row, or a config entry.
     exit_on_unknown_service_names(&conn, &scope, &project_dir, &args.positionals);
 
     match handle_clear_logs_command(&conn, &project_dir, &args.positionals) {
@@ -573,11 +523,7 @@ fn cmd_clear_logs(args: &CommandArgs) {
     }
 }
 
-/// `restart`: kill the named services (or every service in the project), then
-/// start them again; stopped services are simply started. An unknown service
-/// name fails validation (stderr + exit 1). `--shell`/`--root` replace a
-/// transient process's command, so they skip that validation. Follows the same interactive/non-interactive behavior
-/// as `start` (see [`cmd_start`]).
+/// Restart services, then watch using the same session rules as start.
 fn cmd_restart(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = configured_project_dir_or_exit(&scope);
@@ -635,11 +581,7 @@ fn cmd_watch(args: &CommandArgs) {
     }
 }
 
-/// `list-ports [names...]` / `list-ports-all`: detect open listening ports for
-/// project (or all) processes via lsof and print them as a table, or as JSON
-/// with `--json`. Names restrict the output to those services; in a project an
-/// unknown name is an error. `list-ports-all` is system-wide and needs no
-/// project.
+/// List service ports in project or system scope, as text or JSON.
 fn cmd_list_ports(args: &CommandArgs, show_all: bool) {
     let scope = scope_of(args);
     if !show_all {
@@ -661,8 +603,7 @@ fn cmd_list_ports(args: &CommandArgs, show_all: bool) {
     }
 }
 
-/// `open-browser`: resolve a service (explicit or sole running), open a browser
-/// to its lowest listening port.
+/// Open the selected service's lowest listening port.
 fn cmd_open_browser(args: &CommandArgs) {
     let scope = scope_of(args);
     let project_dir = configured_project_dir_or_exit(&scope);
@@ -677,8 +618,7 @@ fn cmd_open_browser(args: &CommandArgs) {
     }
 }
 
-/// `find-orphans`: report live tracked processes whose project no longer
-/// accounts for them. System-wide, like `kill-all`, so it takes no project.
+/// Report orphaned live services system-wide.
 fn cmd_find_orphans(args: &CommandArgs) {
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
@@ -698,8 +638,7 @@ fn cmd_find_orphans(args: &CommandArgs) {
     }
 }
 
-/// `erase-database [--force]`: delete candle.db (+ WAL/SHM) from the state dir,
-/// refusing while tracked processes are alive unless `--force`.
+/// Erase the database, refusing live services unless forced.
 fn cmd_erase_database(args: &CommandArgs) {
     use candle::commands::erase_database::{
         format_refusal, handle_erase_database_command, EraseOutcome,
@@ -712,7 +651,6 @@ fn cmd_erase_database(args: &CommandArgs) {
 }
 
 fn run_mcp() -> ! {
-    // stdio JSON-RPC server (M8). Blocks until stdin closes, then exits 0.
     candle::mcp::serve_mcp();
 }
 

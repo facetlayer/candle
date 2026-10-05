@@ -1,12 +1,4 @@
-//! `list-ports` / `list-ports-all` command.
-//!
-//! Walks the process tree of each managed process, asks the platform for the
-//! listening TCP sockets of those PIDs (see [`crate::listening_ports`]), and
-//! maps each socket back to the service that owns the PID.
-//!
-//! Note: unlike `list`, this uses the non-running query
-//! (`find_processes_by_project_dir` includes killed rows) and does NOT prune dead PIDs — correctness comes from
-//! dead PIDs simply owning no sockets.
+//! Attribute listening TCP sockets to managed service trees.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -20,8 +12,7 @@ use crate::errors::CandleError;
 use crate::listening_ports::listening_sockets_for_pids;
 use crate::process_tree::{get_process_group_members, get_process_tree};
 
-/// One listening socket attributed to a service. Field names match the JSON the
-/// MCP `ListPorts` tool serializes.
+/// Service socket, serialized for MCP.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PortInfo {
     #[serde(rename = "serviceName")]
@@ -40,14 +31,8 @@ pub struct ListPortsOutput {
     pub ports: Vec<PortInfo>,
 }
 
-/// Build a `list-ports` / `list-ports-all` result.
-///
-/// - `show_all`: consider every process row system-wide, with no project needed;
-///   otherwise scope to the project resolved from `cwd` (returns
-///   `MissingSetupFile` if no config).
-/// - `command_names`: when non-empty, restrict to processes with those names.
-///   In project scope each name must be a configured service or have a process
-///   row in the project (a transient service), else `MissingServiceWithName`.
+/// List sockets system-wide or in the discovered project, optionally filtering
+/// service names. Project names must be configured or have a process row.
 pub fn handle_list_ports(
     conn: &Connection,
     cwd: &Path,
@@ -74,8 +59,7 @@ pub fn handle_list_ports(
         process_entries.retain(|entry| command_names.contains(&entry.command_name));
     }
 
-    // Compute each process's full tree, collect all PIDs for one socket lookup,
-    // and build a PID → service map (later trees overwrite earlier on collision).
+    // Query sockets once for all trees; later trees win PID collisions.
     let trees: Vec<(String, i64, Vec<i64>)> = process_entries
         .iter()
         .map(|entry| {
@@ -132,11 +116,7 @@ pub fn list_ports_output_to_json(output: &ListPortsOutput) -> String {
     serde_json::to_string_pretty(output).unwrap_or_else(|_| "{\"ports\":[]}".to_string())
 }
 
-/// Render a [`ListPortsOutput`] as the pretty table.
-///
-/// Empty prints `No open ports found for running services.`; otherwise a
-/// `SERVICE PID PORT ADDRESS PROTOCOL` table with ` (child)` appended to the
-/// PROTOCOL cell for child-process ports.
+/// Render sockets as a table, marking child-process ports.
 pub fn format_list_ports_output(output: &ListPortsOutput) -> String {
     if output.ports.is_empty() {
         return "No open ports found for running services.".to_string();

@@ -1,14 +1,5 @@
-//! Capturable global output sink.
-//!
-//! Command handlers emit their human-facing lines through [`out`] and [`err`]
-//! instead of `println!`/`eprintln!` directly. By default these pass through to
-//! the real stdout/stderr. When a [`capture`] scope is active (on the current
-//! thread), the lines are buffered instead so a caller — notably the MCP server
-//! (milestone M8) — can collect a handler's output rather than letting it write
-//! to the process's real streams.
-//!
-//! Capture state is a thread-local: handlers run synchronously on the same
-//! thread as the `capture` call, so there is no need for cross-thread sharing.
+//! Thread-local output capture for synchronous CLI and MCP handlers.
+//! Outside a [`capture`] scope, output goes to stdout/stderr.
 
 use std::cell::RefCell;
 
@@ -16,8 +7,7 @@ use std::cell::RefCell;
 struct Buffer {
     stdout: Vec<String>,
     stderr: Vec<String>,
-    /// stdout + stderr in emission order, used to build a combined transcript.
-    /// Each entry is `(is_stderr, line)`.
+    /// `(is_stderr, line)` entries in emission order.
     combined: Vec<(bool, String)>,
 }
 
@@ -37,8 +27,7 @@ pub struct CapturedOutput {
 }
 
 impl CapturedOutput {
-    /// A single combined transcript (stdout + stderr in emission order, one line
-    /// per entry). Useful for surfacing a handler's output to MCP clients.
+    /// Combine both streams in emission order, one line per entry.
     pub fn transcript(&self) -> String {
         self.combined
             .iter()
@@ -47,9 +36,7 @@ impl CapturedOutput {
             .join("\n")
     }
 
-    /// The captured lines formatted for an MCP tool response: stderr lines get a
-    /// `"[stderr] "` prefix, stdout lines pass through verbatim, emission order
-    /// preserved.
+    /// Format an MCP transcript, prefixing stderr lines with `[stderr] `.
     pub fn mcp_log_lines(&self) -> Vec<String> {
         self.combined
             .iter()
@@ -92,9 +79,7 @@ pub fn err(line: &str) {
     });
 }
 
-/// Emit a user-facing error line to stderr as `Error: <message>` (see
-/// [`crate::errors::error_line`]), or buffer it when a [`capture`] scope is
-/// active.
+/// Emit or capture an error formatted by [`crate::errors::error_line`].
 pub fn error(message: &str) {
     err(&crate::errors::error_line(message));
 }
@@ -104,7 +89,7 @@ pub fn error(message: &str) {
 pub fn capture<T>(f: impl FnOnce() -> T) -> (T, CapturedOutput) {
     CAPTURE.with(|cell| *cell.borrow_mut() = Some(Buffer::default()));
 
-    // Even if `f` panics we want to clear the capture slot, so restore on unwind.
+    // Restore capture state even if the handler panics.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
 
     let buffer = CAPTURE
@@ -142,9 +127,7 @@ mod tests {
             vec!["hello".to_string(), "world".to_string()]
         );
         assert_eq!(captured.stderr, vec!["oops".to_string()]);
-        // Combined transcript preserves emission order across both streams.
         assert_eq!(captured.transcript(), "hello\noops\nworld");
-        // MCP log lines prefix stderr lines with "[stderr] ".
         assert_eq!(
             captured.mcp_log_lines(),
             vec![
@@ -157,8 +140,6 @@ mod tests {
 
     #[test]
     fn capture_is_scoped() {
-        // After a capture scope ends, the slot is cleared. A fresh capture starts
-        // empty (passthrough is restored outside the scope).
         let (_, first) = capture(|| out("a"));
         assert_eq!(first.stdout, vec!["a".to_string()]);
 

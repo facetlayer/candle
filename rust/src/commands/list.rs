@@ -1,11 +1,5 @@
-//! `list` / `list-all` command.
-//!
-//! Produces a structured listing of services and running processes, plus a
-//! pretty-table formatter and the JSON shape the `--json` flag and MCP consume.
-//!
-//! RUNNING is determined by liveness: the `list` query is already restricted to
-//! `killed_at is null`, and [`filter_alive_processes`] drops (and deletes) rows
-//! whose PIDs are dead, so killed/stale entries never show as RUNNING.
+//! Structured service listings and text/JSON rendering.
+//! RUNNING requires an unmarked row with a live service or monitor.
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,8 +17,7 @@ use crate::logs::log_type::{KILLED_BY_SIGNAL, STOPPED_WHILE_STARTING_MESSAGE};
 use crate::logs::ProcessLogType;
 use crate::process_alive::filter_alive_processes;
 
-/// One row in a `list` result. Serialized directly by `--json`, so field order
-/// and (camelCase) names define the JSON output shape.
+/// Listing row; field order and camelCase names define the JSON shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListProcess {
     #[serde(rename = "serviceName")]
@@ -32,22 +25,17 @@ pub struct ListProcess {
     pub command: String,
     #[serde(rename = "workingDir")]
     pub working_dir: String,
-    /// The project directory the service belongs to (where its `.candle.json`
-    /// lives). Differs from `working_dir` when the service has a `root`; this is
-    /// the value to pass as `--project-dir` to target the service.
+    /// Project key for --project-dir, distinct from the service working directory.
     #[serde(rename = "projectDir")]
     pub project_dir: String,
     pub uptime: String,
     /// The service's PID, or `None` (JSON `null`) when it is not running.
     pub pid: Option<i64>,
     pub status: String,
-    /// Whether the running process was launched with a different `shell` /
-    /// `root` than the config now has. Always `false` for a stopped service.
+    /// Running command differs from config; false for stopped services.
     #[serde(rename = "configChanged")]
     pub config_changed: bool,
-    /// Exit code of the service's latest run, when that run exited non-zero
-    /// (status `EXITED (<code>)`). `None` (JSON `null`) otherwise, including
-    /// for `FAILED`, which has no exit code.
+    /// Non-zero exit code for EXITED status; None otherwise, including FAILED.
     #[serde(rename = "exitCode")]
     pub exit_code: Option<i64>,
 }
@@ -105,9 +93,7 @@ fn resolve_shell(entry: &ProcessEntry, service: Option<&ServiceConfig>) -> Strin
         .unwrap_or_default()
 }
 
-/// Format a duration in milliseconds as `"1d 2h"`, `"3m 5s"`, `"0s"`, etc.
-/// Only non-zero components are shown, and an all-zero duration renders as
-/// `"0s"`.
+/// Format uptime with non-zero units, or 0s.
 pub fn format_uptime(milliseconds: i64) -> String {
     let total_seconds = (milliseconds / 1000).max(0);
     let days = total_seconds / 86400;
@@ -171,18 +157,13 @@ fn parse_exit_code(content: &str) -> Option<i64> {
 pub(crate) enum LatestRun {
     /// Still going, stopped deliberately, exited cleanly, or never ran.
     Unremarkable,
-    /// Ended with a non-zero exit code (a crash, or a start that exited
-    /// non-zero): status `EXITED (<code>)`.
+    /// Non-zero exit: EXITED (<code>).
     Exited(i64),
-    /// Ended without an exit code for a reason other than a deliberate stop:
-    /// the shell couldn't be spawned, the root directory was missing, or it was
-    /// killed by a signal Candle didn't send (a crash). Status `FAILED`.
+    /// Spawn failure or unintended signal: FAILED.
     Failed,
 }
 
-/// Classify a service's latest run from that run's newest lifecycle row (start
-/// initiated / failed / started / exited). A previous instance's late exit row
-/// belongs to an older run and is ignored.
+/// Classify the latest run by its newest lifecycle row; ignore late older rows.
 pub(crate) fn latest_run(
     conn: &Connection,
     project_dir: &str,
@@ -232,12 +213,8 @@ pub(crate) fn latest_run(
     Ok(LatestRun::Unremarkable)
 }
 
-/// Build a `list` / `list-all` result.
-///
-/// - `show_all`: list every alive process system-wide (no config required).
-/// - otherwise: resolve the project config from `cwd`, list configured services
-///   (config order) first — running or not — then append any running processes
-///   not present in the config.
+/// List live processes system-wide, or configured services in file order
+/// followed by unconfigured running services in the project.
 pub fn handle_list(
     conn: &Connection,
     cwd: &Path,
@@ -251,12 +228,10 @@ pub fn handle_list(
                 running_row(
                     &entry.command_name,
                     &resolve_shell(&entry, None),
-                    // The directory the service runs in, same as `list` reports.
                     &resolve_launch_dir(&entry.project_dir, entry.root.as_deref()),
                     &entry.project_dir,
                     entry.start_time,
                     entry.pid,
-                    // No project context for drift detection in list-all.
                     false,
                 )
             })
@@ -276,7 +251,6 @@ pub fn handle_list(
     let mut processes: Vec<ListProcess> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
 
-    // Configured services first, in file order.
     for service in &config.services {
         seen.push(service.name.as_str());
         let running_process = running.iter().find(|p| p.command_name == service.name);
@@ -315,7 +289,6 @@ pub fn handle_list(
         }
     }
 
-    // Then running processes not present in the config (transient / orphaned).
     for entry in &running {
         if seen.contains(&entry.command_name.as_str()) {
             continue;
@@ -335,11 +308,8 @@ pub fn handle_list(
     Ok(ListOutput { processes })
 }
 
-/// Restrict a listing to the named services (matched on service name), keeping
-/// the original listing order. An empty `names` slice is a no-op. A name that
-/// matches nothing is a usage error: in a project (`project_dir` set) the shared
-/// `No service '<name>' configured for directory: <dir>`; for the system-wide
-/// `list-all` (`None`) `No running service named '<name>'`.
+/// Filter names without changing order; empty names leave the listing intact.
+/// Reject unknown names with a project-specific or system-wide error.
 pub fn filter_by_service_names(
     output: ListOutput,
     names: &[String],
@@ -366,14 +336,7 @@ pub fn filter_by_service_names(
     Ok(ListOutput { processes })
 }
 
-/// Render a [`ListOutput`] as the multiline detail view used by `candle list`.
-///
-/// Each entry is a `[name]` header line followed by two-space-indented
-/// `status:`, `command:` and `directory:` lines carrying the full,
-/// untruncated values. Entries are separated by a blank line. The status line
-/// reads `STATUS - pid N - uptime T`; `pid` and `uptime` are omitted for
-/// services that are not running, and ` [config changed]` is appended to the
-/// status on config drift.
+/// Render full service details, omitting PID/uptime for stopped services.
 pub fn format_list_detail(output: &ListOutput) -> String {
     if output.processes.is_empty() {
         return "No services configured.".to_string();
@@ -402,25 +365,17 @@ pub fn format_list_detail(output: &ListOutput) -> String {
     entries.join("\n\n")
 }
 
-/// Serialize the processes array as pretty JSON (2-space indent). This is the
-/// shape the `--json` flag and MCP consume.
+/// Serialize the process array for CLI/MCP JSON output.
 pub fn list_output_to_json(output: &ListOutput) -> String {
     serde_json::to_string_pretty(&output.processes).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Render a [`ListOutput`] as the pretty table.
-///
-/// An empty result prints `No services configured.`; otherwise a
-/// `NAME STATUS PID UPTIME COMMAND DIRECTORY` table with two-space column
-/// separators and a dashed separator row. ` [config changed]` is appended
-/// to STATUS where the process drifted from config; PID 0 renders as `-`.
+/// Render the full service table.
 pub fn format_list_output(output: &ListOutput) -> String {
     format_table(output, true)
 }
 
-/// Render a [`ListOutput`] as the compact `candle ps` table: the same style as
-/// [`format_list_output`] but with only `NAME STATUS PID UPTIME`, dropping the
-/// two widest columns so the table fits in a narrow terminal.
+/// Render the compact NAME/STATUS/PID/UPTIME table for candle ps.
 pub fn format_ps_output(output: &ListOutput) -> String {
     format_table(output, false)
 }
@@ -538,7 +493,6 @@ mod tests {
         };
         let text = format_list_output(&out);
         let header = text.lines().next().unwrap();
-        // Exact column order; old headers absent.
         let name = header.find("NAME").unwrap();
         let status = header.find("STATUS").unwrap();
         let pid = header.find("PID").unwrap();
@@ -634,7 +588,6 @@ mod tests {
         assert_eq!(filtered.processes.len(), 1);
         assert_eq!(filtered.processes[0].service_name, "api");
 
-        // Empty filter is a no-op.
         assert_eq!(
             filter_by_service_names(sample(), &[], Some("/proj"))
                 .unwrap()
@@ -662,7 +615,6 @@ mod tests {
         };
         assert_eq!(resolve_shell(&entry, None), "npm run dev");
 
-        // Falls back to the config service's shell when the row has none.
         let service = ServiceConfig {
             name: "web".to_string(),
             shell: "npm run fallback".to_string(),
@@ -675,10 +627,8 @@ mod tests {
         };
         assert_eq!(resolve_shell(&no_shell, Some(&service)), "npm run fallback");
 
-        // Nothing known at all.
         assert_eq!(resolve_shell(&no_shell, None), "");
 
-        // The rendered row shows the shell string, not the service name.
         let text = format_list_detail(&sample());
         assert!(text.contains("command: npm run dev"));
         assert!(!text.contains("command: web"));
@@ -706,7 +656,6 @@ mod tests {
 
     #[test]
     fn json_shape_matches_node() {
-        // Running row: all keys incl. configChanged, in declaration order.
         let running = ListProcess {
             service_name: "echo".to_string(),
             command: "echo".to_string(),
@@ -724,7 +673,6 @@ mod tests {
             r#"{"serviceName":"echo","command":"echo","workingDir":"/proj","projectDir":"/proj","uptime":"5s","pid":42,"status":"RUNNING","configChanged":false,"exitCode":null}"#
         );
 
-        // Not-running row: same keys, pid null.
         let stopped = ListProcess {
             service_name: "web".to_string(),
             command: "web".to_string(),
@@ -742,7 +690,6 @@ mod tests {
             r#"{"serviceName":"web","command":"web","workingDir":"/proj","projectDir":"/proj","uptime":"-","pid":null,"status":"not running","configChanged":false,"exitCode":null}"#
         );
 
-        // Crashed row: status and exitCode carry the code.
         let crashed = ListProcess {
             status: exited_status(1),
             exit_code: Some(1),
@@ -784,14 +731,12 @@ mod tests {
         );
         assert_eq!(latest(), LatestRun::Exited(3));
 
-        // A newer run that is still going (or stopped cleanly) clears it.
         log(ProcessLogType::ProcessStartInitiated, None);
         assert_eq!(latest(), LatestRun::Unremarkable);
         log(ProcessLogType::ProcessStarted, None);
         log(ProcessLogType::ProcessExited, Some("Process was stopped"));
         assert_eq!(latest(), LatestRun::Unremarkable);
 
-        // A crash by a signal Candle didn't send is FAILED.
         log(ProcessLogType::ProcessStartInitiated, None);
         log(ProcessLogType::ProcessStarted, None);
         log(
@@ -800,7 +745,6 @@ mod tests {
         );
         assert_eq!(latest(), LatestRun::Failed);
 
-        // A start that exited non-zero keeps its code.
         log(ProcessLogType::ProcessStartInitiated, None);
         log(
             ProcessLogType::ProcessStartFailed,
@@ -808,7 +752,6 @@ mod tests {
         );
         assert_eq!(latest(), LatestRun::Exited(127));
 
-        // Start failures without an exit code are FAILED...
         for reason in [
             "Process failed to start: root directory does not exist: /proj/sub",
             "Process failed to start: could not run 'sh': boom",
@@ -820,7 +763,6 @@ mod tests {
             assert_eq!(latest(), LatestRun::Failed, "{reason}");
         }
 
-        // ...but a deliberate kill during startup is not.
         log(ProcessLogType::ProcessStartInitiated, None);
         log(
             ProcessLogType::ProcessStartFailed,

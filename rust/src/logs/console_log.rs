@@ -1,9 +1,4 @@
-//! Console rendering of log rows.
-//!
-//! All output goes through [`crate::output::out`] — even stderr-typed log lines,
-//! which are rendered to stdout with a `[stderr]` prefix rather than to stderr.
-//!
-//! There are no ANSI colors in this code path, so `FORCE_COLOR` has no effect.
+//! Render logs to stdout, including stderr rows prefixed with `[stderr]`.
 
 use crate::logs::log_type::ProcessLogType;
 use crate::logs::process_logs::ProcessLog;
@@ -75,16 +70,10 @@ pub fn console_log_system_message(format: OutputFormat, msg: &str, prefix: &str)
     }
 }
 
-/// Render a single log row.
-///
-/// `stdout` lines print as-is, `stderr` lines gain a `[stderr] ` prefix,
-/// `process_exited` / `process_start_failed` render as bracketed system messages,
-/// and `process_start_initiated` / `process_started` are hidden (no output).
+/// Render output and bracketed lifecycle messages, hiding launch markers.
 pub fn console_log_row(row: &ProcessLog, options: &ConsoleLogOptions) {
     let fmt = format(options);
 
-    // Build the effective prefix. enable_app_name_prefix prepends `[cmd] ` to any
-    // existing prefix.
     let base_prefix = options.prefix.clone().unwrap_or_default();
     let prefix = if options.enable_app_name_prefix {
         format!("[{}] {}", row.command_name, base_prefix)
@@ -100,7 +89,6 @@ pub fn console_log_row(row: &ProcessLog, options: &ConsoleLogOptions) {
         Ok(ProcessLogType::ProcessExited) | Ok(ProcessLogType::ProcessStartFailed) => {
             console_log_system_message(fmt, content, &prefix)
         }
-        // process_start_initiated / process_started are hidden.
         _ => {}
     }
 }

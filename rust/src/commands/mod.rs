@@ -1,6 +1,4 @@
-//! CLI command handlers that span multiple subsystems (config + database +
-//! output sink). Lower-level, single-subsystem logic lives in its own module
-//! (e.g. [`crate::kill`]).
+//! CLI handlers combining config, database, and output.
 
 pub mod clear_logs;
 pub mod erase_database;
@@ -23,13 +21,8 @@ use crate::errors::CandleError;
 use crate::logs::process_logs::has_logs_for_command;
 use crate::project_scope::ProjectScope;
 
-/// Validate that each name refers to a known service for the project, erroring
-/// (as a usage error) on the first that does not.
-///
-/// A name is valid if it has any process row in the project (running or killed transient) OR it
-/// resolves to a configured service (exact or loose match). An unknown name
-/// yields `MissingServiceWithName` ("No service '<name>' configured for
-/// directory: <dir>"), which the CLI prints to stderr before exiting non-zero.
+/// Reject the first name without a process row or configured match.
+/// Killed transient rows also count as known services.
 pub fn assert_valid_command_names(
     conn: &Connection,
     cwd: &Path,
@@ -43,28 +36,20 @@ pub fn assert_valid_command_names(
     let project_dir = project_dir.display().to_string();
 
     for name in names {
-        // A live or transient process row makes the name valid regardless of config.
         let rows = find_processes_by_command_name_and_project_dir(conn, name, &project_dir)?;
         if !rows.is_empty() {
             continue;
         }
 
-        // Otherwise it must resolve to a configured service.
         get_service_config_by_name(name, Some(cwd))?;
     }
 
     Ok(())
 }
 
-/// Validate names for the commands that read stored logs (`logs`,
-/// `wait-for-log`), erroring with `No service '<name>' configured` on the first
-/// unknown one.
-///
-/// A name is known if it has stored logs or a process row in `project_dir`
-/// (so a finished transient service still counts), or, when `check_config` is
-/// set, if it resolves to a service configured for `config_dir`. Callers clear
-/// `check_config` when the project has no config file of its own, e.g. a
-/// `--project-dir` that has since been deleted.
+/// Validate log-reader names against stored logs, process rows, or config.
+/// Skip config checks for projects without their own config, including deleted
+/// explicit projects; finished transient services remain valid.
 pub fn assert_known_service_names(
     conn: &Connection,
     config_dir: &Path,
@@ -94,11 +79,7 @@ pub fn assert_known_service_names(
     Ok(())
 }
 
-/// [`assert_known_service_names`] for a command's [`ProjectScope`]: config is
-/// read from the scope's base directory, and only consulted when the project
-/// has a config file of its own (an explicit `--project-dir` / MCP `projectDir`
-/// may name a project that is gone). Shared by the CLI (`logs`, `wait-for-log`,
-/// `clear-logs`) and the MCP `GetLogs` tool so they accept the same names.
+/// Validate names using the scope's config only if the project has its own file.
 pub fn assert_known_service_names_in_scope(
     conn: &Connection,
     scope: &ProjectScope,
@@ -160,7 +141,6 @@ mod tests {
         let db = temp_db_dir("assert-valid-transient");
         let conn = get_database(Some(&db)).unwrap();
 
-        // "transient" is not in config, but a process row exists for it.
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -196,10 +176,8 @@ mod tests {
             assert_known_service_names_in_scope(&conn, &scope, &project_dir, &[name.to_string()])
         };
 
-        // Configured.
         assert!(check("echo").is_ok());
 
-        // A finished transient service: only stored logs remain.
         save_process_log(
             &conn,
             "done",
@@ -210,7 +188,6 @@ mod tests {
         .unwrap();
         assert!(check("done").is_ok());
 
-        // Unknown: the shared full-form error.
         let err = check("ghost").unwrap_err();
         assert_eq!(
             err.to_string(),

@@ -1,55 +1,28 @@
-//! Run context detection.
-//!
-//! Determines whether candle is being run by an AI coding agent, based on the
-//! marker environment variables those agents set, and whether the session is
-//! interactive (a human at a terminal) versus non-interactive (agents, scripts,
-//! pipes).
+//! Detect agent-driven and interactive sessions.
 
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
-/// Environment variables that coding agents set on the commands they run, so
-/// that tools can tell they're being driven by an agent.
-///
-/// Each of these is set by the agent itself (not by the user configuring it):
-/// - `CLAUDECODE` — Claude Code.
-/// - `GEMINI_CLI` — Gemini CLI, set by its `run_shell_command` tool.
-/// - `CURSOR_AGENT` — Cursor; documented for exactly this purpose.
-///
-/// Deliberately absent: Codex. Its `CODEX_SANDBOX` variable signals that a
-/// *sandbox* is active, not that Codex is driving — it is unset under
-/// `--sandbox danger-full-access`, so keying on it would silently miss anyone
-/// who turns the sandbox off. Codex sessions are still caught by the stdout
-/// TTY check in [`is_interactive`].
+/// Agent markers. Codex has no reliable marker: `CODEX_SANDBOX` only indicates
+/// sandboxing, so its non-TTY sessions are covered by [`is_interactive`].
 const AGENT_ENV_VARS: [&str; 3] = ["CLAUDECODE", "GEMINI_CLI", "CURSOR_AGENT"];
 
-/// Pure helper: truthiness of an optional env value (present AND non-empty
-/// string => true).
 fn truthy(value: Option<String>) -> bool {
     matches!(value, Some(v) if !v.is_empty())
 }
 
-/// Pure core of [`is_run_by_agent`], taking the environment as a lookup so it
-/// can be tested without mutating the process environment.
+/// Environment lookup is injectable for tests.
 fn detect_agent(lookup: impl Fn(&str) -> Option<String>) -> bool {
     AGENT_ENV_VARS.iter().any(|name| truthy(lookup(name)))
 }
 
-/// Whether candle is being run by an AI agent.
-///
-/// True iff any variable in [`AGENT_ENV_VARS`] is present and non-empty.
-/// Computed once and cached.
+/// Whether any agent marker is non-empty, cached on first use.
 pub fn is_run_by_agent() -> bool {
     static CACHE: OnceLock<bool> = OnceLock::new();
     *CACHE.get_or_init(|| detect_agent(|name| std::env::var(name).ok()))
 }
 
-/// Whether candle is running in an interactive session: a human at a terminal.
-///
-/// False when run by an AI agent (see [`is_run_by_agent`]) or when stdout is not
-/// a TTY (pipes, scripts, CI). Commands use this to pick between blocking,
-/// watch-style behavior (interactive) and return-immediately behavior
-/// (non-interactive).
+/// Interactive when stdout is a TTY and no agent marker is set.
 pub fn is_interactive() -> bool {
     !is_run_by_agent() && std::io::stdout().is_terminal()
 }
@@ -67,7 +40,6 @@ mod tests {
         assert!(truthy(Some("false".to_string())));
     }
 
-    /// Build a lookup that reports exactly one variable as set.
     fn only(set_name: &'static str, value: &'static str) -> impl Fn(&str) -> Option<String> {
         move |name| (name == set_name).then(|| value.to_string())
     }
@@ -85,10 +57,8 @@ mod tests {
     #[test]
     fn no_agent_vars_means_not_agent_mode() {
         assert!(!detect_agent(|_| None));
-        // Present but empty does not count.
         assert!(!detect_agent(only("CLAUDECODE", "")));
-        // An unrelated variable does not count. In particular CODEX_SANDBOX,
-        // which marks a sandbox rather than an agent (see AGENT_ENV_VARS).
+        // CODEX_SANDBOX identifies a sandbox, not an agent.
         assert!(!detect_agent(only("CODEX_SANDBOX", "seatbelt")));
     }
 }

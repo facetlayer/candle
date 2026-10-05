@@ -1,6 +1,4 @@
-//! Process liveness probing.
-//!
-//! Uses a signal-0 `kill` to test whether a PID is alive without actually signalling it.
+//! Process liveness and stale-row cleanup.
 
 use rusqlite::Connection;
 
@@ -9,13 +7,7 @@ use crate::db::process_table::{
 };
 use crate::process_identity::is_recorded_process;
 
-/// Check whether a process with the given PID is currently alive.
-///
-/// Uses `kill(pid, 0)`, which sends no signal but performs the permission and
-/// existence checks:
-/// - success (errno 0) -> alive
-/// - `EPERM` -> the process exists but is owned by another user -> treated as alive
-/// - `ESRCH` / anything else -> dead
+/// Probe with signal 0; `EPERM` also means the process exists.
 pub fn is_process_alive(pid: i64) -> bool {
     if pid <= 0 {
         return false;
@@ -29,8 +21,7 @@ pub fn is_process_alive(pid: i64) -> bool {
     std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-/// Whether the entry's service process (`pid`) is alive and is still the
-/// process the row recorded, not a later one given the same PID.
+/// Whether the service PID still identifies a live recorded process.
 pub fn is_service_process_alive(entry: &ProcessEntry) -> bool {
     is_recorded_process(entry.pid, entry.pid_identity)
 }
@@ -42,18 +33,12 @@ pub fn is_monitor_alive(entry: &ProcessEntry) -> bool {
         .is_some_and(|pid| is_recorded_process(pid, entry.monitor_identity))
 }
 
-/// Whether the entry describes something still running: its monitor or its
-/// service process is alive.
+/// Whether the monitor or service process is alive.
 pub fn is_entry_alive(entry: &ProcessEntry) -> bool {
     is_monitor_alive(entry) || is_service_process_alive(entry)
 }
 
-/// Filter out process entries whose processes are no longer alive, deleting the
-/// stale rows from the database.
-///
-/// An entry is kept if its monitor or its service process is alive (see
-/// [`is_entry_alive`]). Otherwise the row is deleted (keyed on
-/// command_name/project_dir/pid) and dropped from the result.
+/// Keep live entries and delete stale rows from the database.
 pub fn filter_alive_processes(
     conn: &Connection,
     entries: Vec<ProcessEntry>,
@@ -72,9 +57,7 @@ pub fn filter_alive_processes(
     Ok(alive)
 }
 
-/// The running instance of `command_name` in `project_dir`, if any: a process
-/// row not marked killed whose PID is alive. Dead rows found along the way are
-/// deleted (see [`filter_alive_processes`]).
+/// Find a live, unmarked service instance, deleting stale rows.
 pub fn find_running_service(
     conn: &Connection,
     project_dir: &str,
@@ -88,8 +71,6 @@ pub fn find_running_service(
     Ok(filter_alive_processes(conn, not_killed)?.into_iter().next())
 }
 
-/// Whether `command_name` has a running instance in `project_dir`. See
-/// [`find_running_service`].
 pub fn is_service_running(
     conn: &Connection,
     project_dir: &str,
@@ -112,7 +93,6 @@ mod tests {
 
     #[test]
     fn nonexistent_pid_is_dead() {
-        // Very high pid that is essentially never allocated.
         assert!(!is_process_alive(2_000_000_000));
         assert!(!is_process_alive(0));
         assert!(!is_process_alive(-1));
@@ -125,7 +105,6 @@ mod tests {
 
         let me = std::process::id() as i64;
 
-        // Alive: pid is the current process.
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -141,7 +120,6 @@ mod tests {
         )
         .unwrap();
 
-        // Dead: both pids point at an unallocated pid.
         create_process_entry(
             &conn,
             &CreateProcessEntry {
@@ -162,7 +140,6 @@ mod tests {
 
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].command_name, "alive");
-        // Dead row deleted from the DB.
         assert_eq!(find_all_processes(&conn).unwrap().len(), 1);
 
         drop(conn);

@@ -1,16 +1,9 @@
-//! Debug logging.
-//!
-//! When `CANDLE_ENABLE_LOGS` is set (to a non-empty value), appends messages to
-//! a `candle.log` file in the current working directory.
+//! Append debug messages to cwd/candle.log when CANDLE_ENABLE_LOGS is non-empty.
 
 use std::fs::OpenOptions;
 use std::io::Write;
 
-/// Append `msg` plus a newline to `<cwd>/candle.log` when logging is enabled.
-///
-/// Enabled when `CANDLE_ENABLE_LOGS` is set to a non-empty value (the value is
-/// not parsed as a boolean). IO errors are swallowed so
-/// a read-only cwd never crashes the CLI.
+/// Append a debug line if enabled; ignore I/O errors. Any non-empty value enables logging.
 pub fn debug_log(msg: &str) {
     let enabled = std::env::var("CANDLE_ENABLE_LOGS")
         .map(|v| !v.is_empty())

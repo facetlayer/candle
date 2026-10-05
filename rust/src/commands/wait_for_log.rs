@@ -1,12 +1,4 @@
-//! `wait-for-log` command handler.
-//!
-//! Polls the `log_lines` table for a given substring, scoped to the most
-//! recent launch of the named service(s), until the message appears, the
-//! process exits, or a timeout is hit. Every line of that launch is searched,
-//! however many there are; earlier launches are ignored.
-//!
-//! A service that isn't running fails at once rather than waiting out the
-//! timeout: nothing will ever write the message.
+//! Wait for a substring in the latest run, until process exit or timeout.
 
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -30,8 +22,7 @@ const RECENT_LOG_LINES: i64 = 20;
 /// How often (in polls) to re-check that the service is still running.
 const LIVENESS_CHECK_EVERY: u32 = 5;
 
-/// Result of [`handle_wait_for_log`]. Callers only need to know whether the
-/// message appeared, so a bare success flag is sufficient.
+/// Whether the message appeared.
 pub struct WaitForLogResult {
     pub success: bool,
 }
@@ -138,15 +129,11 @@ pub fn handle_wait_for_log(
     let mut log_filter = LatestRunFilter::new(None);
     let _ = log_filter.seed_latest_runs(conn, project_dir, command_names);
 
-    // Split the logs at the newest existing row: everything up to it is
-    // searched in the database, everything after it by the polling loop, which
-    // fetches without a limit. Between them no line of the latest run is
-    // skipped, however much the service prints.
+    // Search existing rows in SQL and poll all newer rows, leaving no gap.
     let mut log_iterator = LogIterator::new(project_dir.to_string(), command_names.to_vec());
     let _ = log_iterator.reset_to_latest_log_message(conn);
 
-    // Look for the message in existing logs. A run that has already finished
-    // still counts if it printed the message.
+    // Finished runs count if they printed the message.
     if let Some(newest_log_id) = log_iterator.current_log_id {
         if latest_run_contains(conn, project_dir, command_names, message, newest_log_id)
             .unwrap_or(false)
@@ -176,24 +163,19 @@ pub fn handle_wait_for_log(
     .unwrap_or_default();
     let running = is_any_running(conn, project_dir, command_names);
 
-    // Never launched and nothing running: nothing is going to write the message.
     if !has_run && !running {
         return fail_not_running(conn, project_dir, command_names, message, false);
     }
-    // The latest run already ended (and, with several services, none of them
-    // is still running).
     if latest_run_lifecycle.iter().any(ends_run) && !running {
         return fail_not_running(conn, project_dir, command_names, message, true);
     }
 
-    // Once the monitor has reported the start, the process row must exist for
-    // as long as the service runs. Before that, a launch is still in progress.
+    // A reported start requires a live row; before it, launch may be in progress.
     let mut start_reported = !has_run
         || latest_run_lifecycle
             .iter()
             .any(|log| is_type(log, ProcessLogType::ProcessStarted));
 
-    // Poll for logs until we find the message or timeout
     let time_started = Instant::now();
     let mut polls: u32 = 0;
     loop {
@@ -291,7 +273,6 @@ mod tests {
         });
 
         assert!(!result.success);
-        // Fails at once instead of waiting out the 30s timeout.
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(captured.stdout.is_empty());
         assert_eq!(
@@ -388,7 +369,6 @@ mod tests {
         let dir = temp_db_dir("wait-for-log-no-process");
         let conn = get_database(Some(&dir)).unwrap();
 
-        // The monitor reported the start, but no process row is alive.
         save(&conn, ProcessLogType::ProcessStartInitiated, None);
         save(&conn, ProcessLogType::ProcessStarted, None);
 
@@ -434,7 +414,6 @@ mod tests {
             vec!["Found message \"READY-MARK\" in existing logs.".to_string()]
         );
 
-        // A previous run's output never counts.
         let (result, _) = output::capture(|| {
             handle_wait_for_log(&conn, "/proj", &names, "only in the old run", 200)
         });

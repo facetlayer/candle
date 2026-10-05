@@ -1,12 +1,5 @@
-//! Documentation files for the `list-docs` and `get-doc` commands.
-//!
-//! The binary is relocatable, so rather than reading markdown files from an install directory at
-//! runtime, the docs (the markdown files directly inside the repo `docs/` directory plus the
-//! top-level `README.md`) are embedded at compile time.
-//!
-//! Each file is embedded by name in [`DOCS`], so nothing else under `docs/` ends up in the binary.
-//! Subdirectories such as `docs/dev/` hold developer docs for people working on Candle itself.
-//! A test checks that [`DOCS`] lists exactly the markdown files directly inside `docs/`.
+//! Embed user docs and README at compile time so the binary is relocatable.
+//! DOCS lists only direct docs/*.md children, excluding developer docs.
 
 /// The user-facing docs as `(filename, raw_content)`, sorted by filename.
 const DOCS: &[(&str, &str)] = &[
@@ -115,10 +108,8 @@ pub fn list_docs() -> Vec<DocInfo> {
         .collect()
 }
 
-/// Resolve a doc by name: the key `list-docs` shows (its frontmatter `name`,
-/// or the filename without `.md`), or the filename itself. Matching is exact
-/// apart from letter case; there is no prefix or substring matching, so
-/// `get-doc project` does not pick up `project-setup`.
+/// Resolve a doc by frontmatter name, filename stem, or filename,
+/// matching case-insensitively and exactly.
 pub fn get_doc(name: &str) -> Result<DocContent, DocLookupError> {
     let wanted = name.trim().to_lowercase();
     let wanted_stem = stem(&wanted).to_string();
@@ -149,7 +140,6 @@ mod tests {
         let docs = list_docs();
         assert!(docs.iter().any(|d| d.filename == "project-setup.md"));
         assert!(docs.iter().any(|d| d.filename == "transient-processes.md"));
-        // README is appended as an extra file.
         assert!(docs.iter().any(|d| d.filename == "README.md"));
     }
 
@@ -159,8 +149,7 @@ mod tests {
         assert_eq!(get_doc("testing-strategy"), Err(DocLookupError::NotFound));
     }
 
-    /// A doc added to `docs/` has to be added to `DOCS` too, and nothing from a subdirectory
-    /// may be.
+    /// Keep DOCS in sync with direct docs/*.md children.
     #[test]
     fn docs_list_matches_the_docs_directory() {
         let docs_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs");
@@ -182,7 +171,6 @@ mod tests {
         assert_eq!(d.filename, "project-setup.md");
         assert!(d.content.contains("Project Setup"));
 
-        // The filename form works too.
         assert_eq!(
             get_doc("project-setup.md").unwrap().filename,
             "project-setup.md"

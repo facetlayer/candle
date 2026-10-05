@@ -1,13 +1,4 @@
-//! Starting a single service.
-//!
-//! The flow:
-//! already-running check (`start` leaves a running instance alone) → resolve
-//! the service config (transient or from file) → check the launch directory
-//! exists → kill any existing instance (`restart`) → record
-//! `process_start_initiated`, whose id becomes the new run id → launch the
-//! monitor process (`candle --monitor`) with that run id → race this run's log
-//! rows against a 10s timeout for `process_started` / `process_start_failed` →
-//! print the banner.
+//! Resolve and launch one service, then await its run's startup result.
 
 use std::path::Path;
 use std::thread;
@@ -76,11 +67,8 @@ fn database_file_identity(conn: &Connection) -> Option<(u64, u64)> {
     Some((meta.dev(), meta.ino()))
 }
 
-/// Record a start that failed before any monitor was launched, the way the
-/// monitor records one (`process_start_initiated` + `process_start_failed`), so
-/// `ps` / `list` show `FAILED` and `logs` shows why. Skipped while an instance
-/// is still running: that instance was left alone, and a new launch boundary
-/// would hide its output from `logs`.
+/// Record pre-monitor failures for list/logs. Skip running instances so a new
+/// launch marker does not hide their output.
 fn record_start_failure_if_idle(
     conn: &Connection,
     project_dir: &str,
@@ -102,9 +90,7 @@ fn record_start_failure_if_idle(
     Ok(())
 }
 
-/// Handle `start` on a service that is already running: report it and leave it
-/// alone. A transient `--shell` that differs from what's running is an error,
-/// since silently keeping the old command would look like the new one started.
+/// Leave an existing service running; reject a different transient shell.
 fn report_already_running(
     opts: &RunOptions,
     entry: &ProcessEntry,
@@ -148,18 +134,13 @@ fn report_already_running(
     })
 }
 
-/// Launch a single service as a detached subprocess and wait for it to report a
-/// start result. See module docs for the full sequence.
+/// Launch a detached service and await its startup result.
 pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartResult, CandleError> {
-    // 0. Serialize starts of this service. Held until return, so a concurrent
-    //    start sees this launch's row (and skips it, or restart kills it)
-    //    instead of racing it into a duplicate instance.
+    // Hold the lock through startup to prevent concurrent duplicate launches.
     let db_identity = database_file_identity(conn);
     let _start_lock = crate::start::service_lock::acquire(&opts.project_dir, &opts.command_name)
         .map_err(|e| CandleError::Generic(format!("Failed to acquire start lock: {e}")))?;
-    // `erase-database` holds the lock exclusively while it erases, so a start
-    // that waited on it may now hold a connection to a deleted file. Writing
-    // there would launch a service no later command can see.
+    // A connection opened before erase-database may point to a deleted file.
     if db_identity.is_some() && database_file_identity(conn) != db_identity {
         return Err(CandleError::Generic(
             "The database was erased while this start was waiting. Run the command again."
@@ -167,25 +148,20 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         ));
     }
 
-    // Configured services are looked up by name below; the other paths use
-    // the name as given.
     if opts.command_name.is_empty() && opts.shell.is_some() {
         return Err(CandleError::UsageError(
             "Command name is required".to_string(),
         ));
     }
 
-    // 1. `start` leaves a running instance alone. Runs BEFORE config
-    //    resolution so it works for transient names that aren't in the config.
+    // Check before config lookup so unconfigured transient names still work.
     if opts.if_running == IfRunning::Skip {
         if let Some(entry) = find_running_service(conn, &opts.project_dir, &opts.command_name)? {
             return report_already_running(&opts, &entry);
         }
     }
 
-    // 2. Resolve the service config.
     let service: ServiceConfig = if let Some(shell) = &opts.shell {
-        // Transient process.
         if let Some(root) = &opts.root {
             if !is_valid_root_path(root) {
                 return Err(CandleError::UsageError(format!(
@@ -200,17 +176,13 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
             enable_stdin: Some(opts.enable_stdin),
         }
     } else {
-        // Configured process.
         let found =
             get_service_config_by_name(&opts.command_name, Some(Path::new(&opts.project_dir)))?;
         found.service_config
     };
 
-    // The directory the service runs in. The monitor would fail to spawn the
-    // shell there anyway, but only with a bare "No such file or directory" that
-    // reads the same as a missing executable. Check up front so the error names
-    // the path — and before the kill below, so a bad `root` doesn't take down a
-    // running instance on its way to failing.
+    // Validate cwd before killing an existing service, and name the missing path
+    // rather than reporting an ambiguous spawn error.
     let launch_dir = crate::dirs::resolve_launch_dir(&opts.project_dir, service.root.as_deref());
     if !Path::new(&launch_dir).is_dir() {
         let reason = format!("root directory does not exist: {launch_dir}");
@@ -221,16 +193,10 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         )));
     }
 
-    // How the run being replaced ended, read before this launch becomes the
-    // latest run. After a crash, `logs` will only show the new run, so the
-    // banner points at `logs --previous`.
+    // Capture the previous failure before this launch becomes the latest run.
     let previous_run = latest_run(conn, &opts.project_dir, &service.name)?;
 
-    // 3. Kill any existing instance (restart, or a `start` racing a process
-    //    that is shutting down). quiet_failure suppresses
-    //    "no running processes" noise. The kill waits for the old process tree;
-    //    its monitor may still be writing its last rows, but those carry the
-    //    old run id, so they never show up as part of the new run.
+    // Wait for the old tree. Its monitor may still write rows with the old run id.
     handle_kill_command(
         conn,
         &opts.project_dir,
@@ -239,10 +205,8 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         false,
     )?;
 
-    // 4. Record the launch. Its row id is the new run id.
     let run_id = start_run(conn, &service.name, &opts.project_dir)?;
 
-    // 5. Launch the detached monitor process (`candle --monitor`).
     let info = MonitorLaunchInfo {
         command_name: service.name.clone(),
         project_dir: opts.project_dir.clone(),
@@ -256,7 +220,6 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
     launch_monitor(&info)
         .map_err(|e| CandleError::Generic(format!("Failed to launch monitor process: {e}")))?;
 
-    // 6. Success / failure race against a 10s timeout, on this run's rows only.
     let this_run = |log_types: Vec<i64>| {
         get_process_logs(
             conn,
@@ -278,10 +241,7 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         match outcome.first() {
             Some(log) if log.log_type == ProcessLogType::ProcessStarted.as_i64() => break,
             Some(_) => {
-                // The last lines of the run, oldest first. The monitor writes
-                // every line before `process_start_failed`, and is the run's
-                // only writer, so row order is output order and the newest
-                // rows are the end of the output. Empty lines are skipped.
+                // The monitor writes output before the failure marker; show the tail in order.
                 let tail = get_process_logs_with_eviction_info(
                     conn,
                     &LogSearchOptions {
@@ -316,10 +276,6 @@ pub fn start_one_service(conn: &Connection, opts: RunOptions) -> Result<StartRes
         }
     }
 
-    // 7. Success banner. `launch_dir` comes from `resolve_launch_dir`, which
-    //    `list` also uses, so the two always report the same directory. It
-    //    matches the monitor's cwd too: an absolute `root` replaces the project
-    //    dir in both.
     output::out(&format!(
         "[Started process '{}'] $ {}",
         service.name, service.shell

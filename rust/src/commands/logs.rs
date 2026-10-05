@@ -1,14 +1,4 @@
-//! `logs` command handler.
-//!
-//! Fetches stored process output for the given service(s) (or all services in
-//! the project when none are named), filters to the most recent launch
-//! (showing logs from a previous launch when there is no launch marker), and
-//! renders each row through the output sink, either as text or (with `--json`)
-//! as a JSON array that carries each row's ID and run.
-//!
-//! `--previous` reads the run before the latest instead (the output of a crash,
-//! after the service was started again), and `--all-runs` reads every stored
-//! run in order, marking where each new run begins.
+//! Render stored service logs as text or JSON, selecting latest, previous, or all runs.
 
 use std::collections::HashMap;
 
@@ -115,10 +105,8 @@ fn lines_phrase(limit: i64) -> String {
 
 /// Display logs for the given service(s) in the project.
 ///
-/// When `command_names` is empty (or has more than one entry) the output runs in
-/// "blended" mode: each line is prefixed with `[<service>] `, and the limit
-/// applies to each service separately, so one chatty service can't push the
-/// others out of the output.
+/// With zero or multiple names, prefix lines by service and apply the limit
+/// per service so chatty services do not hide others.
 pub fn handle_logs_command(
     conn: &Connection,
     project_dir: &str,
@@ -175,8 +163,7 @@ pub fn handle_logs_command(
         return;
     }
 
-    // Only when the limit cut off lines from the selected runs; other runs'
-    // lines are left out on purpose and aren't worth a hint.
+    // Hint only for truncated selected runs, not intentionally excluded history.
     if !truncated_services.is_empty() {
         let what = lines_phrase(options.limit);
         let hint = if is_blended_mode {
@@ -191,8 +178,7 @@ pub fn handle_logs_command(
         output::out(&hint);
     }
 
-    // With --all-runs, mark where each service's next run begins. The first run
-    // shown needs no marker.
+    // Mark run boundaries after the first displayed run.
     let mut last_run: HashMap<&str, Option<i64>> = HashMap::new();
     for log in &logs {
         if options.runs == RunScope::All {
@@ -290,7 +276,6 @@ mod tests {
             );
         });
 
-        // Start lines are hidden; no eviction line.
         assert_eq!(
             captured.stdout,
             vec!["alpha".to_string(), "beta".to_string()]
@@ -429,7 +414,6 @@ mod tests {
         assert_eq!(entries[0]["content"], "alpha");
         assert_eq!(entries[1]["type"], "stderr");
 
-        // --start-at with an ID from the JSON output returns only later rows.
         let options = LogsCommandOptions {
             json: true,
             start_at_id: Some(2),
@@ -447,8 +431,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Two runs of `svc`: the first prints "first" and crashes, the second
-    /// prints "second".
+    /// Two runs: a crash followed by a successful relaunch.
     fn save_two_runs(conn: &Connection) {
         let save = |log_type, content: Option<&str>| {
             save_process_log(conn, "svc", "/proj", log_type, content).unwrap();
@@ -533,7 +516,6 @@ mod tests {
         assert_eq!(lines[2], "-- new run --");
         assert_eq!(lines[3], "second");
 
-        // Blended mode prefixes the marker with the service, like its lines.
         let blended = run_logs(&conn, &[], &with_runs(RunScope::All));
         assert!(blended.contains(&"[svc] -- new run --".to_string()));
 
@@ -559,7 +541,6 @@ mod tests {
             .iter()
             .map(|e| e["run"].as_i64().unwrap())
             .collect();
-        // Each run's id is its start marker's row id: rows 1 and 4.
         assert_eq!(runs, vec![1, 1, 4]);
 
         drop(conn);

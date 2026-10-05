@@ -1,17 +1,8 @@
-//! Config data model and order-preserving serialization.
-//!
-//! Design note: rather than relying on `#[serde(flatten)]` (whose serialization
-//! order is fixed by struct-field order and therefore cannot reproduce the
-//! file's original key order for interspersed unknown keys), this module keeps the parsed
-//! config as typed fields *plus* a `key_order` list and an `extra` map. The
-//! canonical write-back path (`to_value` / `to_json_string`) reconstructs the
-//! object in the original insertion order, as 2-space-indented JSON (falsy
-//! `root` / `enableStdin` omitted, unknown top-level and per-service keys
-//! preserved) with a trailing newline.
+//! Config models preserving unknown keys and original key order on write-back.
+//! Separate key ordering avoids serde(flatten) grouping known and unknown keys.
 
 use serde_json::{Map, Value};
 
-/// Name of the config file.
 pub const CONFIG_FILENAME: &str = ".candle.json";
 
 /// Defaults applied at read time by `get_log_eviction_config` (not written to disk).
@@ -50,15 +41,11 @@ pub struct ResolvedLogEvictionConfig {
 pub struct CandleSetupConfig {
     pub services: Vec<ServiceConfig>,
     pub log_eviction: Option<LogEvictionConfig>,
-    /// Top-level key insertion order, used to preserve the file's key ordering on
-    /// write-back. Known keys (`services` / `logEviction`) and unknown keys (held
-    /// in `extra`) both appear here.
+    /// Original order of known and unknown top-level keys.
     pub(crate) key_order: Vec<String>,
     /// Unknown top-level keys, preserved verbatim on round-trip.
     pub(crate) extra: Map<String, Value>,
-    /// Each service's object as read from disk, keyed by service name. Write-back
-    /// starts from it, so per-service keys Candle doesn't know (and their order)
-    /// survive `add-service` / `remove-service` / `set-config`.
+    /// Original service objects, preserving unknown keys and their order.
     pub(crate) service_raw: Map<String, Value>,
 }
 
@@ -89,9 +76,7 @@ impl LogEvictionConfig {
 }
 
 impl ServiceConfig {
-    /// Serialize with fields in the canonical insertion order used by
-    /// `add-service`: `name`, `shell`, then `root` / `enableStdin` only when
-    /// truthy.
+    /// Serialize new services in name/shell/root/enableStdin order, omitting falsy options.
     fn to_value(&self) -> Value {
         let mut m = Map::new();
         m.insert("name".to_string(), Value::String(self.name.clone()));
@@ -107,8 +92,7 @@ impl ServiceConfig {
         Value::Object(m)
     }
 
-    /// Serialize on top of the object this service was read from: known keys are
-    /// updated in place, unknown keys keep their value and position.
+    /// Update known fields in place, preserving unknown keys and their order.
     fn to_value_over(&self, raw: Option<&Value>) -> Value {
         let Some(Value::Object(raw)) = raw else {
             return self.to_value();
@@ -170,8 +154,7 @@ impl CandleSetupConfig {
         s
     }
 
-    /// Ensure a top-level key is present in `key_order` (appending it at the end
-    /// if missing), so newly set keys are written after existing ones.
+    /// Append a missing key to the write-back order.
     pub(crate) fn ensure_key(&mut self, key: &str) {
         if !self.key_order.iter().any(|k| k == key) {
             self.key_order.push(key.to_string());

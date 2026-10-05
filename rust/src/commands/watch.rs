@@ -1,9 +1,4 @@
-//! `watch` command handler.
-//!
-//! Streams live process logs to the console, polling the `log_lines` table
-//! until interrupted (Ctrl+C / SIGTERM) or an optional `exit_after_ms` deadline
-//! is reached. `watch` never launches processes — it only observes. It is also
-//! reused by `start`/`restart` in interactive mode to follow a fresh launch.
+//! Poll and render live logs; also used by interactive start/restart.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
@@ -72,14 +67,9 @@ fn count_running_services(
     Ok(names.len())
 }
 
-/// Stream logs for the given command(s) to the console until interrupted or the
-/// optional deadline is reached. An empty `command_names` watches every process
-/// in the project.
-///
-/// Only each command's latest run is shown. `recent_window_ms` limits how much
-/// of it is replayed before live streaming begins: the `watch` command replays
-/// only recent logs, while `start` in interactive mode shows the whole launch it
-/// just made.
+/// Stream latest-run logs until interrupted or the optional deadline.
+/// Empty names watch all services. recent_window_ms limits initial replay;
+/// interactive starts replay the whole launch.
 pub fn watch_process(
     conn: &Connection,
     project_dir: &str,
@@ -87,8 +77,6 @@ pub fn watch_process(
     exit_after_ms: Option<u64>,
     recent_window_ms: Option<u64>,
 ) -> rusqlite::Result<()> {
-    // With one explicit name there's no ambiguity; anything else (multiple
-    // names, or the watch-everything case) prefixes each line with its name.
     let is_blended = command_names.len() != 1;
 
     let mut iterator = LogIterator::new(project_dir.to_string(), command_names.to_vec());
@@ -98,7 +86,6 @@ pub fn watch_process(
 
     let initial_logs = iterator.get_next_logs(conn, Some(INITIAL_LOG_COUNT))?;
 
-    // Install signal handlers and reset the stop flag.
     STOP.store(false, Ordering::SeqCst);
     unsafe {
         libc::signal(
@@ -115,7 +102,6 @@ pub fn watch_process(
         .filter(|ms| *ms > 0)
         .map(|ms| Instant::now() + Duration::from_millis(ms));
 
-    // Print the initial batch (already fetched for the status check).
     print_batch(&initial_logs, is_blended, &mut filter);
 
     loop {
@@ -157,7 +143,6 @@ pub fn watch_process(
         );
     }
 
-    // Restore default signal handlers.
     unsafe {
         libc::signal(libc::SIGINT, libc::SIG_DFL);
         libc::signal(libc::SIGTERM, libc::SIG_DFL);
@@ -166,12 +151,8 @@ pub fn watch_process(
     Ok(())
 }
 
-/// Handle the `watch` command.
-///
-/// `watch` only observes — it never launches processes.
-/// - With no names, it watches everything in the project (including processes
-///   that haven't launched yet) and always succeeds.
-/// - With names, every named process must currently be running.
+/// Watch all project services, including future launches, or named services
+/// that must already be running.
 pub fn handle_watch(
     conn: &Connection,
     cwd: &std::path::Path,
@@ -184,7 +165,6 @@ pub fn handle_watch(
     if command_names.is_empty() {
         output::out("Watching all processes in this project.");
     } else {
-        // Each named process must be running.
         for name in command_names {
             if !is_service_running(conn, &project_dir, name)? {
                 return Err(CandleError::UsageError(format!(
@@ -216,10 +196,8 @@ pub fn handle_watch(
     Ok(())
 }
 
-/// Follow the logs of service(s) that were just launched by `start`/`restart`
-/// in interactive mode. Shows only logs from the fresh launch (no stale
-/// history), streaming until Ctrl+C — which detaches and leaves the processes
-/// running — or the optional deadline.
+/// Follow newly launched services until interruption or deadline.
+/// Ctrl+C detaches, leaving services running.
 pub fn watch_started_services(
     conn: &Connection,
     project_dir: &str,

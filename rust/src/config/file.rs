@@ -26,11 +26,7 @@ pub struct FoundServiceConfig {
     pub project_dir: PathBuf,
 }
 
-/// Read and parse a config file.
-///
-/// Trims the contents; an empty file (after trim) is valid and yields
-/// `{ services: [] }`. Otherwise the JSON is parsed, `services` is normalized,
-/// and the config is validated.
+/// Parse, normalize, and validate config. Empty files yield no services.
 pub fn read_config_file(config_file_path: &Path) -> Result<CandleSetupConfig, CandleError> {
     let content = std::fs::read_to_string(config_file_path).map_err(|e| {
         CandleError::ConfigFileError(format!(
@@ -58,8 +54,7 @@ pub fn read_config_file(config_file_path: &Path) -> Result<CandleSetupConfig, Ca
     validate_config(value)
 }
 
-/// Print a config warning to stderr, once per process. A single command often
-/// reads the config several times.
+/// Emit each config warning once per process.
 fn warn_once(message: &str) {
     use std::collections::HashSet;
     use std::sync::Mutex;
@@ -78,13 +73,8 @@ fn to_absolute(p: &Path) -> PathBuf {
     std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
-/// Find the nearest config file in `start_dir` or any ancestor.
-///
-/// Looks for [`CONFIG_FILENAME`] in each directory, walking up to the
-/// filesystem root. A read/parse error of an existing file is wrapped as
-/// `Invalid <filename> at <path>: <msg>` (losing the `MissingSetupFile` type).
-/// If nothing is found, returns `MissingSetupFile` reporting the original
-/// starting directory.
+/// Find the nearest config in this directory or its ancestors.
+/// Wrap read/parse errors with the path; report the starting directory if absent.
 pub fn find_config_file(start_dir: &Path) -> Result<FoundConfig, CandleError> {
     let starting_dir = start_dir.to_path_buf();
     let mut current = to_absolute(start_dir);
@@ -166,12 +156,8 @@ pub fn resolve_command_names_or_all(
     Ok(names)
 }
 
-/// Directory-aware loose matching.
-///
-/// Finds services whose name *contains* `command_name`; among those, prefers
-/// ones whose resolved root equals the search directory, walking up parent
-/// directories until reaching the project dir or filesystem root. Multiple
-/// directory matches at one level is an ambiguity error.
+/// Match name substrings, preferring service roots in the search directory,
+/// then its ancestors. Multiple matches at one level are ambiguous.
 pub fn find_loose_command_name(
     command_name: &str,
     config: &CandleSetupConfig,
@@ -187,7 +173,6 @@ pub fn find_loose_command_name(
         .collect();
 
     if matching.is_empty() {
-        // No substring matches here; try the parent directory.
         match search_dir.parent() {
             Some(parent) if parent != search_dir && parent != project_dir => {
                 return find_loose_command_name(command_name, config, project_dir, parent);
@@ -196,7 +181,6 @@ pub fn find_loose_command_name(
         }
     }
 
-    // Of the substring matches, which resolve their root to the search dir?
     let with_matching_root: Vec<&ServiceConfig> = matching
         .iter()
         .copied()
@@ -217,13 +201,12 @@ pub fn find_loose_command_name(
         )));
     }
 
-    // No directory match here; try the parent directory.
     match search_dir.parent() {
         Some(parent) if parent != search_dir && parent != project_dir => {
             find_loose_command_name(command_name, config, project_dir, parent)
         }
         _ => {
-            // At the top: fall back to a single substring match if unambiguous.
+            // At the project root, accept a single remaining substring match.
             if matching.len() == 1 {
                 Ok(Some(matching[0].clone()))
             } else {
@@ -374,7 +357,7 @@ mod tests {
             "{\n  \"services\": [ { \"name\": \"api-one\", \"shell\": \"x\" }, { \"name\": \"api-two\", \"shell\": \"y\" } ]\n}",
         )
         .unwrap();
-        // canonicalize project dir so root-equality matches the discovered project_dir.
+        // Canonicalize to match the discovered project directory.
         let err = get_service_config_by_name("api", Some(dir.path())).unwrap_err();
         assert!(
             err.to_string()

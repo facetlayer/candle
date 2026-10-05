@@ -1,18 +1,8 @@
-//! Telling a recorded process from an unrelated one that was later given the
-//! same PID.
-//!
-//! A `processes` row outlives its process when the monitor is killed or the
-//! machine reboots, and the OS reuses PIDs. A bare "is this PID alive" check
-//! would then report the service as running and let `kill` signal a stranger.
-//! So each row also records the OS start time of its PIDs, and a PID only
-//! counts as the recorded process while its start time still matches.
+//! Match recorded PIDs against OS start times to avoid signalling reused PIDs.
 
 use crate::process_alive::is_process_alive;
 
-/// The OS start time of `pid` as an opaque number: equal for the same process,
-/// different for a later process with the same PID. `None` if the process
-/// doesn't exist, can't be inspected (it belongs to another user), or the
-/// platform has no way to ask.
+/// Opaque OS start time, or `None` if the process cannot be inspected.
 pub fn process_start_token(pid: i64) -> Option<i64> {
     if pid <= 0 {
         return None;
@@ -57,11 +47,7 @@ fn parse_proc_stat_start_time(stat: &str) -> Option<i64> {
     after_name.split_whitespace().nth(22 - 3)?.parse().ok()
 }
 
-/// Whether `pid` is alive and is still the process a row recorded.
-///
-/// `recorded` is the start token stored when the row was written. Rows written
-/// by an older candle have none, and for those a live PID is all there is to
-/// go on.
+/// Check liveness and start time. Legacy rows without a token use liveness only.
 pub fn is_recorded_process(pid: i64, recorded: Option<i64>) -> bool {
     if !is_process_alive(pid) {
         return false;
@@ -91,7 +77,6 @@ mod tests {
         }
         assert_eq!(token, process_start_token(me));
         assert!(is_recorded_process(me, token));
-        // No recorded token: a live PID is enough.
         assert!(is_recorded_process(me, None));
     }
 
