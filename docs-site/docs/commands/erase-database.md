@@ -32,7 +32,7 @@ A `start` or `restart` that is already under way finishes before the erase check
 
 ## Database Location
 
-See [Database](../database) for details on the database location.
+The database is stored at `~/.local/state/candle/candle.db` by default. If `CANDLE_DATABASE_DIR` is set, that directory is used instead; otherwise, if `XDG_STATE_HOME` is set, the database lives in `$XDG_STATE_HOME/candle`.
 
 Associated files that are also deleted:
 - `candle.db-wal` (Write-Ahead Log)

@@ -131,10 +131,6 @@ candle add-service api --shell "npm run dev" --root packages/api
 
 This will create or update `.candle.json` with the new service.
 
-## Database Location
-
-See [Database](database) for details on where Candle stores logs and service state.
-
 ## See Also
 
 - [Getting Started](getting-started) - Quick setup guide

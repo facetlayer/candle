@@ -106,7 +106,7 @@ rm -rf ~/.local/state/candle
 ```
 
 (If you set `XDG_STATE_HOME` or `CANDLE_DATABASE_DIR`, the database lives under that
-path instead. See [Database](database).)
+path instead.)
 
 Per-project `.candle.json` config files stay in your project directories; delete them
 by hand if you no longer want them.

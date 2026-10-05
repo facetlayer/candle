@@ -87,7 +87,6 @@ const sidebars = {
     },
     {type: 'doc', id: 'project-organization', label: 'Project Organization'},
     {type: 'doc', id: 'project-dir', label: 'Targeting Another Project'},
-    {type: 'doc', id: 'database', label: 'Database'},
     {type: 'doc', id: 'mcp-integration', label: 'MCP Integration'},
   ],
 };
