@@ -45,12 +45,12 @@ $ candle list
 [web]
   status: RUNNING - pid 12345 - uptime 3m 5s
   command: npm run dev
-  directory: /Users/andy/proj/web
+  directory: /home/me/proj/web
 
 [api]
   status: not running
   command: npm run api
-  directory: /Users/andy/proj
+  directory: /home/me/proj
 ```
 
 `pid` and `uptime` are omitted for services that aren't running. A service
@@ -65,7 +65,7 @@ OOM killer) shows `FAILED`. A service stopped with `candle kill` or `candle rest
 [jobs]
   status: EXITED (1)
   command: node jobs.js
-  directory: /Users/andy/proj
+  directory: /home/me/proj
 ```
 
 The `directory` is where the service runs: the project directory, or its `root`
@@ -79,7 +79,7 @@ edited in `.candle.json`, ` [config changed]` is appended to its status:
 [web]
   status: RUNNING [config changed] - pid 12345 - uptime 3m 5s
   command: npm run dev
-  directory: /Users/andy/proj/web
+  directory: /home/me/proj/web
 ```
 
 When there are no services at all, `list` prints `No services configured.`

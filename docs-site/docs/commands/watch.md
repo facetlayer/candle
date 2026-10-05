@@ -11,11 +11,11 @@ candle watch [name...]
 ## Description
 
 The `watch` command displays real-time output from running services. Press
-`Ctrl+C` to exit watch mode (services keep running in the background).
+`Ctrl-C` to exit watch mode (services keep running in the background).
 
-The watch command is prevented for coding agents (such as Claude Code).
-If the tool detects an agent, 
-`watch` exits with an error and gives instructions to use `candle logs`.
+`watch` blocks until `Ctrl-C`, so it refuses to run for a coding agent (such as
+Claude Code). When Candle detects one, `watch` exits with an error that points
+at `candle logs`. See [Interactive and Agent Mode](../agent-mode).
 
 - If called with no service names, `watch` always succeeds and watches every
   process in the project — including services that haven't launched yet, whose

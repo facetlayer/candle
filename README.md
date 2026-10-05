@@ -171,12 +171,12 @@ $ candle list
 [web]
   status: RUNNING - pid 12345 - uptime 3m 5s
   command: npm run dev
-  directory: /Users/andy/proj/web
+  directory: /home/me/proj/web
 
 [api]
   status: not running
   command: npm run api
-  directory: /Users/andy/proj
+  directory: /home/me/proj
 ```
 
 Pass one or more service names to show only those services. Add `--json` for machine-readable output.
@@ -431,8 +431,8 @@ If no `service names` are provided: Delete the logs for every service in this pr
 ### `candle list-docs` and `candle get-doc <name>`
 
 List and print the documentation files built into the binary (the files directly in `./docs` plus this README).
-`get-doc` takes the name `list-docs` shows (for example `candle get-doc project-setup`) and matches it
-exactly. `list-docs --json` prints the list as a JSON array of `name` and `description`.
+`get-doc` takes the name `list-docs` shows (for example `candle get-doc project-setup`). The whole name
+must match (a prefix isn't enough), but upper and lower case don't matter. `list-docs --json` prints the list as a JSON array of `name` and `description`.
 
 ### `candle erase-database`
 

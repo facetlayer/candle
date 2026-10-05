@@ -2,6 +2,8 @@
 
 Candle includes a built-in Model Context Protocol (MCP) server, allowing AI agents like Claude Code to manage your development services.
 
+Note: The recommended way to use `candle` with your agent is as a command-line app instead of an MCP integration: have the agent run `candle --help`. See [Interactive and Agent Mode](agent-mode#using-candle-from-a-coding-agent). MCP support is maintained in case you need it, for example for a client that can't run shell commands.
+
 ## Starting the MCP Server
 
 ```bash
@@ -94,21 +96,15 @@ Open a browser window to a running service's lowest listening port.
 
 ## Claude Code Integration
 
-To use Candle with Claude Code, add it to your MCP configuration. Claude Code can then:
+Claude Code can run shell commands, so it doesn't need the MCP server: let it use the `candle` CLI and have it run `candle --help`.
 
-- Start and stop development servers
-- View logs from running services
-- Add new services to your configuration
-- Restart services after making changes
+If you want the MCP server anyway, for example to limit the agent to a fixed set of operations, register it with:
 
-### Initial Setup
+```bash
+claude mcp add candle -- candle mcp
+```
 
-Before using MCP tools, you'll typically want to configure your services. You can do this via:
-
-- The CLI: `candle add-service api --shell "npm run dev"`
-- The MCP `AddServerConfig` tool (see above)
-
-See [add-service](commands/add-service) for CLI usage details.
+Configure your services first, either with the CLI (`candle add-service api --shell "npm run dev"`, see [add-service](commands/add-service)) or with the `AddServerConfig` tool.
 
 ## Example MCP Workflow
 
@@ -119,5 +115,7 @@ See [add-service](commands/add-service) for CLI usage details.
 
 ## See Also
 
+- [Interactive and Agent Mode](agent-mode) - Using the CLI from a coding agent
+- [mcp](commands/mcp) - The `mcp` command
 - [Getting Started](getting-started) - Basic Candle setup
 - [Configuration](configuration) - Configuration file format

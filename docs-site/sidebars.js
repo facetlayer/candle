@@ -87,6 +87,7 @@ const sidebars = {
     },
     {type: 'doc', id: 'project-organization', label: 'Project Organization'},
     {type: 'doc', id: 'project-dir', label: 'Targeting Another Project'},
+    {type: 'doc', id: 'agent-mode', label: 'Interactive and Agent Mode'},
     {type: 'doc', id: 'mcp-integration', label: 'MCP Integration'},
   ],
 };

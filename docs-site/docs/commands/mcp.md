@@ -12,7 +12,9 @@ candle mcp
 
 The `mcp` command starts Candle as an MCP server, allowing AI assistants and other MCP clients to manage services programmatically. It speaks MCP over stdin/stdout, so it is meant to be launched by an MCP client rather than run by hand. The project is the `.candle.json` found from the server's working directory.
 
-The same guide is built into the binary: `candle get-doc mcp-usage`.
+Coding agents that can run shell commands should use the `candle` CLI instead and run `candle --help`; see [Interactive and Agent Mode](../agent-mode). The MCP server is for clients that can't.
+
+See [MCP Integration](../mcp-integration) for each tool's parameters. A shorter guide is built into the binary: `candle get-doc mcp-usage`.
 
 ## MCP Tools
 
@@ -51,4 +53,5 @@ claude mcp add candle -- candle mcp
 
 ## See Also
 
-- [help](help) - Show help information
+- [MCP Integration](../mcp-integration) - Tool reference
+- [Interactive and Agent Mode](../agent-mode) - Using the CLI from a coding agent

@@ -24,8 +24,8 @@ If a service fails to start again, `restart` prints `Failed to restart: <reason>
 and exits with code 1. When restarting several services, the others are still
 restarted.
 
-`restart` follows the same interactive behavior as [start](start): when run
-interactively it watches the restarted process's logs until `Ctrl+C` (the
+`restart` follows the same [interactive behavior](../agent-mode) as [start](start): when run
+interactively it watches the restarted process's logs until `Ctrl-C` (the
 process keeps running); when run non-interactively (agents, scripts, pipes) it
 exits as soon as the restart is confirmed.
 

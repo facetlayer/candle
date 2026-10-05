@@ -18,7 +18,7 @@ If any Candle-managed services are still running, the command refuses and lists 
 $ candle erase-database
 Error: Refusing to erase the database: 1 Candle-managed process is still running.
 Erasing now would leave them running with no way for Candle to stop them.
-  api (pid 12345) in /Users/you/projects/my-app
+  api (pid 12345) in /home/me/projects/my-app
 Run 'candle kill-all' first, or pass --force to erase anyway.
 ```
 

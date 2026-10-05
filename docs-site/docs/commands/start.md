@@ -33,14 +33,15 @@ What happens next depends on how `start` was invoked:
 
 - **Interactive mode** (a human at a terminal): `start` stays attached and streams
   the new process's logs, starting from the fresh launch (no stale logs).
-  Press `Ctrl+C` to stop watching — the process keeps running in the background
+  Press `Ctrl-C` to stop watching — the process keeps running in the background
   until you stop it with a command like `candle stop`.
 - **Non-interactive mode** (AI agents, scripts, pipes, CI): `start` exits as soon
   as the launch is confirmed and prints a hint pointing at `candle logs`.
 
 Candle picks the mode automatically: it uses non-interactive mode when the output
 is not a terminal or when run by a coding agent (such as Claude Code). Use
-`--watch` or `--bg` to force a mode explicitly.
+`--watch` or `--bg` to force a mode explicitly. See
+[Interactive and Agent Mode](../agent-mode) for how the mode is detected.
 
 ## Arguments
 
@@ -74,7 +75,7 @@ and the directory it ran in:
 ```
 $ candle start api
 [Started process 'api'] $ npm run api
-[With root directory: /Users/andy/proj]
+[With root directory: /home/me/proj]
 ```
 
 ### Start multiple services
@@ -104,7 +105,7 @@ candle start api --bg
 
 1. The service is started in the background
 2. Output is logged to the database (viewable with `candle logs`)
-3. In interactive mode, `start` watches the new logs until `Ctrl+C`; in
+3. In interactive mode, `start` watches the new logs until `Ctrl-C`; in
    non-interactive mode it exits immediately
 4. Use `candle watch` or `candle logs` at any time to view output
 
@@ -141,7 +142,7 @@ If the service can't be launched, `start` exits with code 1 and says why. A
 launched (and before any running instance is stopped):
 
 ```
-Error: Process 'api' failed to start: root directory does not exist: /Users/andy/proj/packages/api
+Error: Process 'api' failed to start: root directory does not exist: /home/me/proj/packages/api
 ```
 
 If the process starts but exits during startup, `start` prints the logs it

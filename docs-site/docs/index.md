@@ -9,7 +9,7 @@ Candle is a lightweight process manager designed for local development. It allow
 - **Log Aggregation** - All service output is stored in a SQLite database for easy retrieval
 - **Watch Mode** - Monitor live output from running services
 - **Transient Services** - Run one-off commands without adding them to your config
-- **MCP Integration** - Built-in Model Context Protocol server for AI agent integration
+- **Agent-Friendly** - Detects coding agents and never blocks them, so an agent can use the same CLI you do
 
 ## Quick Start
 
@@ -17,8 +17,8 @@ Candle is a lightweight process manager designed for local development. It allow
 # Install
 curl -fsSL https://raw.githubusercontent.com/facetlayer/candle/main/install.sh | sh
 
-# Create a config file
-echo '{"services": [{"name": "api", "shell": "npm run dev"}]}' > .candle.json
+# Add a service (this creates .candle.json if there isn't one)
+candle add-service api --shell "npm run dev"
 
 # Start your service
 candle start api
@@ -48,21 +48,13 @@ You can also run services without defining them in the config file using the `--
 candle start server --shell "python -m http.server 8080"
 ```
 
-## Commands Overview
+## Commands
 
-| Command | Description |
-|---------|-------------|
-| [`start`](commands/start) (alias `run`) | Start service(s) in the background, if not already running |
-| [`restart`](commands/restart) | Kill and relaunch service(s) |
-| [`kill`](commands/kill) | Stop running service(s) |
-| [`list`](commands/list) | Show details for this project's services |
-| [`ps`](commands/ps) | Compact status table for this project's services |
-| [`logs`](commands/logs) | View recent logs |
-| [`watch`](commands/watch) | Watch live service output |
-| [`wait-for-log`](commands/wait-for-log) | Wait for a specific log message |
+Every command has its own page, listed in the sidebar by the same categories as `candle --help`.
 
 ## See Also
 
-- [Getting Started](getting-started) - Installation and setup guide
+- [Installation](installation) - Install, upgrade and uninstall
+- [Getting Started](getting-started) - Set up your first project
 - [Configuration](configuration) - Configuration file reference
-- [MCP Integration](mcp-integration) - Using Candle with AI agents
+- [Interactive and Agent Mode](agent-mode) - Using Candle with coding agents

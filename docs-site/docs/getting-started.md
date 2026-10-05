@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide will help you install Candle and set up your first project.
+This guide walks through installing Candle and setting up your first project.
 
 ## Installation
 
@@ -62,7 +62,7 @@ candle start api web
 In a terminal, `start` launches the services and then shows their output. Press Ctrl-C to
 stop watching; the services keep running until you `candle kill` them. From a script or a
 coding agent, `start` returns right after launching; add `--bg` to get that behavior in a
-terminal too.
+terminal too. See [Interactive and Agent Mode](agent-mode).
 
 If a service is already running, `start` leaves it alone. Use `candle restart` to kill and
 relaunch it.
@@ -119,4 +119,4 @@ candle list-all
 
 - [Configuration](configuration) - Learn about all configuration options
 - [Commands](commands/start) - Explore all available commands
-- [MCP Integration](mcp-integration) - Use Candle with AI agents
+- [Interactive and Agent Mode](agent-mode) - Use Candle with coding agents

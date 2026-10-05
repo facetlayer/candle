@@ -12,7 +12,7 @@ candle logs [name...] [--count <number>] [--previous | --all-runs] [--start-at <
 
 The `logs` command displays the most recent log output from one or more services. By default, it shows the last 100 lines and then exits (non-interactive).
 
-It shows output from each service's most recent run. That works for services that aren't running anymore too, which is handy for seeing why one crashed. Output from earlier runs is left out.
+It shows output from each service's most recent run. That works for services that aren't running anymore too, which is useful for seeing why one crashed. Output from earlier runs is left out.
 
 If a crashed service has already been started again, its crash output belongs to the previous run. Use `--previous` to see it. [start](start) and [restart](restart) point at it when they relaunch a service whose last run exited with an error:
 

@@ -26,7 +26,7 @@ The `clear-logs` command deletes log entries from the database for the named ser
 
 ```
 $ candle clear-logs api
-Clearing logs for project: /Users/you/projects/my-app
+Clearing logs for project: /home/me/projects/my-app
 Cleared 42 log entries
 ```
 
