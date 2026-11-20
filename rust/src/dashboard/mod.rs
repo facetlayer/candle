@@ -26,7 +26,8 @@ use crate::db::get_database;
 use crate::db::process_table::find_all_running_processes;
 use crate::dirs::{global_project_dir, resolve_launch_dir};
 use crate::errors::CandleError;
-use crate::process_alive::filter_alive_processes;
+use crate::kill::handle_kill_command;
+use crate::process_alive::{filter_alive_processes, find_running_service};
 use http::{Request, Response};
 
 /// Port the dashboard tries first. When it is taken and no port was asked
@@ -103,10 +104,11 @@ pub fn route(req: &Request) -> Response {
             with_db(|conn| api_processes(conn).map(|out| Response::json(200, &out)))
         }
         ("POST", "/api/open-browser") => api_open_browser(req),
+        ("POST", "/api/kill") => api_kill(req),
         (_, "/" | "/index.html" | "/app.js" | "/style.css" | "/api/processes") => {
             Response::error(405, "method not allowed")
         }
-        (_, "/api/open-browser") => Response::error(405, "method not allowed"),
+        (_, "/api/open-browser" | "/api/kill") => Response::error(405, "method not allowed"),
         _ => Response::error(404, "not found"),
     }
 }
@@ -212,37 +214,119 @@ pub fn api_processes(conn: &Connection) -> Result<ProcessesResponse, CandleError
     })
 }
 
-/// `POST /api/open-browser` with `{projectDir, serviceName, port?}`. Requiring
-/// a JSON content type makes cross-origin form posts impossible without a
-/// CORS preflight, which this server never approves.
-fn api_open_browser(req: &Request) -> Response {
-    let is_json = req
-        .header("content-type")
-        .is_some_and(|ct| ct.split(';').next().unwrap_or("").trim() == "application/json");
-    if !is_json {
-        return Response::error(415, "expected Content-Type: application/json");
+/// A POST body naming one service: `{projectDir, serviceName, ...}`.
+struct ServiceRequest {
+    project_dir: String,
+    service_name: String,
+    body: serde_json::Value,
+}
+
+impl ServiceRequest {
+    /// Parse the body. Requiring a JSON content type makes cross-origin form
+    /// posts impossible without a CORS preflight, which this server never
+    /// approves.
+    fn parse(req: &Request) -> Result<Self, Response> {
+        let is_json = req
+            .header("content-type")
+            .is_some_and(|ct| ct.split(';').next().unwrap_or("").trim() == "application/json");
+        if !is_json {
+            return Err(Response::error(
+                415,
+                "expected Content-Type: application/json",
+            ));
+        }
+        let body: serde_json::Value = serde_json::from_slice(&req.body)
+            .map_err(|_| Response::error(400, "request body is not valid JSON"))?;
+        let field = |name: &str| body.get(name).and_then(|v| v.as_str()).map(str::to_string);
+        let (Some(project_dir), Some(service_name)) = (field("projectDir"), field("serviceName"))
+        else {
+            return Err(Response::error(
+                400,
+                "projectDir and serviceName are required",
+            ));
+        };
+        Ok(ServiceRequest {
+            project_dir,
+            service_name,
+            body,
+        })
     }
-    let body: serde_json::Value = match serde_json::from_slice(&req.body) {
+
+    /// An optional integer field.
+    fn optional_i64(&self, name: &str) -> Result<Option<i64>, Response> {
+        match self.body.get(name) {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(v) => v
+                .as_i64()
+                .map(Some)
+                .ok_or_else(|| Response::error(400, &format!("{name} must be a number"))),
+        }
+    }
+}
+
+/// `POST /api/open-browser` with `{projectDir, serviceName, port?}`.
+fn api_open_browser(req: &Request) -> Response {
+    let parsed = ServiceRequest::parse(req).and_then(|r| Ok((r.optional_i64("port")?, r)));
+    let (port, r) = match parsed {
         Ok(v) => v,
-        Err(_) => return Response::error(400, "request body is not valid JSON"),
+        Err(response) => return response,
     };
-    let (Some(project_dir), Some(service_name)) = (
-        body.get("projectDir").and_then(|v| v.as_str()),
-        body.get("serviceName").and_then(|v| v.as_str()),
-    ) else {
-        return Response::error(400, "projectDir and serviceName are required");
+    with_db(|conn| {
+        open_service_port(conn, &r.project_dir, &r.service_name, port)
+            .map(|out| Response::json(200, &out))
+    })
+}
+
+/// `POST /api/kill` with `{projectDir, serviceName, pid?}`. With `pid`, only
+/// that instance is killed, so a click on a stale row cannot kill a service
+/// that has since restarted. The dashboard's own service is refused: killing
+/// it would drop this very request.
+fn api_kill(req: &Request) -> Response {
+    let parsed = ServiceRequest::parse(req).and_then(|r| Ok((r.optional_i64("pid")?, r)));
+    let (pid, r) = match parsed {
+        Ok(v) => v,
+        Err(response) => return response,
     };
-    let port = match body.get("port") {
-        None | Some(serde_json::Value::Null) => None,
-        Some(v) => match v.as_i64() {
-            Some(p) => Some(p),
-            None => return Response::error(400, "port must be a number"),
-        },
-    };
+    if crate::dirs::is_global_project_dir(&r.project_dir)
+        && r.service_name == service::DASHBOARD_SERVICE_NAME
+    {
+        return Response::error(
+            400,
+            "The dashboard can't kill itself. Run 'candle dashboard close' instead.",
+        );
+    }
 
     with_db(|conn| {
-        open_service_port(conn, project_dir, service_name, port)
-            .map(|out| Response::json(200, &out))
+        let Some(entry) = find_running_service(conn, &r.project_dir, &r.service_name)? else {
+            return Ok(Response::error(
+                404,
+                &format!("Service '{}' is not running.", r.service_name),
+            ));
+        };
+        if pid.is_some_and(|pid| pid != entry.pid) {
+            return Ok(Response::error(
+                409,
+                &format!(
+                    "Service '{}' has restarted (now pid {}); refresh and try again.",
+                    r.service_name, entry.pid
+                ),
+            ));
+        }
+        // Keep the kill messages out of the dashboard's own log.
+        let (result, _) = crate::output::capture(|| {
+            handle_kill_command(
+                conn,
+                &r.project_dir,
+                std::slice::from_ref(&r.service_name),
+                true,
+                true,
+            )
+        });
+        result?;
+        Ok(Response::json(
+            200,
+            &serde_json::json!({ "serviceName": r.service_name, "pid": entry.pid }),
+        ))
     })
 }
 
@@ -317,6 +401,33 @@ mod tests {
             route(&request("GET", "/api/open-browser", &host, "")).status,
             405
         );
+    }
+
+    #[test]
+    fn kill_validates_request_and_refuses_the_dashboard_itself() {
+        let host = ("host", "localhost:7700");
+        let json = ("content-type", "application/json");
+        let post = |headers: &[(&str, &str)], body: &str| {
+            route(&request("POST", "/api/kill", headers, body))
+        };
+        assert_eq!(post(&[host], "{}").status, 415);
+        assert_eq!(post(&[host, json], r#"{"serviceName":"web"}"#).status, 400);
+        assert_eq!(
+            post(
+                &[host, json],
+                r#"{"projectDir":"/p","serviceName":"web","pid":"x"}"#
+            )
+            .status,
+            400
+        );
+        let own = serde_json::json!({
+            "projectDir": global_project_dir(),
+            "serviceName": service::DASHBOARD_SERVICE_NAME,
+        });
+        let res = post(&[host, json], &own.to_string());
+        assert_eq!(res.status, 400);
+        assert!(String::from_utf8_lossy(&res.body).contains("candle dashboard close"));
+        assert_eq!(route(&request("GET", "/api/kill", &[host], "")).status, 405);
     }
 
     #[test]

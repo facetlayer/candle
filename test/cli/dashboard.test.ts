@@ -151,6 +151,35 @@ describe('CLI dashboard open / close / run', () => {
     }
   });
 
+  it('kill stops a service, refusing stale pids and the dashboard itself', async () => {
+    const kill = (body: object) =>
+      request(port, '/api/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const processes = JSON.parse((await request(port, '/api/processes')).body);
+    const web = processes.processes.find((p: any) => p.serviceName === 'web');
+    const dashboard = processes.processes.find((p: any) => p.serviceName === 'dashboard');
+
+    const own = await kill({ projectDir: dashboard.projectDir, serviceName: 'dashboard' });
+    expect(own.status).toBe(400);
+    expect(JSON.parse(own.body).error).toContain('candle dashboard close');
+
+    const stale = await kill({ projectDir: web.projectDir, serviceName: 'web', pid: web.pid + 1 });
+    expect(stale.status).toBe(409);
+
+    const killed = await kill({ projectDir: web.projectDir, serviceName: 'web', pid: web.pid });
+    expect(killed.status).toBe(200);
+    expect(JSON.parse(killed.body)).toEqual({ serviceName: 'web', pid: web.pid });
+
+    const list = await workspace.runCli(['list', '--json']);
+    expect(JSON.parse(list.stdoutAsString())[0].status).toBe('not running');
+
+    const again = await kill({ projectDir: web.projectDir, serviceName: 'web' });
+    expect(again.status).toBe(404);
+  });
+
   // Runs last: stops the dashboard the other tests share.
   it('close stops the dashboard, and says so when it is not running', async () => {
     const closed = await workspace.runCli(['dashboard', 'close']);

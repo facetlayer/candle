@@ -12,7 +12,7 @@ candle dashboard run [--port <n>]
 
 ## Description
 
-The dashboard is a web page that lists every service Candle is running on this machine, grouped by project, with each service's PID, uptime, command, and listening ports. Each port has an **Open** button that opens it in your browser, the same way [`open-browser`](./open-browser) does. The page refreshes every two seconds.
+The dashboard is a web page that lists every service Candle is running on this machine, grouped by project, with each service's PID, uptime, command, and listening ports. Each port has an **Open** button that opens it in your browser, the same way [`open-browser`](./open-browser) does. Each service also has a **Kill** button that stops it, the same way [`kill`](./kill) does; click it once, then click **Confirm kill** within three seconds. The dashboard's own row has no Kill button; use `candle dashboard close` instead. The page refreshes every two seconds.
 
 The dashboard listens on `localhost` only, on port 7700 by default (or any free port if 7700 is taken), and only answers requests addressed to `localhost`, `127.0.0.1`, or `[::1]`.
 

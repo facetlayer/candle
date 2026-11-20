@@ -34,9 +34,10 @@ Routes (`dashboard/mod.rs`):
 | `GET /`, `/app.js`, `/style.css` | Embedded UI from `rust/assets/dashboard/` (`include_str!`) |
 | `GET /api/processes` | `{version, globalProjectDir, processes: [...]}`: live, unkilled rows system-wide with ports (deduped by port number), sorted by project then name |
 | `POST /api/open-browser` | `{projectDir, serviceName, port?}` → `open_service_port`. The port must belong to that service |
+| `POST /api/kill` | `{projectDir, serviceName, pid?}` → `handle_kill_command`. 404 if not running; 409 if `pid` no longer matches the running instance (it restarted); 400 for the dashboard's own service, since killing it would drop the request |
 
 Request hardening: every request must carry a loopback `Host` (`localhost`, `127.0.0.1`, `[::1]`)
-to defeat DNS rebinding, and the POST requires `Content-Type: application/json` so cross-origin
+to defeat DNS rebinding, and the POSTs require `Content-Type: application/json` so cross-origin
 pages cannot send it without a CORS preflight (which is never approved).
 
 ## UI build

@@ -9,16 +9,23 @@ async function fetchProcesses() {
     return res.json();
 }
 
-async function openInBrowser(proc, port) {
-    const res = await fetch('/api/open-browser', {
+async function postService(path, proc, extra) {
+    const res = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: proc.projectDir, serviceName: proc.serviceName, port }),
+        body: JSON.stringify({ projectDir: proc.projectDir, serviceName: proc.serviceName, ...extra }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `Server returned ${res.status}`);
     return body;
 }
+
+const openInBrowser = (proc, port) => postService('/api/open-browser', proc, { port });
+// Passing the pid makes the server refuse if the service restarted meanwhile.
+const killService = (proc) => postService('/api/kill', proc, { pid: proc.pid });
+
+/** How long the "Confirm kill" state waits for a second click. */
+const CONFIRM_MS = 3000;
 
 /** Poll the process list. Keeps the last good data while a refresh fails. */
 function useProcesses() {
@@ -95,7 +102,46 @@ function PortButton({ proc, port, onResult }) {
     );
 }
 
-function ServiceRow({ proc, onResult }) {
+/** Two clicks to kill: the first arms the button, the second kills. */
+function KillButton({ proc, onResult, onChanged }) {
+    const [state, setState] = useState('idle'); // idle | confirm | busy
+
+    useEffect(() => {
+        if (state !== 'confirm') return;
+        const id = setTimeout(() => setState('idle'), CONFIRM_MS);
+        return () => clearTimeout(id);
+    }, [state]);
+
+    const click = async () => {
+        if (state === 'idle') {
+            setState('confirm');
+            return;
+        }
+        setState('busy');
+        try {
+            await killService(proc);
+            onResult({ ok: true, text: `Killed ${proc.serviceName} (pid ${proc.pid})` });
+        } catch (e) {
+            onResult({ ok: false, text: e.message });
+        } finally {
+            setState('idle');
+            onChanged();
+        }
+    };
+
+    return (
+        <button
+            className={`kill-button ${state}`}
+            onClick={click}
+            disabled={state === 'busy'}
+            title={`Kill ${proc.serviceName} (pid ${proc.pid}) and its child processes`}
+        >
+            {state === 'idle' ? 'Kill' : state === 'confirm' ? 'Confirm kill' : 'Killing…'}
+        </button>
+    );
+}
+
+function ServiceRow({ proc, onResult, onChanged }) {
     return (
         <tr>
             <td>
@@ -121,11 +167,20 @@ function ServiceRow({ proc, onResult }) {
                     )}
                 </div>
             </td>
+            <td className="actions-cell">
+                {proc.isGlobal ? (
+                    <span className="muted" title="Stop the dashboard with: candle dashboard close">
+                        —
+                    </span>
+                ) : (
+                    <KillButton proc={proc} onResult={onResult} onChanged={onChanged} />
+                )}
+            </td>
         </tr>
     );
 }
 
-function ProjectCard({ group, onResult }) {
+function ProjectCard({ group, onResult, onChanged }) {
     const title = group.isGlobal ? 'Candle (global)' : basename(group.projectDir);
     return (
         <section className="project">
@@ -146,11 +201,19 @@ function ProjectCard({ group, onResult }) {
                         <th className="num">Uptime</th>
                         <th>Command</th>
                         <th>Ports</th>
+                        <th className="actions-cell">
+                            <span className="visually-hidden">Actions</span>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     {group.procs.map((proc) => (
-                        <ServiceRow key={`${proc.serviceName}:${proc.pid}`} proc={proc} onResult={onResult} />
+                        <ServiceRow
+                            key={`${proc.serviceName}:${proc.pid}`}
+                            proc={proc}
+                            onResult={onResult}
+                            onChanged={onChanged}
+                        />
                     ))}
                 </tbody>
             </table>
@@ -173,7 +236,7 @@ function Toast({ message, onDone }) {
 }
 
 function App() {
-    const { data, error, updatedAt } = useProcesses();
+    const { data, error, updatedAt, refresh } = useProcesses();
     const [query, setQuery] = useState('');
     const [toast, setToast] = useState(null);
     const clearToast = useCallback(() => setToast(null), []);
@@ -227,7 +290,7 @@ function App() {
             )}
 
             {groups.map((group) => (
-                <ProjectCard key={group.projectDir} group={group} onResult={setToast} />
+                <ProjectCard key={group.projectDir} group={group} onResult={setToast} onChanged={refresh} />
             ))}
 
             <footer className="footer muted">

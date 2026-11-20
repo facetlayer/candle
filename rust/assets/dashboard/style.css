@@ -8,6 +8,7 @@
     --accent: #c2410c;
     --accent-hover: #9a3412;
     --running: #16a34a;
+    --danger: #dc2626;
     --error-bg: #fef2f2;
     --error-text: #991b1b;
     --code-bg: #f1f0ec;
@@ -25,6 +26,7 @@
         --accent: #fb923c;
         --accent-hover: #fdba74;
         --running: #4ade80;
+    --danger: #ef4444;
         --error-bg: #3b1515;
         --error-text: #fecaca;
         --code-bg: #2a2926;
@@ -188,7 +190,52 @@ th:nth-child(3) {
     width: 10%;
 }
 th:nth-child(5) {
-    width: 24%;
+    width: 22%;
+}
+th:nth-child(6) {
+    width: 120px;
+}
+
+.actions-cell {
+    text-align: right;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.kill-button {
+    font: inherit;
+    font-size: 12.5px;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.kill-button.idle:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.kill-button.confirm,
+.kill-button.busy {
+    border-color: var(--danger);
+    background: var(--danger);
+    color: #fff;
+}
+
+.kill-button:disabled {
+    opacity: 0.7;
+    cursor: progress;
 }
 
 tbody tr {
