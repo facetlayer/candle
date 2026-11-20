@@ -17,6 +17,9 @@ use crate::process_tree::{get_process_group_members, get_process_tree};
 pub struct PortInfo {
     #[serde(rename = "serviceName")]
     pub service_name: String,
+    /// The owning service's project; not part of the MCP JSON shape.
+    #[serde(skip)]
+    pub project_dir: String,
     pub pid: i64,
     pub port: i64,
     pub address: String,
@@ -60,10 +63,11 @@ pub fn handle_list_ports(
     }
 
     // Query sockets once for all trees; later trees win PID collisions.
-    let trees: Vec<(String, i64, Vec<i64>)> = process_entries
+    let trees: Vec<(&str, String, i64, Vec<i64>)> = process_entries
         .iter()
         .map(|entry| {
             (
+                entry.project_dir.as_str(),
                 entry.command_name.clone(),
                 entry.pid,
                 if entry.leader_exited {
@@ -77,7 +81,7 @@ pub fn handle_list_ports(
 
     let all_pids: HashSet<i64> = trees
         .iter()
-        .flat_map(|(_, _, pids)| pids.iter().copied())
+        .flat_map(|(_, _, _, pids)| pids.iter().copied())
         .collect();
 
     if all_pids.is_empty() {
@@ -87,18 +91,19 @@ pub fn handle_list_ports(
     let raw_ports =
         listening_sockets_for_pids(&all_pids).map_err(|e| CandleError::Generic(e.to_string()))?;
 
-    let mut pid_to_service: HashMap<i64, (String, i64)> = HashMap::new();
-    for (service_name, root_pid, pids) in &trees {
+    let mut pid_to_service: HashMap<i64, (&str, &str, i64)> = HashMap::new();
+    for (project_dir, service_name, root_pid, pids) in &trees {
         for pid in pids {
-            pid_to_service.insert(*pid, (service_name.clone(), *root_pid));
+            pid_to_service.insert(*pid, (project_dir, service_name, *root_pid));
         }
     }
 
     let mut ports: Vec<PortInfo> = Vec::new();
     for raw in raw_ports {
-        if let Some((service_name, root_pid)) = pid_to_service.get(&raw.pid) {
+        if let Some((project_dir, service_name, root_pid)) = pid_to_service.get(&raw.pid) {
             ports.push(PortInfo {
-                service_name: service_name.clone(),
+                service_name: service_name.to_string(),
+                project_dir: project_dir.to_string(),
                 pid: raw.pid,
                 port: raw.port,
                 address: raw.address,
@@ -198,6 +203,7 @@ mod tests {
         let out = ListPortsOutput {
             ports: vec![PortInfo {
                 service_name: "web".to_string(),
+                project_dir: "/proj".to_string(),
                 pid: 42,
                 port: 3000,
                 address: "127.0.0.1".to_string(),
@@ -218,6 +224,7 @@ mod tests {
         let out = ListPortsOutput {
             ports: vec![PortInfo {
                 service_name: "web".to_string(),
+                project_dir: "/proj".to_string(),
                 pid: 42,
                 port: 3000,
                 address: "127.0.0.1".to_string(),

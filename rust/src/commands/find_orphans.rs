@@ -53,6 +53,10 @@ pub struct FindOrphansOutput {
 /// Classify a service against its project. Unreadable or invalid configs do
 /// not establish orphanhood. Transient services need no config entry.
 fn classify(project_dir: &str, service_name: &str, transient: bool) -> Option<OrphanReason> {
+    // Candle's own services (the dashboard) have no project config by design.
+    if crate::dirs::is_global_project_dir(project_dir) {
+        return None;
+    }
     let dir = Path::new(project_dir);
     if !dir.is_dir() {
         return Some(OrphanReason::MissingProjectDir);

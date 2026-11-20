@@ -89,10 +89,54 @@ pub fn handle_open_browser(
         .map(|p| p.port)
         .min()
         .expect("non-empty");
+    open_port(service_name, port)
+}
+
+/// Open a browser to one of a service's listening ports, located system-wide
+/// by project and name, so it needs no config (the dashboard and the global
+/// namespace use it). `port` must belong to the service; `None` picks its
+/// lowest port.
+pub fn open_service_port(
+    conn: &Connection,
+    project_dir: &str,
+    service_name: &str,
+    port: Option<i64>,
+) -> Result<OpenBrowserOutput, CandleError> {
+    let mut service_ports: Vec<i64> = handle_list_ports(
+        conn,
+        Path::new(project_dir),
+        true,
+        &[service_name.to_string()],
+    )?
+    .ports
+    .into_iter()
+    .filter(|p| p.project_dir == project_dir)
+    .map(|p| p.port)
+    .collect();
+    service_ports.sort_unstable();
+
+    let chosen = match port {
+        Some(port) if service_ports.contains(&port) => port,
+        Some(port) => {
+            return Err(CandleError::UsageError(format!(
+                "Service '{service_name}' is not listening on port {port}."
+            )))
+        }
+        None => match service_ports.first() {
+            Some(port) => *port,
+            None => {
+                return Err(CandleError::UsageError(format!(
+                    "No open ports found for service '{service_name}'."
+                )))
+            }
+        },
+    };
+    open_port(service_name.to_string(), chosen)
+}
+
+fn open_port(service_name: String, port: i64) -> Result<OpenBrowserOutput, CandleError> {
     let url = format!("http://localhost:{port}");
-
     open_url(&url)?;
-
     Ok(OpenBrowserOutput {
         service_name,
         port,
@@ -101,7 +145,7 @@ pub fn handle_open_browser(
 }
 
 /// Launch the browser detached so it survives Candle exit.
-fn open_url(url: &str) -> Result<(), CandleError> {
+pub fn open_url(url: &str) -> Result<(), CandleError> {
     #[cfg(target_os = "macos")]
     let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
     #[cfg(target_os = "windows")]

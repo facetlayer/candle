@@ -1,12 +1,16 @@
 
 # Repo organization #
 
- Candle is implemented in Rust. The only TypeScript is the Vitest acceptance suite under ./test.
+ Candle is implemented in Rust. The only TypeScript/JavaScript is the Vitest acceptance suite under ./test
+ and the dashboard UI under ./dashboard.
 
  ./rust/ - Main source code. One crate, one binary (`candle`); `src/main.rs` is the entry point.
  ./rust/src/cli/ - Help text, argument parsing, and the `--monitor` entry point
  ./rust/src/monitor/ - Monitor mode: the per-service supervision loop run by `candle --monitor`
+ ./rust/src/dashboard/ - `candle dashboard` web server and JSON API, and `candle open-dashboard`
+ ./rust/assets/dashboard/ - Built dashboard UI, embedded in the binary. Generated; commit it after rebuilding
  ./rust/docs/ - Rust architecture reference
+ ./dashboard/ - React source for the dashboard UI. After editing, run `pnpm install && pnpm build` there
  ./test/ - Automated tests (Vitest, run against the compiled Rust binary)
  ./test/sampleServers/ - Sample implementations of test services.
  ./test/workspaces/ - Directories used to run Candle during tests.

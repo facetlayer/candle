@@ -1,3 +1,6 @@
+# Unreleased
+ - Add `candle open-dashboard`, a web dashboard listing every running service with buttons to open their ports in the browser. It runs in the background as a Candle-managed service; `candle dashboard` runs the same server in the foreground.
+
 # 1.0.0 (2026-10-04)
  - Bug fixes for handling processes that have a lot of output (such as 100k+ lines at startup)
  - `candle start` no longer restarts a running process (use `candle restart` instead). Removed `candle check-start`.

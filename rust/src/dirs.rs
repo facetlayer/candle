@@ -88,6 +88,20 @@ pub fn candle_db_path() -> PathBuf {
     path
 }
 
+/// Project key for Candle's own services, which belong to no user project (the
+/// dashboard). A directory under the state dir, so it exists for use as a
+/// working directory and never coincides with a project that has a config.
+pub fn global_project_dir() -> String {
+    let mut path = get_state_directory();
+    path.push("global");
+    path.display().to_string()
+}
+
+/// Whether `project_dir` is the [`global_project_dir`].
+pub fn is_global_project_dir(project_dir: &str) -> bool {
+    project_dir == global_project_dir()
+}
+
 /// Read an environment variable, treating empty strings the same as unset.
 fn non_empty_env(key: &str) -> Option<String> {
     match std::env::var(key) {

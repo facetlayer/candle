@@ -42,6 +42,7 @@ one file, and the CLI and its monitors can never fall out of version sync.
 | [kill-restart.md](kill-restart.md) | `kill`/`stop`, `kill-all`, `restart`; process-tree teardown with SIGKILL escalation | `kill/*`, `commands/restart`, `process_tree` |
 | [watch-wait.md](watch-wait.md) | `watch` (live tailing, agent-mode guard) and `wait-for-log` | `commands/{watch,wait_for_log}`, `logs/log_iterator`, `log_filters/*` |
 | [list-ports-browser.md](list-ports-browser.md) | `list`/`list-all`, `list-ports`/`list-ports-all` (per-platform port detection), `open-browser` | `commands/{list,list_ports,open_browser}`, `listening_ports`, `process_tree` |
+| [dashboard.md](dashboard.md) | `dashboard`/`open-dashboard`: the global namespace, the hand-rolled HTTP server and JSON API, the embedded React UI | `dashboard/{mod,http,open}`, `dirs` |
 | [mcp.md](mcp.md) | the stdio JSON-RPC MCP server and its nine tools | `mcp/mod`, `output` |
 | [cli.md](cli.md) | errors, debug logging, agent-mode detection, doc files (`list-docs`/`get-doc`), `--project-dir` scope resolution, `find-orphans`, command-name validation, version handling | `errors`, `debug`, `run_context`, `doc_files`, `project_scope`, `commands/{mod,find_orphans}`; CLI `parser`/`help` |
 | [testing.md](testing.md) | the Vitest acceptance suite, its fixtures, and CI | `../../test/*` |
@@ -63,7 +64,8 @@ use threads + channels; there is no async runtime.
 write-back), and `libc` (signals, `setsid`, `flock`). The CLI argument parser, the grouped help renderer, and
 the MCP JSON-RPC server are all hand-rolled rather than pulled from crates, because each must produce
 exact output byte-for-byte (`Unknown argument` errors, grouped help
-section headers, MCP content shapes).
+section headers, MCP content shapes). The dashboard's small HTTP server is hand-rolled on `std::net` for the
+same reason the crate avoids an async runtime (see [dashboard.md](dashboard.md)).
 
 ## Invariants
 

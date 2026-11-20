@@ -31,6 +31,10 @@ Port Detection:
   list-ports [names...]     List the ports a service is listening on
   open-browser [name]       Open a browser to the service's detected port
 
+Dashboard:
+  open-dashboard            Start the web dashboard in the background and open it
+  dashboard                 Run the web dashboard server in the foreground
+
 Logs:
   logs [name...]            Show recent logs for process(es){watch_line}
   wait-for-log [name]       Wait for a specific log message
@@ -93,6 +97,8 @@ pub fn command_help(command: &str) -> String {
         "list-ports" => "candle list-ports [names...]   List open ports for running services\n\nWith one or more names, only those services are shown.\n\nOptions:\n  --json   Output as JSON\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
         "list-ports-all" => "candle list-ports-all   List open ports for all services\n\nSystem-wide; works from any directory.\n\nOptions:\n  --json   Output as JSON".to_string(),
         "open-browser" => "candle open-browser [name]   Open a browser to a running service\n\nOptions:\n  --project-dir <dir>  Act on this project instead of the current directory".to_string(),
+        "dashboard" => "candle dashboard   Run the web dashboard server in the foreground\n\nServes a web page listing every running Candle service on this system, with\nbuttons to open each service's ports in the browser. Listens on localhost\nonly. Press Ctrl-C to stop. To run it in the background instead, use\n'candle open-dashboard'.\n\nOptions:\n  --port <n>   Port to listen on (default: 7700, or any free port if 7700 is\n               taken)".to_string(),
+        "open-dashboard" => "candle open-dashboard   Open the web dashboard\n\nStarts the dashboard as a background service managed by Candle (if it isn't\nrunning already) and opens it in the browser. The dashboard service belongs\nto no project; it shows up as 'dashboard' in 'candle list-all' and stops with\n'candle kill-all'.\n\nOptions:\n  --port <n>     Port to listen on; restarts a dashboard running on another port\n  --no-browser   Print the URL without opening a browser".to_string(),
         "setup-project" => "candle setup-project   Create a new .candle.json in the current directory".to_string(),
         "add-service" => {
             "candle add-service <name>   Add a new service to .candle.json\n\nOptions:\n  --shell <cmd>      Shell command to run the service (required)\n  --root <dir>       Root directory for the service".to_string()

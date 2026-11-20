@@ -40,6 +40,14 @@ const sidebars = {
     },
     {
       type: 'category',
+      label: 'Dashboard',
+      items: [
+        {type: 'doc', id: 'commands/open-dashboard', label: 'open-dashboard'},
+        {type: 'doc', id: 'commands/dashboard', label: 'dashboard'},
+      ],
+    },
+    {
+      type: 'category',
       label: 'Logs',
       items: [
         {type: 'doc', id: 'commands/logs', label: 'logs'},

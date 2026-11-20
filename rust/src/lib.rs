@@ -4,6 +4,7 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod dashboard;
 pub mod db;
 pub mod debug;
 pub mod dirs;

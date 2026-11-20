@@ -151,6 +151,8 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "list-ports" => cmd_list_ports(args, false),
         "list-ports-all" => cmd_list_ports(args, true),
         "open-browser" => cmd_open_browser(args),
+        "dashboard" => cmd_dashboard(args),
+        "open-dashboard" => cmd_open_dashboard(args),
         "erase-database" => cmd_erase_database(args),
         _ => not_implemented(command),
     }
@@ -614,6 +616,42 @@ fn cmd_open_browser(args: &CommandArgs) {
     let service_name = args.positionals.first().map(String::as_str);
     match handle_open_browser(&conn, scope.base_dir(), &project_dir, service_name) {
         Ok(output) => println!("{}", format_open_browser_output(&output)),
+        Err(e) => fail_with(&e),
+    }
+}
+
+/// Parse `--port`, which must fit a TCP port.
+fn port_flag(args: &CommandArgs) -> Option<u16> {
+    let port: Option<u32> = numeric_flag(args, "port");
+    port.map(|p| match u16::try_from(p) {
+        Ok(p) if p > 0 => p,
+        _ => fatal(format!("--port must be between 1 and 65535, got {p}")),
+    })
+}
+
+/// Serve the web dashboard in the foreground until killed.
+fn cmd_dashboard(args: &CommandArgs) {
+    let port = port_flag(args);
+    // Fail early on a broken state directory rather than on the first request.
+    drop(open_db());
+    let listener = match candle::dashboard::bind(port) {
+        Ok(listener) => listener,
+        Err(e) => fail_with(&e),
+    };
+    let bound = listener.local_addr().map(|a| a.port()).unwrap_or(0);
+    println!("Candle dashboard running at http://localhost:{bound}");
+    println!("Press Ctrl-C to stop.");
+    candle::dashboard::serve(listener);
+}
+
+/// Start the dashboard as a global background service and open it.
+fn cmd_open_dashboard(args: &CommandArgs) {
+    use candle::dashboard::open::{format_open_dashboard_output, handle_open_dashboard};
+    let port = port_flag(args);
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+    match handle_open_dashboard(&conn, port, !args.has("no-browser")) {
+        Ok(out) => println!("{}", format_open_dashboard_output(&out)),
         Err(e) => fail_with(&e),
     }
 }
