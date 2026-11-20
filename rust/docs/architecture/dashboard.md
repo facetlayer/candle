@@ -1,7 +1,7 @@
 # Dashboard
 
-`candle dashboard` serves a localhost web UI listing every running service; `candle open-dashboard`
-runs that server as a Candle-managed background service. Code: `rust/src/dashboard/`.
+`candle dashboard run` serves a localhost web UI listing every running service; `candle dashboard
+open` runs that server as a Candle-managed background service and `candle dashboard close` stops it. Code: `rust/src/dashboard/`.
 
 ## Global namespace
 
@@ -11,13 +11,14 @@ own services (only the dashboard today) use a reserved project key instead:
 `CANDLE_DATABASE_DIR` in tests, is a real directory (created on demand) usable as the service's cwd,
 and never coincides with a user project. `find-orphans` exempts it (`dirs::is_global_project_dir`).
 
-`open-dashboard` launches through the normal `start_one_service` path as a transient (`--shell`)
-service named `dashboard`, with shell `<current_exe> dashboard [--port N]`. So it gets a monitor,
+`dashboard open` (`dashboard/service.rs`) launches through the normal `start_one_service` path as a transient (`--shell`)
+service named `dashboard`, with shell `<current_exe> dashboard run [--port N]`. So it gets a monitor,
 logs, `list-all`/`kill-all` coverage, and the start lock for free. A running dashboard is reused
 unless it came from a different binary path (e.g. after an upgrade) or a different `--port` was
 asked for, in which case it is replaced. After starting, the command polls `list-ports` for the
 service's port (the server may fall back from 7700 to a free port) and opens it via
-`open_browser::open_service_port`.
+`open_browser::open_service_port`. `dashboard close` kills that service with the regular
+`handle_kill_command`.
 
 ## Server
 

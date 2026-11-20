@@ -20,7 +20,6 @@ pub fn canonical_command(token: &str) -> Option<&'static str> {
         "list-ports-all" => "list-ports-all",
         "open-browser" => "open-browser",
         "dashboard" => "dashboard",
-        "open-dashboard" => "open-dashboard",
         "setup-project" => "setup-project",
         "add-service" => "add-service",
         "remove-service" => "remove-service",
@@ -74,8 +73,7 @@ fn option_spec(command: &str) -> &'static [(&'static str, bool)] {
         "kill" | "clear-logs" | "open-browser" => &[("project-dir", true)],
         "find-orphans" | "list-docs" => &[("json", false)],
         "erase-database" => &[("force", false)],
-        "dashboard" => &[("port", true)],
-        "open-dashboard" => &[("port", true), ("no-browser", false)],
+        "dashboard" => &[("port", true), ("no-browser", false)],
         _ => &[],
     }
 }

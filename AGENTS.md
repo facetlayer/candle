@@ -7,7 +7,7 @@
  ./rust/ - Main source code. One crate, one binary (`candle`); `src/main.rs` is the entry point.
  ./rust/src/cli/ - Help text, argument parsing, and the `--monitor` entry point
  ./rust/src/monitor/ - Monitor mode: the per-service supervision loop run by `candle --monitor`
- ./rust/src/dashboard/ - `candle dashboard` web server and JSON API, and `candle open-dashboard`
+ ./rust/src/dashboard/ - `candle dashboard open|close|run`: web server, JSON API, and the background service
  ./rust/assets/dashboard/ - Built dashboard UI, embedded in the binary. Generated; commit it after rebuilding
  ./rust/docs/ - Rust architecture reference
  ./dashboard/ - React source for the dashboard UI. After editing, run `pnpm install && pnpm build` there

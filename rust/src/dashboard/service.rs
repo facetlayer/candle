@@ -1,5 +1,5 @@
-//! `candle open-dashboard`: make sure the dashboard is running as a
-//! Candle-managed service in the global namespace, then open it.
+//! `candle dashboard open` / `close`: manage the dashboard as a Candle-managed
+//! service in the global namespace.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -10,6 +10,7 @@ use crate::commands::list_ports::handle_list_ports;
 use crate::commands::open_browser::open_service_port;
 use crate::dirs::global_project_dir;
 use crate::errors::CandleError;
+use crate::kill::handle_kill_command;
 use crate::process_alive::find_running_service;
 use crate::start::start_one_service::{start_one_service, IfRunning, RunOptions};
 
@@ -41,9 +42,9 @@ fn shell_quote(word: &str) -> String {
     format!("'{}'", word.replace('\'', r"'\''"))
 }
 
-/// The service's shell command: this binary, run as `candle dashboard`.
+/// The service's shell command: this binary, run as `candle dashboard run`.
 fn dashboard_shell(exe: &str, port: Option<u16>) -> String {
-    let mut shell = format!("{} dashboard", shell_quote(exe));
+    let mut shell = format!("{} dashboard run", shell_quote(exe));
     if let Some(port) = port {
         shell.push_str(&format!(" --port {port}"));
     }
@@ -165,6 +166,38 @@ pub fn handle_open_dashboard(
     })
 }
 
+/// Result of [`handle_close_dashboard`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CloseDashboardOutput {
+    Stopped { pid: i64 },
+    NotRunning,
+}
+
+/// Stop the global dashboard service, if it is running.
+pub fn handle_close_dashboard(conn: &Connection) -> Result<CloseDashboardOutput, CandleError> {
+    let project_dir = global_project_dir();
+    let Some(entry) = find_running_service(conn, &project_dir, DASHBOARD_SERVICE_NAME)? else {
+        return Ok(CloseDashboardOutput::NotRunning);
+    };
+    handle_kill_command(
+        conn,
+        &project_dir,
+        &[DASHBOARD_SERVICE_NAME.to_string()],
+        true,
+        true,
+    )?;
+    Ok(CloseDashboardOutput::Stopped { pid: entry.pid })
+}
+
+pub fn format_close_dashboard_output(out: &CloseDashboardOutput) -> String {
+    match out {
+        CloseDashboardOutput::Stopped { pid } => {
+            format!("Stopped the Candle dashboard (pid {pid})")
+        }
+        CloseDashboardOutput::NotRunning => "The Candle dashboard is not running".to_string(),
+    }
+}
+
 pub fn format_open_dashboard_output(out: &OpenDashboardOutput) -> String {
     let mut lines = vec![if out.started {
         format!(
@@ -202,11 +235,11 @@ mod tests {
     fn builds_the_service_command() {
         assert_eq!(
             dashboard_shell("/bin/candle", None),
-            "/bin/candle dashboard"
+            "/bin/candle dashboard run"
         );
         assert_eq!(
             dashboard_shell("/bin/candle", Some(8000)),
-            "/bin/candle dashboard --port 8000"
+            "/bin/candle dashboard run --port 8000"
         );
     }
 
@@ -214,21 +247,25 @@ mod tests {
     fn reuse_rules() {
         let exe = "/bin/candle";
         // No port requested: any port from the same binary will do.
-        assert!(can_reuse("/bin/candle dashboard", exe, None));
-        assert!(can_reuse("/bin/candle dashboard --port 8000", exe, None));
+        assert!(can_reuse("/bin/candle dashboard run", exe, None));
+        assert!(can_reuse(
+            "/bin/candle dashboard run --port 8000",
+            exe,
+            None
+        ));
         // A specific port must match.
         assert!(can_reuse(
-            "/bin/candle dashboard --port 8000",
+            "/bin/candle dashboard run --port 8000",
             exe,
             Some(8000)
         ));
         assert!(!can_reuse(
-            "/bin/candle dashboard --port 8000",
+            "/bin/candle dashboard run --port 8000",
             exe,
             Some(9000)
         ));
-        assert!(!can_reuse("/bin/candle dashboard", exe, Some(8000)));
+        assert!(!can_reuse("/bin/candle dashboard run", exe, Some(8000)));
         // A different binary (e.g. after an upgrade) is replaced.
-        assert!(!can_reuse("/old/candle dashboard", exe, None));
+        assert!(!can_reuse("/old/candle dashboard run", exe, None));
     }
 }

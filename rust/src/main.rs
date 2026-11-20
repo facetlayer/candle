@@ -152,7 +152,6 @@ fn dispatch(command: &str, args: &CommandArgs) {
         "list-ports-all" => cmd_list_ports(args, true),
         "open-browser" => cmd_open_browser(args),
         "dashboard" => cmd_dashboard(args),
-        "open-dashboard" => cmd_open_dashboard(args),
         "erase-database" => cmd_erase_database(args),
         _ => not_implemented(command),
     }
@@ -629,9 +628,41 @@ fn port_flag(args: &CommandArgs) -> Option<u16> {
     })
 }
 
-/// Serve the web dashboard in the foreground until killed.
+/// `candle dashboard <open|close|run>`.
 fn cmd_dashboard(args: &CommandArgs) {
-    let port = port_flag(args);
+    let usage = "dashboard requires a subcommand: open, close, or run\nRun \"candle help dashboard\" for details.";
+    let sub = match args.positionals.as_slice() {
+        [sub] => sub.as_str(),
+        [] => fatal(usage),
+        [_, extra, ..] => fatal(format!("Unexpected argument: {extra}")),
+    };
+    let reject = |flag: &str| {
+        let present = if flag == "port" {
+            args.value(flag).is_some()
+        } else {
+            args.has(flag)
+        };
+        if present {
+            fatal(format!("--{flag} does not apply to 'dashboard {sub}'"));
+        }
+    };
+    match sub {
+        "run" => {
+            reject("no-browser");
+            cmd_dashboard_run(port_flag(args));
+        }
+        "open" => cmd_dashboard_open(port_flag(args), !args.has("no-browser")),
+        "close" => {
+            reject("port");
+            reject("no-browser");
+            cmd_dashboard_close();
+        }
+        other => fatal(format!("Unknown dashboard subcommand '{other}'\n{usage}")),
+    }
+}
+
+/// Serve the web dashboard in the foreground until killed.
+fn cmd_dashboard_run(port: Option<u16>) {
     // Fail early on a broken state directory rather than on the first request.
     drop(open_db());
     let listener = match candle::dashboard::bind(port) {
@@ -645,13 +676,23 @@ fn cmd_dashboard(args: &CommandArgs) {
 }
 
 /// Start the dashboard as a global background service and open it.
-fn cmd_open_dashboard(args: &CommandArgs) {
-    use candle::dashboard::open::{format_open_dashboard_output, handle_open_dashboard};
-    let port = port_flag(args);
+fn cmd_dashboard_open(port: Option<u16>, open_browser: bool) {
+    use candle::dashboard::service::{format_open_dashboard_output, handle_open_dashboard};
     let conn = open_db();
     let _ = maybe_run_cleanup(&conn);
-    match handle_open_dashboard(&conn, port, !args.has("no-browser")) {
+    match handle_open_dashboard(&conn, port, open_browser) {
         Ok(out) => println!("{}", format_open_dashboard_output(&out)),
+        Err(e) => fail_with(&e),
+    }
+}
+
+/// Stop the global dashboard service.
+fn cmd_dashboard_close() {
+    use candle::dashboard::service::{format_close_dashboard_output, handle_close_dashboard};
+    let conn = open_db();
+    let _ = maybe_run_cleanup(&conn);
+    match handle_close_dashboard(&conn) {
+        Ok(out) => println!("{}", format_close_dashboard_output(&out)),
         Err(e) => fail_with(&e),
     }
 }

@@ -45,13 +45,13 @@ function request(
   });
 }
 
-describe('CLI open-dashboard / dashboard', () => {
+describe('CLI dashboard open / close / run', () => {
   let port: number;
 
   beforeAll(async () => {
     await workspace.runCli(['start', 'web']);
     await workspace.runCli(['wait-for-log', 'web', '--message', 'Now listening']);
-    const result = await workspace.runCli(['open-dashboard', '--no-browser']);
+    const result = await workspace.runCli(['dashboard', 'open', '--no-browser']);
     const match = result
       .stdoutAsString()
       .match(/Started the Candle dashboard at http:\/\/localhost:(\d+)/);
@@ -62,7 +62,7 @@ describe('CLI open-dashboard / dashboard', () => {
   afterAll(() => workspace.cleanup());
 
   it('reuses the running dashboard on a second call', async () => {
-    const result = await workspace.runCli(['open-dashboard', '--no-browser']);
+    const result = await workspace.runCli(['dashboard', 'open', '--no-browser']);
     expect(result.stdoutAsString()).toContain(
       `The Candle dashboard is running at http://localhost:${port}`
     );
@@ -130,10 +130,37 @@ describe('CLI open-dashboard / dashboard', () => {
   });
 
   it('rejects an out-of-range --port', async () => {
-    const result = await workspace.runCli(['open-dashboard', '--port', '70000'], {
+    const result = await workspace.runCli(['dashboard', 'open', '--port', '70000'], {
       ignoreExitCode: true,
     });
     expect(result.failed()).toBe(true);
     expect(result.stderrAsString()).toContain('--port must be between 1 and 65535');
+  });
+
+  it('rejects a missing or unknown subcommand and misplaced flags', async () => {
+    const cases: [string[], string][] = [
+      [['dashboard'], 'dashboard requires a subcommand: open, close, or run'],
+      [['dashboard', 'bogus'], "Unknown dashboard subcommand 'bogus'"],
+      [['dashboard', 'close', '--port', '8000'], "--port does not apply to 'dashboard close'"],
+      [['dashboard', 'run', '--no-browser'], "--no-browser does not apply to 'dashboard run'"],
+    ];
+    for (const [args, message] of cases) {
+      const result = await workspace.runCli(args, { ignoreExitCode: true });
+      expect(result.failed()).toBe(true);
+      expect(result.stderrAsString()).toContain(message);
+    }
+  });
+
+  // Runs last: stops the dashboard the other tests share.
+  it('close stops the dashboard, and says so when it is not running', async () => {
+    const closed = await workspace.runCli(['dashboard', 'close']);
+    expect(closed.stdoutAsString()).toMatch(/Stopped the Candle dashboard \(pid \d+\)/);
+
+    const all = await workspace.runCli(['list-all']);
+    expect(all.stdoutAsString()).not.toMatch(/^dashboard\s/m);
+    await expect(request(port, '/api/processes')).rejects.toThrow();
+
+    const again = await workspace.runCli(['dashboard', 'close']);
+    expect(again.stdoutAsString()).toContain('The Candle dashboard is not running');
   });
 });

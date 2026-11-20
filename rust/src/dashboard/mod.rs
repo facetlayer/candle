@@ -1,13 +1,13 @@
-//! `candle dashboard`: a localhost web UI listing every running service, with
+//! `candle dashboard run`: a localhost web UI listing every running service, with
 //! buttons that open a service's ports in the browser. The React UI is built
 //! ahead of time from `../dashboard` into `assets/dashboard/` and embedded
 //! here; the JSON API reads the database directly.
 //!
-//! `candle open-dashboard` runs the same server as a Candle-managed service in
+//! `candle dashboard open` runs the same server as a Candle-managed service in
 //! the global namespace (see [`crate::dirs::global_project_dir`]).
 
 pub mod http;
-pub mod open;
+pub mod service;
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
